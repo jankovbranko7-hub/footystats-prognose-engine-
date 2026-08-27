@@ -521,11 +521,15 @@ async def hubsign_sign(api_key: str = Form(...), shortcut_name: str = Form("Foot
         raise HTTPException(status_code=502, detail=f"RoutineHub nicht erreichbar: {e}")
     if status != 200:
         return Response(content=signed, status_code=status, media_type=ctype, headers={"Cache-Control":"no-store"})
-    if not signed.startswith(b"AEA1"):
+    # RoutineHub's current API contract guarantees a signed shortcut on HTTP 200,
+    # but does not guarantee the legacy AEA1 magic bytes. Reject obvious
+    # error/text responses instead of hard-coding one archive signature format.
+    ctype_l = (ctype or "").lower()
+    if not signed or "json" in ctype_l or "text/html" in ctype_l:
         return Response(
-            content=b"RoutineHub returned no signed AEA1 shortcut.",
+            content=signed or b"RoutineHub returned an empty response.",
             status_code=502,
-            media_type="text/plain",
+            media_type=ctype or "text/plain",
             headers={"Cache-Control":"no-store"},
         )
     return Response(
