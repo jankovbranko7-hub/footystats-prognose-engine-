@@ -297,7 +297,7 @@ def predict(match,league):
     m=a['match'];h=profile(a['home_team'],'home');aw=profile(a['away_team'],'away')
     report=insufficient_data_report(m,h,aw)
     if not report['sufficient']:
-        return {'ok':False,'model_version':'0.2.2','phase':'INSUFFICIENT_DATA','decision':'ANALYSE NICHT MÖGLICH','error':'Zu wenig belastbare historische Teamdaten für eine seriöse Marktprognose. Placeholder-Nullwerte werden nicht als echte Leistung interpretiert.','audit':{'valid':True,'errors':[],'match':m,'pager':a['pager']},'samples':report['samples'],'diagnostics':{'data_quality':'NIEDRIG','sample_security':'NIEDRIG','result_vs_underlying':'NICHT PRÜFBAR','relative_edge':'NICHT PRÜFBAR','counterargument':'UNZUREICHENDE DATENGRUNDLAGE','single_point_of_failure':True,'robustness_status':'NICHT PRÜFBAR'},'insufficient_data':report,'notes':['Keine Wahrscheinlichkeiten berechnet.','Keine künstlichen Mindest-xG-Werte als Prognose verwendet.','Odds werden vollständig ignoriert.']}
+        return {'ok':False,'model_version':'0.3.0','phase':'INSUFFICIENT_DATA','decision':'ANALYSE NICHT MÖGLICH','error':'Zu wenig belastbare historische Teamdaten für eine seriöse Marktprognose. Placeholder-Nullwerte werden nicht als echte Leistung interpretiert.','audit':{'valid':True,'errors':[],'match':m,'pager':a['pager']},'samples':report['samples'],'diagnostics':{'data_quality':'NIEDRIG','sample_security':'NIEDRIG','result_vs_underlying':'NICHT PRÜFBAR','relative_edge':'NICHT PRÜFBAR','counterargument':'UNZUREICHENDE DATENGRUNDLAGE','single_point_of_failure':True,'robustness_status':'NICHT PRÜFBAR'},'insufficient_data':report,'notes':['Keine Wahrscheinlichkeiten berechnet.','Keine künstlichen Mindest-xG-Werte als Prognose verwendet.','Odds werden vollständig ignoriert.']}
     hn,an=h['home']['matches'],aw['away']['matches'];ho,ao=h['overall']['matches'],aw['overall']['matches']
     ss=sample(hn,an,ho,ao); quality='HOCH'
     if not hn or not an:quality='MITTEL'
@@ -319,16 +319,16 @@ def predict(match,league):
     hxg,hxga,axg,axga=h['home']['xg'],h['home']['xga'],aw['away']['xg'],aw['away']['xga'];mx=None
     if None not in (hxg,hxga,axg,axga):
         hg=(hxg+axga)/2;ag=(axg+hxga)/2;mx={'home_goal_threat':hg,'away_goal_threat':ag,'total':hg+ag}
-    return {'ok':True,'model_version':'0.2.2','deterministic':True,'audit':{'valid':True,'errors':[],'match':m,'pager':a['pager']},'samples':{'home_venue':hn,'home_class':sclass(hn),'away_venue':an,'away_class':sclass(an),'security':ss},'expected_goals':{'home':hl,'away':al,'total':hl+al,'matchup_xg_diagnostic':mx},'probabilities':p,'markets':[{'rank':i+1,'key':x,'label':LABEL[x],'probability_pct':round(q*100,1)} for i,(x,q) in enumerate(rank)],'strongest_market':{'key':top,'label':LABEL[top],'probability_pct':round(tp*100,1)},'second_market':{'key':second,'label':LABEL[second],'probability_pct':round(sp*100,1)},'diagnostics':{'data_quality':quality,'sample_security':ss,'result_vs_underlying':rv,'relative_edge':ed,'counterargument':counter,'single_point_of_failure':spof,'influence_stress_probability_pct':round(i*100,1),'fragility_stress_probability_pct':round(f*100,1),'robustness_status':rob,'insufficient_data_gate':'BESTANDEN'},'decision':dec,'notes':['Odds werden vollständig ignoriert.','Gleiche Inputs liefern gleiche Outputs.','Version 0.2.2 mit strenger INSUFFICIENT_DATA-Sperre.']}
+    return {'ok':True,'model_version':'0.3.0','deterministic':True,'audit':{'valid':True,'errors':[],'match':m,'pager':a['pager']},'samples':{'home_venue':hn,'home_class':sclass(hn),'away_venue':an,'away_class':sclass(an),'security':ss},'expected_goals':{'home':hl,'away':al,'total':hl+al,'matchup_xg_diagnostic':mx},'probabilities':p,'markets':[{'rank':i+1,'key':x,'label':LABEL[x],'probability_pct':round(q*100,1)} for i,(x,q) in enumerate(rank)],'strongest_market':{'key':top,'label':LABEL[top],'probability_pct':round(tp*100,1)},'second_market':{'key':second,'label':LABEL[second],'probability_pct':round(sp*100,1)},'diagnostics':{'data_quality':quality,'sample_security':ss,'result_vs_underlying':rv,'relative_edge':ed,'counterargument':counter,'single_point_of_failure':spof,'influence_stress_probability_pct':round(i*100,1),'fragility_stress_probability_pct':round(f*100,1),'robustness_status':rob,'insufficient_data_gate':'BESTANDEN'},'decision':dec,'notes':['Odds werden vollständig ignoriert.','Gleiche Inputs liefern gleiche Outputs.','Version 0.3.0 mit strenger INSUFFICIENT_DATA-Sperre und V5.2-Guardrails.']}
 
-# ---- Web/API layer v0.2 ----
+# ---- Web/API layer v0.3 ----
 import json
 from typing import Any, Dict, List, Optional
 from fastapi import FastAPI, File, UploadFile, HTTPException, Form
 from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel
 
-app = FastAPI(title="FootyStats Prognose Engine", version="0.2.3")
+app = FastAPI(title="FootyStats Prognose Engine", version="0.3.0")
 
 class Payload(BaseModel):
     matchData: Dict[str, Any]
@@ -354,12 +354,17 @@ def _same_team_id(value: Any, team_id: Any) -> bool:
     return value_num is not None and team_num is not None and int(value_num) == int(team_num)
 
 
+def _table_row(table_data: Any, table_key: str, team_id: Any) -> Optional[Dict[str, Any]]:
+    rows = ((table_data or {}).get("data") or {}).get(table_key) or []
+    return next((item for item in rows if isinstance(item, dict) and _same_team_id(item.get("id"), team_id)), None)
+
+
 def _table_team_summary(table_data: Any, team_id: Any, venue: str) -> Dict[str, Any]:
     table_key = "all_matches_table_home" if venue == "home" else "all_matches_table_away"
-    rows = ((table_data or {}).get("data") or {}).get(table_key) or []
-    row = next((item for item in rows if isinstance(item, dict) and _same_team_id(item.get("id"), team_id)), None)
+    row = _table_row(table_data, table_key, team_id)
+    overall = _table_row(table_data, "all_matches_table_overall", team_id)
     if not row:
-        return {"available": False, "venue": venue}
+        return {"available": False, "venue": venue, "overall_available": bool(overall)}
     matches = num(row.get("matchesPlayed"))
     points = num(row.get("points"))
     goals_for = num(row.get("seasonGoals"))
@@ -373,6 +378,7 @@ def _table_team_summary(table_data: Any, team_id: Any, venue: str) -> Dict[str, 
         "ppg": per_match(points),
         "goals_for_per_match": per_match(goals_for),
         "goals_against_per_match": per_match(goals_against),
+        "overall_available": bool(overall),
     }
 
 
@@ -384,47 +390,100 @@ def _form_records(form_data: Any) -> List[Dict[str, Any]]:
     return records
 
 
+def _form_window(item: Dict[str, Any]) -> Dict[str, Any]:
+    stats = item.get("stats") or {}
+    sample = num(item.get("last_x_match_num")) or num(stats.get("last_x"))
+    return {
+        "sample": int(sample) if sample is not None else None,
+        "ppg": num(stats.get("seasonPPG_overall")),
+        "btts_pct": num(stats.get("seasonBTTSPercentage_overall")),
+        "over_25_pct": num(stats.get("seasonOver25Percentage_overall")),
+        "under_25_pct": num(stats.get("seasonUnder25Percentage_overall")),
+        "goals_for_per_match": num(stats.get("seasonScoredAVG_overall")),
+        "goals_against_per_match": num(stats.get("seasonConcededAVG_overall")),
+        "xg": num(stats.get("xg_for_avg_overall")),
+        "xga": num(stats.get("xg_against_avg_overall")),
+        "shots_on_target_avg": num(stats.get("shotsOnTargetAVG_overall")),
+    }
+
+
 def _form_team_summary(form_data: Any, team_id: Any) -> Dict[str, Any]:
     candidates = [item for item in _form_records(form_data) if _same_team_id(item.get("id"), team_id)]
     if not candidates:
         return {"available": False}
-    chosen = max(candidates, key=lambda item: num(item.get("last_x_match_num")) or 0)
-    stats = chosen.get("stats") or {}
-    sample = num(chosen.get("last_x_match_num")) or num(stats.get("last_x"))
+    windows = [_form_window(item) for item in candidates]
+    windows = [window for window in windows if window.get("sample")]
+    if not windows:
+        return {"available": False}
+    windows.sort(key=lambda window: window["sample"])
+    recent = next((window for window in windows if window["sample"] == 5), None)
+    reference = windows[-1]
     return {
         "available": True,
-        "sample": int(sample) if sample is not None else None,
-        "ppg": num(stats.get("seasonPPG_overall")),
-        "shots_on_target_avg": num(stats.get("shotsOnTargetAVG_overall")),
-        "btts_pct": num(stats.get("seasonBTTSPercentage_overall")),
+        "sample": reference["sample"],
+        "ppg": reference["ppg"],
+        "shots_on_target_avg": reference["shots_on_target_avg"],
+        "btts_pct": reference["btts_pct"],
+        "windows": {str(window["sample"]): window for window in windows},
+        "recent_5": recent,
+        "reference": reference,
     }
 
 
-def _player_team_summary(player_data: Any, team_id: Any) -> Dict[str, Any]:
-    pages = ((player_data or {}).get("pages") or [])
+def _players_for_team(player_data: Any, team_id: Any) -> List[Dict[str, Any]]:
     players: List[Dict[str, Any]] = []
-    for page in pages:
+    for page in ((player_data or {}).get("pages") or []):
         if isinstance(page, dict):
             players.extend(item for item in (page.get("data") or []) if isinstance(item, dict) and _same_team_id(item.get("club_team_id"), team_id))
+    return players
+
+
+def _player_team_summary(player_data: Any, team_id: Any, expected_matches: Any = None) -> Dict[str, Any]:
+    players = _players_for_team(player_data, team_id)
     minutes = sum(num(player.get("minutes_played_overall")) or 0 for player in players)
     goals = sum(num(player.get("goals_overall")) or 0 for player in players)
     assists = sum(num(player.get("assists_overall")) or 0 for player in players)
+    contributions = goals + assists
+    goal_ranks = sorted((num(player.get("goals_overall")) or 0 for player in players), reverse=True)
+    contribution_ranks = sorted(((num(player.get("goals_overall")) or 0) + (num(player.get("assists_overall")) or 0) for player in players), reverse=True)
+    top3_goal_share = sum(goal_ranks[:3]) / goals if goals > 0 else None
+    top3_contribution_share = sum(contribution_ranks[:3]) / contributions if contributions > 0 else None
+    expected_minutes = (num(expected_matches) or 0) * 11 * 90
+    minutes_coverage = min(1.0, minutes / expected_minutes) if expected_minutes > 0 else None
+    concentration = "NICHT BEWERTBAR"
+    if top3_contribution_share is not None:
+        concentration = "HOCH" if top3_contribution_share >= .75 else ("MITTEL" if top3_contribution_share >= .60 else "NIEDRIG")
     return {
         "available": bool(players),
         "players_found": len(players),
         "minutes": round(minutes, 1),
+        "minutes_coverage_pct": round(minutes_coverage * 100, 1) if minutes_coverage is not None else None,
         "goals_per_90": round(goals * 90 / minutes, 3) if minutes > 0 else None,
         "assists_per_90": round(assists * 90 / minutes, 3) if minutes > 0 else None,
+        "top3_goal_share_pct": round(top3_goal_share * 100, 1) if top3_goal_share is not None else None,
+        "top3_contribution_share_pct": round(top3_contribution_share * 100, 1) if top3_contribution_share is not None else None,
+        "concentration_risk": concentration,
+        "lineups_confirmed": False,
     }
 
 
-def supplemental_report(match_data: Any, form_data: Any = None, table_data: Any = None, player_data: Any = None) -> Dict[str, Any]:
-    """Expose V2-only inputs with coverage checks; do not invent unbacktested score weights."""
+def _overall_matches(league_data: Any, team_id: Any, venue: str) -> Any:
+    team = team_obj(league_data, team_id) if league_data is not None and team_id is not None else None
+    return profile(team, venue)["overall"].get("matches") if team else None
+
+
+def supplemental_report(match_data: Any, league_data: Any = None, form_data: Any = None, table_data: Any = None, player_data: Any = None) -> Dict[str, Any]:
+    """Use all V2 sources for audit and risk checks, never inventing unbacktested probability weights."""
     match = mf(match_data)
     home_id, away_id = match.get("home_id"), match.get("away_id")
+    home_matches = _overall_matches(league_data, home_id, "home")
+    away_matches = _overall_matches(league_data, away_id, "away")
     form = {"home": _form_team_summary(form_data, home_id), "away": _form_team_summary(form_data, away_id)}
     table = {"home": _table_team_summary(table_data, home_id, "home"), "away": _table_team_summary(table_data, away_id, "away")}
-    player = {"home": _player_team_summary(player_data, home_id), "away": _player_team_summary(player_data, away_id)}
+    player = {
+        "home": _player_team_summary(player_data, home_id, home_matches),
+        "away": _player_team_summary(player_data, away_id, away_matches),
+    }
     return {
         "received": {"form": form_data is not None, "table": table_data is not None, "player": player_data is not None},
         "coverage": {
@@ -433,20 +492,195 @@ def supplemental_report(match_data: Any, form_data: Any = None, table_data: Any 
             "player": {**player, "usable_both": player["home"]["available"] and player["away"]["available"]},
         },
         "model_use": {
-            "table": "Explizite Team-/Venue-Prüfung und Diagnose; Score-Gewichte erst nach zeitbasiertem Backtest.",
-            "form": "Nur bei Daten für beide Teams als vollständig markiert; unvollständige Form wird nicht einseitig gewichtet.",
-            "player": "Kader-Saisonwerte werden geprüft, aber ohne bestätigte Aufstellung nicht als Match-Score gewichtet.",
+            "table": "IDs sowie Overall-/Home-/Away-Abdeckung werden gegengeprüft; keine doppelte PPG-/Tore-Gewichtung.",
+            "form": "Last-5 gegen längeres Formfenster ist ein Gegenargument-/Stabilitätssignal, keine unkalibrierte Wahrscheinlichkeitserhöhung.",
+            "player": "Tiefe und Torbeteiligungs-Konzentration werden transparent berichtet; ohne bestätigte Aufstellung keine Match-Score-Gewichtung.",
         },
+    }
+
+
+def _form_delta(team: Dict[str, Any], metric: str) -> Optional[float]:
+    recent, reference = team.get("recent_5") or {}, team.get("reference") or {}
+    if (reference.get("sample") or 0) < 8:
+        return None
+    current, baseline = num(recent.get(metric)), num(reference.get(metric))
+    return current - baseline if current is not None and baseline is not None else None
+
+
+def _mean_known(values: List[Optional[float]]) -> Optional[float]:
+    known = [value for value in values if value is not None]
+    return sum(known) / len(known) if known else None
+
+
+def _form_market_signal(form_coverage: Dict[str, Any], market: str) -> Dict[str, Any]:
+    home, away = form_coverage.get("home") or {}, form_coverage.get("away") or {}
+    if not (home.get("available") and away.get("available")):
+        return {"status": "NICHT VERFÜGBAR", "reason": "Formfenster nicht für beide Teams vorhanden."}
+    if market == "home_win":
+        score = _form_delta(home, "ppg")
+        away_delta = _form_delta(away, "ppg")
+        score = score - away_delta if score is not None and away_delta is not None else None
+        positive = score is not None and score >= .50
+        negative = score is not None and score <= -.50
+    elif market == "away_win":
+        score = _form_delta(away, "ppg")
+        home_delta = _form_delta(home, "ppg")
+        score = score - home_delta if score is not None and home_delta is not None else None
+        positive = score is not None and score >= .50
+        negative = score is not None and score <= -.50
+    elif market in {"btts_yes", "btts_no"}:
+        score = _mean_known([_form_delta(home, "btts_pct"), _form_delta(away, "btts_pct")])
+        if market == "btts_no" and score is not None:
+            score = -score
+        positive = score is not None and score >= 15
+        negative = score is not None and score <= -15
+    else:
+        metric = "over_25_pct" if market == "over_2_5" else "under_25_pct"
+        score = _mean_known([_form_delta(home, metric), _form_delta(away, metric)])
+        positive = score is not None and score >= 15
+        negative = score is not None and score <= -15
+    status = "BESTÄTIGEND" if positive else ("GEGENARGUMENT" if negative else ("NEUTRAL" if score is not None else "NICHT VERFÜGBAR"))
+    return {
+        "status": status,
+        "reason": "Last-5 gegen längeres Formfenster; nur als unabhängiger Gegencheck verwendet.",
+        "delta": round(score, 2) if score is not None else None,
+    }
+
+
+def _coherence_check(probabilities: Dict[str, Any]) -> Dict[str, Any]:
+    if not probabilities:
+        return {"passed": False, "checks": {}}
+    pairs = {
+        "btts": (num(probabilities.get("btts_yes")), num(probabilities.get("btts_no"))),
+        "goals": (num(probabilities.get("over_2_5")), num(probabilities.get("under_2_5"))),
+        "result": (num(probabilities.get("home_win")), num(probabilities.get("draw")), num(probabilities.get("away_win"))),
+    }
+    checks = {
+        "btts": all(value is not None for value in pairs["btts"]) and abs(sum(pairs["btts"]) - 1) <= .002,
+        "goals": all(value is not None for value in pairs["goals"]) and abs(sum(pairs["goals"]) - 1) <= .002,
+        "result": all(value is not None for value in pairs["result"]) and abs(sum(pairs["result"]) - 1) <= .002,
+    }
+    return {"passed": all(checks.values()), "checks": checks}
+
+
+def _central_signal_blocks(result: Dict[str, Any]) -> List[str]:
+    blocks: List[str] = []
+    expected = result.get("expected_goals") or {}
+    if expected.get("home") is not None and expected.get("away") is not None:
+        blocks.append("UNDERLYING")
+    samples = result.get("samples") or {}
+    if (num(samples.get("home_venue")) or 0) >= 4 and (num(samples.get("away_venue")) or 0) >= 4:
+        blocks.append("VENUE")
+    match = ((result.get("audit") or {}).get("match") or {})
+    if any(match.get(key) is not None for key in ("home_prematch_xg", "away_prematch_xg", "btts_potential", "o25_potential", "pre_match_home_ppg", "pre_match_away_ppg")):
+        blocks.append("PRE_MATCH")
+    if (result.get("diagnostics") or {}).get("result_vs_underlying") in {"KONSISTENT", "TEILWEISE KONSISTENT"}:
+        blocks.append("RESULTAT")
+    return blocks
+
+
+def elite_protocol_report(result: Dict[str, Any], report: Dict[str, Any]) -> Dict[str, Any]:
+    """V5.2-inspired guardrails; separate correlated sources from independent evidence."""
+    if not result.get("ok"):
+        return {
+            "version": "0.3.0 / V5.2-Guardrails",
+            "phase_1_data_audit": "NICHT BESTANDEN",
+            "phase_2_all_six_markets": "NEIN",
+            "phase_3_decision_gates": "NEIN",
+            "final_decision": result.get("decision"),
+            "reason": "Kernanalyse war nicht gültig; keine Ersatzprognose aus Zusatzdateien.",
+        }
+    diagnostics = result.get("diagnostics") or {}
+    coverage = report.get("coverage") or {}
+    received = report.get("received") or {}
+    unusable = [kind for kind, was_received in received.items() if was_received and not (coverage.get(kind) or {}).get("usable_both")]
+    quality = diagnostics.get("data_quality") or "MITTEL"
+    protocol_quality = "NIEDRIG" if quality == "NIEDRIG" else ("MITTEL" if unusable else quality)
+    top = (result.get("strongest_market") or {}).get("key")
+    top_probability = num((result.get("strongest_market") or {}).get("probability_pct"))
+    form_signal = _form_market_signal(coverage.get("form") or {}, top) if top else {"status": "NICHT VERFÜGBAR"}
+    blocks = _central_signal_blocks(result)
+    multi_block = "BESTANDEN" if len(blocks) >= 3 else ("EINGESCHRÄNKT" if len(blocks) >= 2 else "NICHT BESTANDEN")
+    coherence = _coherence_check(result.get("probabilities") or {})
+    candidate = top_probability is not None and top_probability >= 65
+    influence = num(diagnostics.get("influence_stress_probability_pct"))
+    fragility = num(diagnostics.get("fragility_stress_probability_pct"))
+    single_point = bool(diagnostics.get("single_point_of_failure"))
+    def removal_status(value: Optional[float]) -> str:
+        if not candidate:
+            return "NICHT ERFORDERLICH FÜR SPIELEN"
+        if value is not None and value >= 63 and not single_point:
+            return "BESTANDEN"
+        if value is not None and value >= 60:
+            return "EINGESCHRÄNKT"
+        return "NICHT BESTANDEN"
+    influence_status, fragility_status = removal_status(influence), removal_status(fragility)
+    sample_security = (result.get("samples") or {}).get("security")
+    sample_gate = "BESTANDEN" if sample_security == "HOCH" else ("EINGESCHRÄNKT" if sample_security == "MITTEL" else "NICHT BESTANDEN")
+    base_counter = diagnostics.get("counterargument") or "NICHT VERFÜGBAR"
+    counter_status = "STARK" if "STARK" in base_counter or "DOMINANT" in base_counter else ("RELEVANT" if form_signal.get("status") == "GEGENARGUMENT" else "KEIN RELEVANTES")
+    final_decision = result.get("decision")
+    cap_reasons: List[str] = []
+    if final_decision == "SPIELEN":
+        if multi_block != "BESTANDEN":
+            cap_reasons.append("weniger als drei getrennte zentrale Signalblöcke")
+        if counter_status in {"STARK", "RELEVANT"}:
+            cap_reasons.append("relevantes Gegenargument im V5.2-Gegencheck")
+        if influence_status != "BESTANDEN" or fragility_status != "BESTANDEN":
+            cap_reasons.append("Removal-Test nicht vollständig bestanden")
+        if sample_gate == "NICHT BESTANDEN":
+            cap_reasons.append("Venue-Stichprobe nicht ausreichend")
+        if protocol_quality == "NIEDRIG":
+            cap_reasons.append("Datenqualität zu niedrig")
+        if not coherence.get("passed"):
+            cap_reasons.append("Wahrscheinlichkeits-Kohärenz fehlgeschlagen")
+        if cap_reasons:
+            final_decision = "BEOBACHTEN"
+    return {
+        "version": "0.3.0 / V5.2-Guardrails",
+        "scope": "Audit-, Gegenargument- und Robustheitsprotokoll. Form, Tabelle und Spieler verändern ohne zeitbasierten Backtest keine Markt-Wahrscheinlichkeit.",
+        "phase_1_data_audit": "EINGESCHRÄNKT" if unusable else "BESTANDEN",
+        "phase_2_all_six_markets": "JA" if len(result.get("markets") or []) == 6 else "NEIN",
+        "phase_3_decision_gates": "JA",
+        "source_integration": {
+            "form": {"received": received.get("form", False), "usable_both": (coverage.get("form") or {}).get("usable_both", False), "use": "Trend-/Gegenargument-Prüfung"},
+            "table": {"received": received.get("table", False), "usable_both": (coverage.get("table") or {}).get("usable_both", False), "use": "ID- und Venue-Konsistenzprüfung"},
+            "player": {"received": received.get("player", False), "usable_both": (coverage.get("player") or {}).get("usable_both", False), "use": "Kaderabdeckung/-konzentration, keine Aufstellungsannahme"},
+            "unusable_received_sources": unusable,
+        },
+        "gates": {
+            "probability": "BESTANDEN" if candidate else ("BEOBACHTEN" if top_probability is not None and top_probability >= 60 else "NICHT BESTANDEN"),
+            "multi_block_confirmation": multi_block,
+            "counterargument": {"status": counter_status, "base": base_counter, "form": form_signal},
+            "influence_removal": {"status": influence_status, "tested_block": "Pre-Match-Anteil entfernt", "probability_pct": influence},
+            "fragility_removal": {"status": fragility_status, "tested_block": "Venue-/Resultatanteil reduziert", "probability_pct": fragility},
+            "small_sample_stress": sample_gate,
+            "result_vs_underlying": diagnostics.get("result_vs_underlying"),
+            "relative_edge": diagnostics.get("relative_edge"),
+            "data_quality": protocol_quality,
+            "coherence": coherence,
+        },
+        "central_signal_blocks": blocks,
+        "final_decision": final_decision,
+        "decision_cap_applied": bool(cap_reasons),
+        "decision_cap_reasons": cap_reasons,
     }
 
 
 def _attach_supplemental(result: Dict[str, Any], report: Dict[str, Any], source_files: Dict[str, str]) -> Dict[str, Any]:
     result = dict(result)
     diagnostics = dict(result.get("diagnostics") or {})
+    protocol = elite_protocol_report(result, report)
     diagnostics["supplemental_inputs"] = report
+    diagnostics["elite_protocol"] = protocol
     result["diagnostics"] = diagnostics
     result["input_sources"] = source_files
-    result["model_version"] = "0.2.3"
+    previous_decision = result.get("decision")
+    if result.get("ok") and protocol.get("final_decision") and protocol["final_decision"] != previous_decision:
+        result["decision_before_v5_2_guardrails"] = previous_decision
+        result["decision"] = protocol["final_decision"]
+        result["notes"] = list(result.get("notes") or []) + ["V5.2-Guardrails haben die Entscheidung wegen: " + "; ".join(protocol.get("decision_cap_reasons") or []) + "."]
+    result["model_version"] = "0.3.0"
     return result
 
 
@@ -497,21 +731,21 @@ def select_pair(parsed_files: List[Dict[str, Any]]) -> Dict[str, Any]:
     supplemental_data = {kind: items[0]["data"] for kind, items in by_kind.items() if kind in {"form", "table", "player"} and items}
     return {"ok":True,"match_file":match_file["name"],"league_file":best["name"],"match_data":match_file["data"],"league_data":best["data"],"supplemental_data":supplemental_data,"source_files":source_files,"pairing":{"match_id":match_fields.get("match_id"),"competition_id":match_fields.get("competition_id"),"home_id":match_fields.get("home_id"),"away_id":match_fields.get("away_id"),"league_score":best["score"],"league_reasons":best["reasons"]}}
 
-INDEX_HTML = r'''<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>FootyStats Prognose Engine</title><style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f3f4f6;margin:0;color:#111827}.w{max-width:900px;margin:auto;padding:18px}.c{background:#fff;border-radius:15px;padding:17px;margin:12px 0;box-shadow:0 1px 5px #0001}.g{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:9px}.m{border:1px solid #e5e7eb;border-radius:11px;padding:11px}.b{font-size:1.2rem;font-weight:700}.s{font-size:.85rem;color:#6b7280}.ok{color:#047857}.bad{color:#b91c1c}button{width:100%;padding:13px;border:0;border-radius:11px;background:#111827;color:#fff;font-weight:700;font-size:1rem}input{width:100%;margin:7px 0 14px}table{width:100%;border-collapse:collapse}td,th{padding:8px;border-bottom:1px solid #eee;text-align:left}pre{white-space:pre-wrap;word-break:break-word;font-size:.75rem}.sep{border-top:1px solid #e5e7eb;margin:18px 0}</style></head><body><div class="w"><div class="c"><h2>FootyStats Prognose Engine v0.2.3</h2><div class="s">Ein Match-Ordner = ein Analyse-Paket · keine Odds · keine externen Daten · INSUFFICIENT_DATA-Sperre aktiv</div><h3>Match-Ordner auswählen</h3><p class="s">Empfohlen: genau MatchDaten, LeagueDaten, FormDaten, TableDaten und PlayerDaten eines Matches auswählen.</p><input id="folderFiles" type="file" webkitdirectory directory multiple accept=".json,application/json"><div class="sep"></div><h3>Fallback: JSON-Dateien gemeinsam auswählen</h3><p class="s">Falls die Ordnerauswahl am iPhone nicht angeboten wird, wähle hier alle fünf JSON-Dateien gleichzeitig aus.</p><input id="bundleFiles" type="file" multiple accept=".json,application/json"><button id="go">Analyse starten</button></div><div id="out"></div></div><script>function chosenFiles(){const folder=[...document.getElementById('folderFiles').files];if(folder.length)return folder;return[...document.getElementById('bundleFiles').files];}document.getElementById('go').onclick=async()=>{const files=chosenFiles(),out=document.getElementById('out');if(files.length<2){out.innerHTML='<div class="c bad"><b>Mindestens zwei JSON-Dateien nötig.</b></div>';return}out.innerHTML='<div class="c">Paket wird geprüft und analysiert…</div>';try{const form=new FormData();files.forEach(f=>form.append('files',f,f.webkitRelativePath||f.name));const r=await fetch('/api/predict-bundle',{method:'POST',body:form});const d=await r.json();if(!d.ok){out.innerHTML='<div class="c"><h3 class="bad">Analyse nicht möglich</h3><pre>'+JSON.stringify(d,null,2)+'</pre></div>';return}const g=d.diagnostics,x=d.expected_goals;const rows=d.markets.map(z=>`<tr><td>${z.rank}</td><td>${z.label}</td><td><b>${z.probability_pct}%</b></td></tr>`).join('');const pairing=d.pairing||{},sources=d.input_sources||{};const sourceList=Object.entries(sources).map(([kind,file])=>`${kind}: ${file}`).join('<br>');out.innerHTML=`<div class="c"><div class="ok"><b>Dateien automatisch zugeordnet</b></div><p class="s">${sourceList||`Match: ${pairing.match_file||''}<br>League: ${pairing.league_file||''}`}</p></div><div class="c"><h3>Kurzentscheidung</h3><div class="g"><div class="m"><div class="s">Bester Markt</div><div class="b">${d.strongest_market.label}</div></div><div class="m"><div class="s">Wahrscheinlichkeit</div><div class="b">${d.strongest_market.probability_pct}%</div></div><div class="m"><div class="s">Entscheidung</div><div class="b">${d.decision}</div></div><div class="m"><div class="s">Result vs Underlying</div><b>${g.result_vs_underlying}</b></div><div class="m"><div class="s">Robustheit</div><b>${g.robustness_status}</b></div><div class="m"><div class="s">Relative Edge</div><b>${g.relative_edge}</b></div><div class="m"><div class="s">Datenqualität</div><b>${g.data_quality}</b></div><div class="m"><div class="s">Stichprobe</div><b>${g.sample_security}</b></div></div></div><div class="c"><h3>Alle Märkte</h3><table><tr><th>Rang</th><th>Markt</th><th>Modell</th></tr>${rows}</table></div><div class="c"><h3>Goal Model</h3><p>Heim: <b>${x.home.toFixed(2)}</b> · Auswärts: <b>${x.away.toFixed(2)}</b> · Gesamt: <b>${x.total.toFixed(2)}</b></p><p>Influence Stress: <b>${g.influence_stress_probability_pct}%</b> · Fragility Stress: <b>${g.fragility_stress_probability_pct}%</b></p><p>Gegenargument: <b>${g.counterargument}</b></p></div><div class="c"><details><summary>Technische Diagnose</summary><pre>${JSON.stringify(d,null,2)}</pre></details></div>`;}catch(e){out.innerHTML='<div class="c bad">Fehler: '+String(e)+'</div>'}}</script></body></html>'''
+INDEX_HTML = r'''<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>FootyStats Prognose Engine</title><style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f3f4f6;margin:0;color:#111827}.w{max-width:900px;margin:auto;padding:18px}.c{background:#fff;border-radius:15px;padding:17px;margin:12px 0;box-shadow:0 1px 5px #0001}.g{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:9px}.m{border:1px solid #e5e7eb;border-radius:11px;padding:11px}.b{font-size:1.2rem;font-weight:700}.s{font-size:.85rem;color:#6b7280}.ok{color:#047857}.bad{color:#b91c1c}button{width:100%;padding:13px;border:0;border-radius:11px;background:#111827;color:#fff;font-weight:700;font-size:1rem}input{width:100%;margin:7px 0 14px}table{width:100%;border-collapse:collapse}td,th{padding:8px;border-bottom:1px solid #eee;text-align:left}pre{white-space:pre-wrap;word-break:break-word;font-size:.75rem}.sep{border-top:1px solid #e5e7eb;margin:18px 0}</style></head><body><div class="w"><div class="c"><h2>FootyStats Prognose Engine v0.3.0</h2><div class="s">Ein Match-Ordner = ein Analyse-Paket · keine Odds · keine externen Daten · INSUFFICIENT_DATA-Sperre und V5.2-Guardrails aktiv</div><h3>Match-Ordner auswählen</h3><p class="s">Empfohlen: genau MatchDaten, LeagueDaten, FormDaten, TableDaten und PlayerDaten eines Matches auswählen.</p><input id="folderFiles" type="file" webkitdirectory directory multiple accept=".json,application/json"><div class="sep"></div><h3>Fallback: JSON-Dateien gemeinsam auswählen</h3><p class="s">Falls die Ordnerauswahl am iPhone nicht angeboten wird, wähle hier alle fünf JSON-Dateien gleichzeitig aus.</p><input id="bundleFiles" type="file" multiple accept=".json,application/json"><button id="go">Analyse starten</button></div><div id="out"></div></div><script>function chosenFiles(){const folder=[...document.getElementById('folderFiles').files];if(folder.length)return folder;return[...document.getElementById('bundleFiles').files];}document.getElementById('go').onclick=async()=>{const files=chosenFiles(),out=document.getElementById('out');if(files.length<2){out.innerHTML='<div class="c bad"><b>Mindestens zwei JSON-Dateien nötig.</b></div>';return}out.innerHTML='<div class="c">Paket wird geprüft und analysiert…</div>';try{const form=new FormData();files.forEach(f=>form.append('files',f,f.webkitRelativePath||f.name));const r=await fetch('/api/predict-bundle',{method:'POST',body:form});const d=await r.json();if(!d.ok){out.innerHTML='<div class="c"><h3 class="bad">Analyse nicht möglich</h3><pre>'+JSON.stringify(d,null,2)+'</pre></div>';return}const g=d.diagnostics,x=d.expected_goals,ep=g.elite_protocol||{},eg=ep.gates||{};const rows=d.markets.map(z=>`<tr><td>${z.rank}</td><td>${z.label}</td><td><b>${z.probability_pct}%</b></td></tr>`).join('');const pairing=d.pairing||{},sources=d.input_sources||{};const sourceList=Object.entries(sources).map(([kind,file])=>`${kind}: ${file}`).join('<br>');out.innerHTML=`<div class="c"><div class="ok"><b>Dateien automatisch zugeordnet</b></div><p class="s">${sourceList||`Match: ${pairing.match_file||''}<br>League: ${pairing.league_file||''}`}</p></div><div class="c"><h3>Kurzentscheidung</h3><div class="g"><div class="m"><div class="s">Bester Markt</div><div class="b">${d.strongest_market.label}</div></div><div class="m"><div class="s">Wahrscheinlichkeit</div><div class="b">${d.strongest_market.probability_pct}%</div></div><div class="m"><div class="s">Entscheidung</div><div class="b">${d.decision}</div></div><div class="m"><div class="s">Result vs Underlying</div><b>${g.result_vs_underlying}</b></div><div class="m"><div class="s">Robustheit</div><b>${g.robustness_status}</b></div><div class="m"><div class="s">Relative Edge</div><b>${g.relative_edge}</b></div><div class="m"><div class="s">Datenqualität</div><b>${g.data_quality}</b></div><div class="m"><div class="s">Stichprobe</div><b>${g.sample_security}</b></div><div class="m"><div class="s">V5.2-Protokoll</div><b>${ep.phase_1_data_audit||"—"} / ${ep.phase_2_all_six_markets||"—"}</b></div><div class="m"><div class="s">Form-Gegencheck</div><b>${((eg.counterargument||{}).form||{}).status||"—"}</b></div></div></div><div class="c"><h3>Alle Märkte</h3><table><tr><th>Rang</th><th>Markt</th><th>Modell</th></tr>${rows}</table></div><div class="c"><h3>Goal Model</h3><p>Heim: <b>${x.home.toFixed(2)}</b> · Auswärts: <b>${x.away.toFixed(2)}</b> · Gesamt: <b>${x.total.toFixed(2)}</b></p><p>Influence Stress: <b>${g.influence_stress_probability_pct}%</b> · Fragility Stress: <b>${g.fragility_stress_probability_pct}%</b></p><p>Gegenargument: <b>${g.counterargument}</b></p></div><div class="c"><details><summary>Technische Diagnose</summary><pre>${JSON.stringify(d,null,2)}</pre></details></div>`;}catch(e){out.innerHTML='<div class="c bad">Fehler: '+String(e)+'</div>'}}</script></body></html>'''
 
 @app.get("/",response_class=HTMLResponse)
 def index():return INDEX_HTML
 @app.get("/api/health")
-def health():return {"ok":True,"version":"0.2.3"}
+def health():return {"ok":True,"version":"0.3.0"}
 @app.post("/api/predict")
 def predict_json(payload:Payload):
-    report = supplemental_report(payload.matchData, payload.formData, payload.tableData, payload.playerData)
+    report = supplemental_report(payload.matchData, payload.leagueData, payload.formData, payload.tableData, payload.playerData)
     return _attach_supplemental(predict(payload.matchData, payload.leagueData), report, {})
 @app.post("/api/predict-files")
 async def predict_files(match_file:UploadFile=File(...),league_file:UploadFile=File(...)):
     try:match_data=json.loads((await match_file.read()).decode("utf-8"));league_data=json.loads((await league_file.read()).decode("utf-8"))
     except Exception as exc:raise HTTPException(status_code=400,detail=f"Ungültige JSON-Datei: {exc}")
-    return predict(match_data,league_data)
+    return _attach_supplemental(predict(match_data,league_data), supplemental_report(match_data, league_data), {"match": match_file.filename or "MatchDaten.json", "league": league_file.filename or "LeagueDaten.json"})
 @app.post("/api/predict-bundle")
 async def predict_bundle(files:List[UploadFile]=File(...)):
     parsed=[];errors=[]
@@ -524,7 +758,7 @@ async def predict_bundle(files:List[UploadFile]=File(...)):
     pair=select_pair(parsed)
     if not pair.get("ok"):return pair
     extras = pair.get("supplemental_data") or {}
-    report = supplemental_report(pair["match_data"], extras.get("form"), extras.get("table"), extras.get("player"))
+    report = supplemental_report(pair["match_data"], pair["league_data"], extras.get("form"), extras.get("table"), extras.get("player"))
     result = _attach_supplemental(predict(pair["match_data"], pair["league_data"]), report, pair.get("source_files") or {})
     result["pairing"] = {**pair["pairing"], "match_file": pair["match_file"], "league_file": pair["league_file"]}
     return result
