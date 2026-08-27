@@ -323,16 +323,131 @@ def predict(match,league):
 
 # ---- Web/API layer v0.2 ----
 import json
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from fastapi import FastAPI, File, UploadFile, HTTPException, Form
 from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel
 
-app = FastAPI(title="FootyStats Prognose Engine", version="0.2.2")
+app = FastAPI(title="FootyStats Prognose Engine", version="0.2.3")
 
 class Payload(BaseModel):
     matchData: Dict[str, Any]
     leagueData: Dict[str, Any]
+    formData: Optional[Dict[str, Any]] = None
+    tableData: Optional[Dict[str, Any]] = None
+    playerData: Optional[Dict[str, Any]] = None
+
+
+def _source_kind(filename: str) -> Optional[str]:
+    """Classify a V2 export by its filename without inspecting arbitrary JSON."""
+    name = (filename or "").lower().replace(" ", "")
+    for kind, marker in (("match", "matchdaten"), ("league", "leaguedaten"),
+                         ("form", "formdaten"), ("table", "tabledaten"),
+                         ("player", "playerdaten")):
+        if marker in name:
+            return kind
+    return None
+
+
+def _same_team_id(value: Any, team_id: Any) -> bool:
+    value_num, team_num = num(value), num(team_id)
+    return value_num is not None and team_num is not None and int(value_num) == int(team_num)
+
+
+def _table_team_summary(table_data: Any, team_id: Any, venue: str) -> Dict[str, Any]:
+    table_key = "all_matches_table_home" if venue == "home" else "all_matches_table_away"
+    rows = ((table_data or {}).get("data") or {}).get(table_key) or []
+    row = next((item for item in rows if isinstance(item, dict) and _same_team_id(item.get("id"), team_id)), None)
+    if not row:
+        return {"available": False, "venue": venue}
+    matches = num(row.get("matchesPlayed"))
+    points = num(row.get("points"))
+    goals_for = num(row.get("seasonGoals"))
+    goals_against = num(row.get("seasonConceded"))
+    per_match = lambda value: round(value / matches, 3) if value is not None and matches and matches > 0 else None
+    return {
+        "available": True,
+        "venue": venue,
+        "matches": int(matches) if matches is not None else None,
+        "position": int(num(row.get("position"))) if num(row.get("position")) is not None else None,
+        "ppg": per_match(points),
+        "goals_for_per_match": per_match(goals_for),
+        "goals_against_per_match": per_match(goals_against),
+    }
+
+
+def _form_records(form_data: Any) -> List[Dict[str, Any]]:
+    records: List[Dict[str, Any]] = []
+    for page in ((form_data or {}).get("teams") or []):
+        if isinstance(page, dict):
+            records.extend(item for item in (page.get("data") or []) if isinstance(item, dict))
+    return records
+
+
+def _form_team_summary(form_data: Any, team_id: Any) -> Dict[str, Any]:
+    candidates = [item for item in _form_records(form_data) if _same_team_id(item.get("id"), team_id)]
+    if not candidates:
+        return {"available": False}
+    chosen = max(candidates, key=lambda item: num(item.get("last_x_match_num")) or 0)
+    stats = chosen.get("stats") or {}
+    sample = num(chosen.get("last_x_match_num")) or num(stats.get("last_x"))
+    return {
+        "available": True,
+        "sample": int(sample) if sample is not None else None,
+        "ppg": num(stats.get("seasonPPG_overall")),
+        "shots_on_target_avg": num(stats.get("shotsOnTargetAVG_overall")),
+        "btts_pct": num(stats.get("seasonBTTSPercentage_overall")),
+    }
+
+
+def _player_team_summary(player_data: Any, team_id: Any) -> Dict[str, Any]:
+    pages = ((player_data or {}).get("pages") or [])
+    players: List[Dict[str, Any]] = []
+    for page in pages:
+        if isinstance(page, dict):
+            players.extend(item for item in (page.get("data") or []) if isinstance(item, dict) and _same_team_id(item.get("club_team_id"), team_id))
+    minutes = sum(num(player.get("minutes_played_overall")) or 0 for player in players)
+    goals = sum(num(player.get("goals_overall")) or 0 for player in players)
+    assists = sum(num(player.get("assists_overall")) or 0 for player in players)
+    return {
+        "available": bool(players),
+        "players_found": len(players),
+        "minutes": round(minutes, 1),
+        "goals_per_90": round(goals * 90 / minutes, 3) if minutes > 0 else None,
+        "assists_per_90": round(assists * 90 / minutes, 3) if minutes > 0 else None,
+    }
+
+
+def supplemental_report(match_data: Any, form_data: Any = None, table_data: Any = None, player_data: Any = None) -> Dict[str, Any]:
+    """Expose V2-only inputs with coverage checks; do not invent unbacktested score weights."""
+    match = mf(match_data)
+    home_id, away_id = match.get("home_id"), match.get("away_id")
+    form = {"home": _form_team_summary(form_data, home_id), "away": _form_team_summary(form_data, away_id)}
+    table = {"home": _table_team_summary(table_data, home_id, "home"), "away": _table_team_summary(table_data, away_id, "away")}
+    player = {"home": _player_team_summary(player_data, home_id), "away": _player_team_summary(player_data, away_id)}
+    return {
+        "received": {"form": form_data is not None, "table": table_data is not None, "player": player_data is not None},
+        "coverage": {
+            "form": {**form, "usable_both": form["home"]["available"] and form["away"]["available"]},
+            "table": {**table, "usable_both": table["home"]["available"] and table["away"]["available"]},
+            "player": {**player, "usable_both": player["home"]["available"] and player["away"]["available"]},
+        },
+        "model_use": {
+            "table": "Explizite Team-/Venue-Prüfung und Diagnose; Score-Gewichte erst nach zeitbasiertem Backtest.",
+            "form": "Nur bei Daten für beide Teams als vollständig markiert; unvollständige Form wird nicht einseitig gewichtet.",
+            "player": "Kader-Saisonwerte werden geprüft, aber ohne bestätigte Aufstellung nicht als Match-Score gewichtet.",
+        },
+    }
+
+
+def _attach_supplemental(result: Dict[str, Any], report: Dict[str, Any], source_files: Dict[str, str]) -> Dict[str, Any]:
+    result = dict(result)
+    diagnostics = dict(result.get("diagnostics") or {})
+    diagnostics["supplemental_inputs"] = report
+    result["diagnostics"] = diagnostics
+    result["input_sources"] = source_files
+    result["model_version"] = "0.2.3"
+    return result
 
 
 def _is_match_data(data: Any, filename: str = "") -> bool:
@@ -357,26 +472,41 @@ def _league_candidate_score(data: Any, filename: str, match_fields: Dict[str, An
 
 
 def select_pair(parsed_files: List[Dict[str, Any]]) -> Dict[str, Any]:
-    match_candidates = [x for x in parsed_files if _is_match_data(x["data"], x["name"])]
+    by_kind: Dict[str, List[Dict[str, Any]]] = {kind: [] for kind in ("match", "league", "form", "table", "player")}
+    for item in parsed_files:
+        kind = _source_kind(item["name"])
+        if kind:
+            by_kind[kind].append(item)
+    duplicate_kinds = [kind for kind, items in by_kind.items() if len(items) > 1]
+    if duplicate_kinds:
+        return {"ok": False, "decision": "ANALYSE NICHT MÖGLICH", "phase": "PAIRING_FAILED", "error": "Mehrere V2-Dateien desselben Typs erkannt.", "duplicate_types": duplicate_kinds}
+    match_candidates = by_kind["match"] or [x for x in parsed_files if _is_match_data(x["data"], x["name"])]
     if len(match_candidates) == 0:return {"ok":False,"decision":"ANALYSE NICHT MÖGLICH","phase":"PAIRING_FAILED","error":"Keine MatchDaten-Datei im ausgewählten Paket erkannt.","files":[x["name"] for x in parsed_files]}
     if len(match_candidates) > 1:return {"ok":False,"decision":"ANALYSE NICHT MÖGLICH","phase":"PAIRING_FAILED","error":"Mehrere MatchDaten-Dateien erkannt. Bitte genau einen Match-Unterordner auswählen.","match_files":[x["name"] for x in match_candidates]}
-    match_file=match_candidates[0]; match_fields=mf(match_file["data"]); league_candidates=[x for x in parsed_files if x is not match_file]
+    match_file=match_candidates[0]; match_fields=mf(match_file["data"])
+    # V2 filenames are authoritative. This prevents Form/Table/Player JSON from being
+    # misclassified as league data merely because it also contains a team identifier.
+    league_candidates = by_kind["league"] or [x for x in parsed_files if x is not match_file and _source_kind(x["name"]) is None]
     if not league_candidates:return {"ok":False,"decision":"ANALYSE NICHT MÖGLICH","phase":"PAIRING_FAILED","error":"Keine LeagueDaten-Datei im ausgewählten Paket gefunden.","match_file":match_file["name"]}
     scored=[]
     for item in league_candidates:
         info=_league_candidate_score(item["data"],item["name"],match_fields);scored.append({**item,**info})
     scored.sort(key=lambda x:x["score"],reverse=True);best=scored[0]
     if not (best["home_found"] and best["away_found"]):return {"ok":False,"decision":"ANALYSE NICHT MÖGLICH","phase":"PAIRING_FAILED","error":"Keine LeagueDaten-Datei enthält beide Teams dieses Matches.","match_file":match_file["name"],"match":match_fields,"checked_league_files":[{"name":x["name"],"home_found":x["home_found"],"away_found":x["away_found"],"pager":x["pager"],"score":x["score"]} for x in scored]}
-    return {"ok":True,"match_file":match_file["name"],"league_file":best["name"],"match_data":match_file["data"],"league_data":best["data"],"pairing":{"match_id":match_fields.get("match_id"),"competition_id":match_fields.get("competition_id"),"home_id":match_fields.get("home_id"),"away_id":match_fields.get("away_id"),"league_score":best["score"],"league_reasons":best["reasons"]}}
+    source_files = {kind: items[0]["name"] for kind, items in by_kind.items() if items}
+    supplemental_data = {kind: items[0]["data"] for kind, items in by_kind.items() if kind in {"form", "table", "player"} and items}
+    return {"ok":True,"match_file":match_file["name"],"league_file":best["name"],"match_data":match_file["data"],"league_data":best["data"],"supplemental_data":supplemental_data,"source_files":source_files,"pairing":{"match_id":match_fields.get("match_id"),"competition_id":match_fields.get("competition_id"),"home_id":match_fields.get("home_id"),"away_id":match_fields.get("away_id"),"league_score":best["score"],"league_reasons":best["reasons"]}}
 
-INDEX_HTML = r'''<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>FootyStats Prognose Engine</title><style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f3f4f6;margin:0;color:#111827}.w{max-width:900px;margin:auto;padding:18px}.c{background:#fff;border-radius:15px;padding:17px;margin:12px 0;box-shadow:0 1px 5px #0001}.g{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:9px}.m{border:1px solid #e5e7eb;border-radius:11px;padding:11px}.b{font-size:1.2rem;font-weight:700}.s{font-size:.85rem;color:#6b7280}.ok{color:#047857}.bad{color:#b91c1c}button{width:100%;padding:13px;border:0;border-radius:11px;background:#111827;color:#fff;font-weight:700;font-size:1rem}input{width:100%;margin:7px 0 14px}table{width:100%;border-collapse:collapse}td,th{padding:8px;border-bottom:1px solid #eee;text-align:left}pre{white-space:pre-wrap;word-break:break-word;font-size:.75rem}.sep{border-top:1px solid #e5e7eb;margin:18px 0}</style></head><body><div class="w"><div class="c"><h2>FootyStats Prognose Engine v0.2.2</h2><div class="s">Ein Match-Ordner = ein Analyse-Paket · keine Odds · keine externen Daten · INSUFFICIENT_DATA-Sperre aktiv</div><h3>Match-Ordner auswählen</h3><p class="s">Der Ordner soll genau eine MatchDaten.json und die dazugehörige LeagueDaten.json enthalten.</p><input id="folderFiles" type="file" webkitdirectory directory multiple accept=".json,application/json"><div class="sep"></div><h3>Fallback: beide Dateien gemeinsam auswählen</h3><p class="s">Falls die Ordnerauswahl am iPhone nicht angeboten wird, kannst du hier beide JSON-Dateien gleichzeitig auswählen.</p><input id="bundleFiles" type="file" multiple accept=".json,application/json"><button id="go">Analyse starten</button></div><div id="out"></div></div><script>function chosenFiles(){const folder=[...document.getElementById('folderFiles').files];if(folder.length)return folder;return[...document.getElementById('bundleFiles').files];}document.getElementById('go').onclick=async()=>{const files=chosenFiles(),out=document.getElementById('out');if(files.length<2){out.innerHTML='<div class="c bad"><b>Mindestens zwei JSON-Dateien nötig.</b></div>';return}out.innerHTML='<div class="c">Paket wird geprüft und analysiert…</div>';try{const form=new FormData();files.forEach(f=>form.append('files',f,f.webkitRelativePath||f.name));const r=await fetch('/api/predict-bundle',{method:'POST',body:form});const d=await r.json();if(!d.ok){out.innerHTML='<div class="c"><h3 class="bad">Analyse nicht möglich</h3><pre>'+JSON.stringify(d,null,2)+'</pre></div>';return}const g=d.diagnostics,x=d.expected_goals;const rows=d.markets.map(z=>`<tr><td>${z.rank}</td><td>${z.label}</td><td><b>${z.probability_pct}%</b></td></tr>`).join('');const pairing=d.pairing||{};out.innerHTML=`<div class="c"><div class="ok"><b>Dateien automatisch zugeordnet</b></div><p class="s">Match: ${pairing.match_file||''}<br>League: ${pairing.league_file||''}</p></div><div class="c"><h3>Kurzentscheidung</h3><div class="g"><div class="m"><div class="s">Bester Markt</div><div class="b">${d.strongest_market.label}</div></div><div class="m"><div class="s">Wahrscheinlichkeit</div><div class="b">${d.strongest_market.probability_pct}%</div></div><div class="m"><div class="s">Entscheidung</div><div class="b">${d.decision}</div></div><div class="m"><div class="s">Result vs Underlying</div><b>${g.result_vs_underlying}</b></div><div class="m"><div class="s">Robustheit</div><b>${g.robustness_status}</b></div><div class="m"><div class="s">Relative Edge</div><b>${g.relative_edge}</b></div><div class="m"><div class="s">Datenqualität</div><b>${g.data_quality}</b></div><div class="m"><div class="s">Stichprobe</div><b>${g.sample_security}</b></div></div></div><div class="c"><h3>Alle Märkte</h3><table><tr><th>Rang</th><th>Markt</th><th>Modell</th></tr>${rows}</table></div><div class="c"><h3>Goal Model</h3><p>Heim: <b>${x.home.toFixed(2)}</b> · Auswärts: <b>${x.away.toFixed(2)}</b> · Gesamt: <b>${x.total.toFixed(2)}</b></p><p>Influence Stress: <b>${g.influence_stress_probability_pct}%</b> · Fragility Stress: <b>${g.fragility_stress_probability_pct}%</b></p><p>Gegenargument: <b>${g.counterargument}</b></p></div><div class="c"><details><summary>Technische Diagnose</summary><pre>${JSON.stringify(d,null,2)}</pre></details></div>`;}catch(e){out.innerHTML='<div class="c bad">Fehler: '+String(e)+'</div>'}}</script></body></html>'''
+INDEX_HTML = r'''<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>FootyStats Prognose Engine</title><style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f3f4f6;margin:0;color:#111827}.w{max-width:900px;margin:auto;padding:18px}.c{background:#fff;border-radius:15px;padding:17px;margin:12px 0;box-shadow:0 1px 5px #0001}.g{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:9px}.m{border:1px solid #e5e7eb;border-radius:11px;padding:11px}.b{font-size:1.2rem;font-weight:700}.s{font-size:.85rem;color:#6b7280}.ok{color:#047857}.bad{color:#b91c1c}button{width:100%;padding:13px;border:0;border-radius:11px;background:#111827;color:#fff;font-weight:700;font-size:1rem}input{width:100%;margin:7px 0 14px}table{width:100%;border-collapse:collapse}td,th{padding:8px;border-bottom:1px solid #eee;text-align:left}pre{white-space:pre-wrap;word-break:break-word;font-size:.75rem}.sep{border-top:1px solid #e5e7eb;margin:18px 0}</style></head><body><div class="w"><div class="c"><h2>FootyStats Prognose Engine v0.2.3</h2><div class="s">Ein Match-Ordner = ein Analyse-Paket · keine Odds · keine externen Daten · INSUFFICIENT_DATA-Sperre aktiv</div><h3>Match-Ordner auswählen</h3><p class="s">Empfohlen: genau MatchDaten, LeagueDaten, FormDaten, TableDaten und PlayerDaten eines Matches auswählen.</p><input id="folderFiles" type="file" webkitdirectory directory multiple accept=".json,application/json"><div class="sep"></div><h3>Fallback: JSON-Dateien gemeinsam auswählen</h3><p class="s">Falls die Ordnerauswahl am iPhone nicht angeboten wird, wähle hier alle fünf JSON-Dateien gleichzeitig aus.</p><input id="bundleFiles" type="file" multiple accept=".json,application/json"><button id="go">Analyse starten</button></div><div id="out"></div></div><script>function chosenFiles(){const folder=[...document.getElementById('folderFiles').files];if(folder.length)return folder;return[...document.getElementById('bundleFiles').files];}document.getElementById('go').onclick=async()=>{const files=chosenFiles(),out=document.getElementById('out');if(files.length<2){out.innerHTML='<div class="c bad"><b>Mindestens zwei JSON-Dateien nötig.</b></div>';return}out.innerHTML='<div class="c">Paket wird geprüft und analysiert…</div>';try{const form=new FormData();files.forEach(f=>form.append('files',f,f.webkitRelativePath||f.name));const r=await fetch('/api/predict-bundle',{method:'POST',body:form});const d=await r.json();if(!d.ok){out.innerHTML='<div class="c"><h3 class="bad">Analyse nicht möglich</h3><pre>'+JSON.stringify(d,null,2)+'</pre></div>';return}const g=d.diagnostics,x=d.expected_goals;const rows=d.markets.map(z=>`<tr><td>${z.rank}</td><td>${z.label}</td><td><b>${z.probability_pct}%</b></td></tr>`).join('');const pairing=d.pairing||{},sources=d.input_sources||{};const sourceList=Object.entries(sources).map(([kind,file])=>`${kind}: ${file}`).join('<br>');out.innerHTML=`<div class="c"><div class="ok"><b>Dateien automatisch zugeordnet</b></div><p class="s">${sourceList||`Match: ${pairing.match_file||''}<br>League: ${pairing.league_file||''}`}</p></div><div class="c"><h3>Kurzentscheidung</h3><div class="g"><div class="m"><div class="s">Bester Markt</div><div class="b">${d.strongest_market.label}</div></div><div class="m"><div class="s">Wahrscheinlichkeit</div><div class="b">${d.strongest_market.probability_pct}%</div></div><div class="m"><div class="s">Entscheidung</div><div class="b">${d.decision}</div></div><div class="m"><div class="s">Result vs Underlying</div><b>${g.result_vs_underlying}</b></div><div class="m"><div class="s">Robustheit</div><b>${g.robustness_status}</b></div><div class="m"><div class="s">Relative Edge</div><b>${g.relative_edge}</b></div><div class="m"><div class="s">Datenqualität</div><b>${g.data_quality}</b></div><div class="m"><div class="s">Stichprobe</div><b>${g.sample_security}</b></div></div></div><div class="c"><h3>Alle Märkte</h3><table><tr><th>Rang</th><th>Markt</th><th>Modell</th></tr>${rows}</table></div><div class="c"><h3>Goal Model</h3><p>Heim: <b>${x.home.toFixed(2)}</b> · Auswärts: <b>${x.away.toFixed(2)}</b> · Gesamt: <b>${x.total.toFixed(2)}</b></p><p>Influence Stress: <b>${g.influence_stress_probability_pct}%</b> · Fragility Stress: <b>${g.fragility_stress_probability_pct}%</b></p><p>Gegenargument: <b>${g.counterargument}</b></p></div><div class="c"><details><summary>Technische Diagnose</summary><pre>${JSON.stringify(d,null,2)}</pre></details></div>`;}catch(e){out.innerHTML='<div class="c bad">Fehler: '+String(e)+'</div>'}}</script></body></html>'''
 
 @app.get("/",response_class=HTMLResponse)
 def index():return INDEX_HTML
 @app.get("/api/health")
-def health():return {"ok":True,"version":"0.2.2"}
+def health():return {"ok":True,"version":"0.2.3"}
 @app.post("/api/predict")
-def predict_json(payload:Payload):return predict(payload.matchData,payload.leagueData)
+def predict_json(payload:Payload):
+    report = supplemental_report(payload.matchData, payload.formData, payload.tableData, payload.playerData)
+    return _attach_supplemental(predict(payload.matchData, payload.leagueData), report, {})
 @app.post("/api/predict-files")
 async def predict_files(match_file:UploadFile=File(...),league_file:UploadFile=File(...)):
     try:match_data=json.loads((await match_file.read()).decode("utf-8"));league_data=json.loads((await league_file.read()).decode("utf-8"))
@@ -393,7 +523,11 @@ async def predict_bundle(files:List[UploadFile]=File(...)):
     if errors:return {"ok":False,"decision":"ANALYSE NICHT MÖGLICH","phase":"FILE_READ_FAILED","error":"Mindestens eine JSON-Datei konnte nicht gelesen werden.","files":errors}
     pair=select_pair(parsed)
     if not pair.get("ok"):return pair
-    result=predict(pair["match_data"],pair["league_data"]);result["pairing"]={**pair["pairing"],"match_file":pair["match_file"],"league_file":pair["league_file"]};result["model_version"]="0.2.2";return result
+    extras = pair.get("supplemental_data") or {}
+    report = supplemental_report(pair["match_data"], extras.get("form"), extras.get("table"), extras.get("player"))
+    result = _attach_supplemental(predict(pair["match_data"], pair["league_data"]), report, pair.get("source_files") or {})
+    result["pairing"] = {**pair["pairing"], "match_file": pair["match_file"], "league_file": pair["league_file"]}
+    return result
 
 
 # ---- Temporary HubSign helper ----
