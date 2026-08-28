@@ -1,4 +1,7 @@
 import math
+import hashlib
+import re
+from datetime import datetime, timezone
 
 def nkey(s): return ''.join(c.lower() for c in str(s) if c.isalnum() or c=='_')
 def num(v):
@@ -731,7 +734,287 @@ def select_pair(parsed_files: List[Dict[str, Any]]) -> Dict[str, Any]:
     supplemental_data = {kind: items[0]["data"] for kind, items in by_kind.items() if kind in {"form", "table", "player"} and items}
     return {"ok":True,"match_file":match_file["name"],"league_file":best["name"],"match_data":match_file["data"],"league_data":best["data"],"supplemental_data":supplemental_data,"source_files":source_files,"pairing":{"match_id":match_fields.get("match_id"),"competition_id":match_fields.get("competition_id"),"home_id":match_fields.get("home_id"),"away_id":match_fields.get("away_id"),"league_score":best["score"],"league_reasons":best["reasons"]}}
 
-INDEX_HTML = r'''<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>FootyStats Prognose Engine</title><style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f3f4f6;margin:0;color:#111827}.w{max-width:900px;margin:auto;padding:18px}.c{background:#fff;border-radius:15px;padding:17px;margin:12px 0;box-shadow:0 1px 5px #0001}.g{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:9px}.m{border:1px solid #e5e7eb;border-radius:11px;padding:11px}.b{font-size:1.2rem;font-weight:700}.s{font-size:.85rem;color:#6b7280}.ok{color:#047857}.bad{color:#b91c1c}button{width:100%;padding:13px;border:0;border-radius:11px;background:#111827;color:#fff;font-weight:700;font-size:1rem}input{width:100%;margin:7px 0 14px}table{width:100%;border-collapse:collapse}td,th{padding:8px;border-bottom:1px solid #eee;text-align:left}pre{white-space:pre-wrap;word-break:break-word;font-size:.75rem}.sep{border-top:1px solid #e5e7eb;margin:18px 0}</style></head><body><div class="w"><div class="c"><h2>FootyStats Prognose Engine v0.3.0</h2><div class="s">Ein Match-Ordner = ein Analyse-Paket · keine Odds · keine externen Daten · INSUFFICIENT_DATA-Sperre und V5.2-Guardrails aktiv</div><h3>Match-Ordner auswählen</h3><p class="s">Empfohlen: genau MatchDaten, LeagueDaten, FormDaten, TableDaten und PlayerDaten eines Matches auswählen.</p><input id="folderFiles" type="file" webkitdirectory directory multiple accept=".json,application/json"><div class="sep"></div><h3>Fallback: JSON-Dateien gemeinsam auswählen</h3><p class="s">Falls die Ordnerauswahl am iPhone nicht angeboten wird, wähle hier alle fünf JSON-Dateien gleichzeitig aus.</p><input id="bundleFiles" type="file" multiple accept=".json,application/json"><button id="go">Analyse starten</button></div><div id="out"></div></div><script>function chosenFiles(){const folder=[...document.getElementById('folderFiles').files];if(folder.length)return folder;return[...document.getElementById('bundleFiles').files];}document.getElementById('go').onclick=async()=>{const files=chosenFiles(),out=document.getElementById('out');if(files.length<2){out.innerHTML='<div class="c bad"><b>Mindestens zwei JSON-Dateien nötig.</b></div>';return}out.innerHTML='<div class="c">Paket wird geprüft und analysiert…</div>';try{const form=new FormData();files.forEach(f=>form.append('files',f,f.webkitRelativePath||f.name));const r=await fetch('/api/predict-bundle',{method:'POST',body:form});const d=await r.json();if(!d.ok){out.innerHTML='<div class="c"><h3 class="bad">Analyse nicht möglich</h3><pre>'+JSON.stringify(d,null,2)+'</pre></div>';return}const g=d.diagnostics,x=d.expected_goals,ep=g.elite_protocol||{},eg=ep.gates||{};const rows=d.markets.map(z=>`<tr><td>${z.rank}</td><td>${z.label}</td><td><b>${z.probability_pct}%</b></td></tr>`).join('');const pairing=d.pairing||{},sources=d.input_sources||{};const sourceList=Object.entries(sources).map(([kind,file])=>`${kind}: ${file}`).join('<br>');out.innerHTML=`<div class="c"><div class="ok"><b>Dateien automatisch zugeordnet</b></div><p class="s">${sourceList||`Match: ${pairing.match_file||''}<br>League: ${pairing.league_file||''}`}</p></div><div class="c"><h3>Kurzentscheidung</h3><div class="g"><div class="m"><div class="s">Bester Markt</div><div class="b">${d.strongest_market.label}</div></div><div class="m"><div class="s">Wahrscheinlichkeit</div><div class="b">${d.strongest_market.probability_pct}%</div></div><div class="m"><div class="s">Entscheidung</div><div class="b">${d.decision}</div></div><div class="m"><div class="s">Result vs Underlying</div><b>${g.result_vs_underlying}</b></div><div class="m"><div class="s">Robustheit</div><b>${g.robustness_status}</b></div><div class="m"><div class="s">Relative Edge</div><b>${g.relative_edge}</b></div><div class="m"><div class="s">Datenqualität</div><b>${g.data_quality}</b></div><div class="m"><div class="s">Stichprobe</div><b>${g.sample_security}</b></div><div class="m"><div class="s">V5.2-Protokoll</div><b>${ep.phase_1_data_audit||"—"} / ${ep.phase_2_all_six_markets||"—"}</b></div><div class="m"><div class="s">Form-Gegencheck</div><b>${((eg.counterargument||{}).form||{}).status||"—"}</b></div></div></div><div class="c"><h3>Alle Märkte</h3><table><tr><th>Rang</th><th>Markt</th><th>Modell</th></tr>${rows}</table></div><div class="c"><h3>Goal Model</h3><p>Heim: <b>${x.home.toFixed(2)}</b> · Auswärts: <b>${x.away.toFixed(2)}</b> · Gesamt: <b>${x.total.toFixed(2)}</b></p><p>Influence Stress: <b>${g.influence_stress_probability_pct}%</b> · Fragility Stress: <b>${g.fragility_stress_probability_pct}%</b></p><p>Gegenargument: <b>${g.counterargument}</b></p></div><div class="c"><details><summary>Technische Diagnose</summary><pre>${JSON.stringify(d,null,2)}</pre></details></div>`;}catch(e){out.innerHTML='<div class="c bad">Fehler: '+String(e)+'</div>'}}</script></body></html>'''
+# ---- Local iPhone archive package (no server-side persistence) ----
+_ARCHIVE_VERSION = "1.0.0"
+_ARCHIVE_SOURCE_KINDS = ("match", "league", "form", "table", "player")
+_ARCHIVE_SECRET_PARTS = ("apikey", "token", "authorization", "password", "secret", "credential")
+_ARCHIVE_SENSITIVE_QUERY = re.compile(r"(?i)(api[_-]?key|token|authorization|password|secret)=([^&\s]+)")
+
+
+def _archive_key_blocked(key: Any) -> bool:
+    normal = nkey(str(key)).replace("_", "")
+    return "odds" in normal or any(part in normal for part in _ARCHIVE_SECRET_PARTS)
+
+
+def _archive_sanitize(value: Any) -> Any:
+    """Remove odds and secret-like fields before an archive leaves the browser."""
+    if isinstance(value, dict):
+        return {
+            str(key): _archive_sanitize(child)
+            for key, child in value.items()
+            if not _archive_key_blocked(key)
+        }
+    if isinstance(value, list):
+        return [_archive_sanitize(child) for child in value]
+    if isinstance(value, str):
+        return _ARCHIVE_SENSITIVE_QUERY.sub(r"\1=REDACTED", value)
+    return value
+
+
+def _archive_bytes(value: Any) -> bytes:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
+
+
+def _archive_sha256(value: Any) -> str:
+    return hashlib.sha256(_archive_bytes(value)).hexdigest()
+
+
+def _archive_now() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _archive_name_piece(value: Any, fallback: str = "unbekannt") -> str:
+    piece = re.sub(r"[^A-Za-z0-9._-]+", "-", str(value or fallback)).strip("-")
+    return (piece or fallback)[:72]
+
+
+def _archive_sources(parsed_files: List[Dict[str, Any]], pair: Dict[str, Any]) -> Dict[str, Any]:
+    wanted = {
+        "match": pair.get("match_file"),
+        "league": pair.get("league_file"),
+    }
+    wanted.update(pair.get("source_files") or {})
+    sources: Dict[str, Any] = {}
+    for kind in _ARCHIVE_SOURCE_KINDS:
+        filename = wanted.get(kind)
+        if not filename:
+            continue
+        item = next((candidate for candidate in parsed_files if candidate.get("name") == filename), None)
+        if item is None:
+            continue
+        content = _archive_sanitize(item.get("data"))
+        sources[kind] = {
+            "filename": _archive_sanitize(str(filename)),
+            "sha256": _archive_sha256(content),
+            "content": content,
+        }
+    return sources
+
+
+def _archive_package(parsed_files: List[Dict[str, Any]], pair: Dict[str, Any], result: Dict[str, Any]) -> Dict[str, Any]:
+    created_at = _archive_now()
+    match = dict(((result.get("audit") or {}).get("match") or {}))
+    sources = _archive_sources(parsed_files, pair)
+    source_hashes = {kind: item["sha256"] for kind, item in sources.items()}
+    fingerprint = _archive_sha256({
+        "match_id": match.get("match_id"),
+        "created_at": created_at,
+        "source_hashes": source_hashes,
+        "model_version": result.get("model_version"),
+    })
+    available = sorted(sources)
+    return {
+        "archive_schema": "footystats-ios-archive-v1",
+        "archive_version": _ARCHIVE_VERSION,
+        "record_id": f"{_archive_name_piece(match.get('match_id'), 'match')}-{created_at.replace(':', '').replace('-', '')}-{fingerprint[:10]}",
+        "created_at": created_at,
+        "storage": "iphone_or_icloud_only",
+        "server_side_persistence": False,
+        "match": _archive_sanitize({
+            "match_id": match.get("match_id"),
+            "home_name": match.get("home_name"),
+            "away_name": match.get("away_name"),
+            "competition_id": match.get("competition_id"),
+            "season": match.get("season"),
+            "date": match.get("date"),
+        }),
+        "analysis": _archive_sanitize(result),
+        "sources": sources,
+        "source_coverage": {
+            "expected": list(_ARCHIVE_SOURCE_KINDS),
+            "available": available,
+            "missing": [kind for kind in _ARCHIVE_SOURCE_KINDS if kind not in sources],
+        },
+        "policies": {
+            "odds_removed_before_download": True,
+            "secret_like_fields_removed_before_download": True,
+            "external_data_used": False,
+            "actual_result_pending": True,
+        },
+    }
+
+
+def _archive_download_name(package: Dict[str, Any]) -> str:
+    match = package.get("match") or {}
+    decision = ((package.get("analysis") or {}).get("decision")) or "ANALYSE"
+    stamp = str(package.get("created_at") or "").replace(":", "").replace("-", "")
+    return "FootyStats-Archiv-{}-{}-vs-{}-{}-{}.json".format(
+        _archive_name_piece(match.get("match_id"), "match"),
+        _archive_name_piece(match.get("home_name"), "heim"),
+        _archive_name_piece(match.get("away_name"), "auswaerts"),
+        _archive_name_piece(decision, "analyse"),
+        _archive_name_piece(stamp, "zeit"),
+    )
+
+
+async def _read_bundle_uploads(files: List[UploadFile]) -> Any:
+    parsed: List[Dict[str, Any]] = []
+    errors: List[Dict[str, str]] = []
+    for upload in files:
+        name = upload.filename or "unbekannt.json"
+        if not name.lower().endswith(".json"):
+            continue
+        try:
+            raw = await upload.read()
+            parsed.append({"name": name, "data": json.loads(raw.decode("utf-8"))})
+        except Exception as exc:
+            errors.append({"name": name, "error": str(exc)})
+    return parsed, errors
+
+
+def _analyze_bundle(parsed_files: List[Dict[str, Any]]) -> Dict[str, Any]:
+    pair = select_pair(parsed_files)
+    if not pair.get("ok"):
+        return pair
+    extras = pair.get("supplemental_data") or {}
+    report = supplemental_report(
+        pair["match_data"],
+        pair["league_data"],
+        extras.get("form"),
+        extras.get("table"),
+        extras.get("player"),
+    )
+    result = _attach_supplemental(
+        predict(pair["match_data"], pair["league_data"]),
+        report,
+        pair.get("source_files") or {},
+    )
+    result["pairing"] = {
+        **pair["pairing"],
+        "match_file": pair["match_file"],
+        "league_file": pair["league_file"],
+    }
+    result["_archive_pair"] = pair
+    return result
+
+
+INDEX_HTML = r'''<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FootyStats Prognose Engine</title>
+<style>
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f3f4f6;margin:0;color:#111827}
+.w{max-width:900px;margin:auto;padding:18px}.c{background:#fff;border-radius:15px;padding:17px;margin:12px 0;box-shadow:0 1px 5px #0001}
+.g{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:9px}.m{border:1px solid #e5e7eb;border-radius:11px;padding:11px}
+.b{font-size:1.2rem;font-weight:700}.s{font-size:.85rem;color:#6b7280}.ok{color:#047857}.bad{color:#b91c1c}
+button{width:100%;padding:13px;border:0;border-radius:11px;background:#111827;color:#fff;font-weight:700;font-size:1rem;margin-top:8px}
+button.secondary{background:#2563eb}button:disabled{opacity:.55}input{width:100%;margin:7px 0 14px}
+table{width:100%;border-collapse:collapse}td,th{padding:8px;border-bottom:1px solid #eee;text-align:left}
+pre{white-space:pre-wrap;word-break:break-word;font-size:.75rem}.sep{border-top:1px solid #e5e7eb;margin:18px 0}
+</style>
+</head>
+<body>
+<div class="w">
+  <div class="c">
+    <h2>FootyStats Prognose Engine v0.3.0</h2>
+    <div class="s">Ein Match-Ordner = ein Analyse-Paket · keine Odds · keine externen Daten · INSUFFICIENT_DATA-Sperre und V5.2-Guardrails aktiv</div>
+    <h3>Match-Ordner auswählen</h3>
+    <p class="s">Empfohlen: genau MatchDaten, LeagueDaten, FormDaten, TableDaten und PlayerDaten eines Matches auswählen.</p>
+    <input id="folderFiles" type="file" webkitdirectory directory multiple accept=".json,application/json">
+    <div class="sep"></div>
+    <h3>Fallback: JSON-Dateien gemeinsam auswählen</h3>
+    <p class="s">Falls die Ordnerauswahl am iPhone nicht angeboten wird, wähle hier alle fünf JSON-Dateien gleichzeitig aus.</p>
+    <input id="bundleFiles" type="file" multiple accept=".json,application/json">
+    <button id="go">Analyse starten</button>
+  </div>
+  <div id="out"></div>
+</div>
+<script>
+function chosenFiles(){
+  const folder=[...document.getElementById('folderFiles').files];
+  if(folder.length)return folder;
+  return [...document.getElementById('bundleFiles').files];
+}
+function escapeHtml(value){
+  return String(value==null?'':value).replace(/[&<>"']/g,function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+  });
+}
+function formFor(files){
+  const form=new FormData();
+  files.forEach(function(file){form.append('files',file,file.webkitRelativePath||file.name);});
+  return form;
+}
+async function downloadArchive(files,status){
+  status.className='s';
+  status.textContent='Archivpaket wird vorbereitet…';
+  const response=await fetch('/api/archive-bundle',{method:'POST',body:formFor(files)});
+  const disposition=response.headers.get('content-disposition')||'';
+  if(!response.ok||!disposition){
+    let message='Archivpaket konnte nicht erstellt werden.';
+    try{const problem=await response.json();message=problem.error||problem.detail||message;}catch(ignore){}
+    throw new Error(message);
+  }
+  const blob=await response.blob();
+  const match=disposition.match(/filename="([^"]+)"/);
+  const name=match?match[1]:'FootyStats-Archiv.json';
+  const url=URL.createObjectURL(blob);
+  const link=document.createElement('a');
+  link.href=url;link.download=name;document.body.appendChild(link);link.click();link.remove();
+  setTimeout(function(){URL.revokeObjectURL(url);},5000);
+  status.className='s ok';
+  status.textContent='Archivpaket heruntergeladen. Safari speichert es in deinem eingestellten Downloads-Ordner.';
+}
+document.getElementById('go').onclick=async function(){
+  const files=chosenFiles(),out=document.getElementById('out');
+  if(files.length<2){
+    out.innerHTML='<div class="c bad"><b>Mindestens zwei JSON-Dateien nötig.</b></div>';return;
+  }
+  out.innerHTML='<div class="c">Paket wird geprüft und analysiert…</div>';
+  try{
+    const response=await fetch('/api/predict-bundle',{method:'POST',body:formFor(files)});
+    const data=await response.json();
+    if(!data.ok){
+      out.innerHTML='<div class="c"><h3 class="bad">Analyse nicht möglich</h3><pre>'+escapeHtml(JSON.stringify(data,null,2))+'</pre></div>';return;
+    }
+    const diag=data.diagnostics||{},goal=data.expected_goals||{},protocol=diag.elite_protocol||{},gates=protocol.gates||{};
+    const rows=(data.markets||[]).map(function(item){
+      return '<tr><td>'+escapeHtml(item.rank)+'</td><td>'+escapeHtml(item.label)+'</td><td><b>'+escapeHtml(item.probability_pct)+'%</b></td></tr>';
+    }).join('');
+    const sources=Object.entries(data.input_sources||{}).map(function(entry){
+      return escapeHtml(entry[0])+': '+escapeHtml(entry[1]);
+    }).join('<br>');
+    out.innerHTML=
+      '<div class="c"><div class="ok"><b>Dateien automatisch zugeordnet</b></div><p class="s">'+
+      (sources||'Match: '+escapeHtml((data.pairing||{}).match_file)+'<br>League: '+escapeHtml((data.pairing||{}).league_file))+
+      '</p></div>'+
+      '<div class="c"><h3>Kurzentscheidung</h3><div class="g">'+
+      '<div class="m"><div class="s">Bester Markt</div><div class="b">'+escapeHtml((data.strongest_market||{}).label)+'</div></div>'+
+      '<div class="m"><div class="s">Wahrscheinlichkeit</div><div class="b">'+escapeHtml((data.strongest_market||{}).probability_pct)+'%</div></div>'+
+      '<div class="m"><div class="s">Entscheidung</div><div class="b">'+escapeHtml(data.decision)+'</div></div>'+
+      '<div class="m"><div class="s">Datenqualität</div><b>'+escapeHtml(diag.data_quality)+'</b></div>'+
+      '<div class="m"><div class="s">Stichprobe</div><b>'+escapeHtml(diag.sample_security)+'</b></div>'+
+      '<div class="m"><div class="s">V5.2-Protokoll</div><b>'+escapeHtml(protocol.phase_1_data_audit||'—')+' / '+escapeHtml(protocol.phase_2_all_six_markets||'—')+'</b></div>'+
+      '</div></div>'+
+      '<div class="c"><h3>Alle Märkte</h3><table><tr><th>Rang</th><th>Markt</th><th>Modell</th></tr>'+rows+'</table></div>'+
+      '<div class="c"><h3>Archiv</h3><p class="s">Erstellt eine einzelne, bereinigte Datei mit Analyse und allen ausgewählten FootyStats-Quellen. Sie wird nicht auf Render gespeichert.</p><button class="secondary" id="archive">Archivpaket herunterladen</button><p id="archiveStatus" class="s"></p></div>'+
+      '<div class="c"><details><summary>Technische Diagnose</summary><pre>'+escapeHtml(JSON.stringify(data,null,2))+'</pre></details></div>';
+    document.getElementById('archive').onclick=async function(){
+      const button=document.getElementById('archive'),status=document.getElementById('archiveStatus');
+      button.disabled=true;
+      try{await downloadArchive(files,status);}
+      catch(error){status.className='s bad';status.textContent='Fehler: '+String(error);}
+      finally{button.disabled=false;}
+    };
+  }catch(error){
+    out.innerHTML='<div class="c bad">Fehler: '+escapeHtml(String(error))+'</div>';
+  }
+};
+</script>
+</body>
+</html>'''
 
 @app.get("/",response_class=HTMLResponse)
 def index():return INDEX_HTML
@@ -747,22 +1030,45 @@ async def predict_files(match_file:UploadFile=File(...),league_file:UploadFile=F
     except Exception as exc:raise HTTPException(status_code=400,detail=f"Ungültige JSON-Datei: {exc}")
     return _attach_supplemental(predict(match_data,league_data), supplemental_report(match_data, league_data), {"match": match_file.filename or "MatchDaten.json", "league": league_file.filename or "LeagueDaten.json"})
 @app.post("/api/predict-bundle")
-async def predict_bundle(files:List[UploadFile]=File(...)):
-    parsed=[];errors=[]
-    for f in files:
-        name=f.filename or "unbekannt.json"
-        if not name.lower().endswith(".json"):continue
-        try:raw=await f.read();data=json.loads(raw.decode("utf-8"));parsed.append({"name":name,"data":data})
-        except Exception as exc:errors.append({"name":name,"error":str(exc)})
-    if errors:return {"ok":False,"decision":"ANALYSE NICHT MÖGLICH","phase":"FILE_READ_FAILED","error":"Mindestens eine JSON-Datei konnte nicht gelesen werden.","files":errors}
-    pair=select_pair(parsed)
-    if not pair.get("ok"):return pair
-    extras = pair.get("supplemental_data") or {}
-    report = supplemental_report(pair["match_data"], pair["league_data"], extras.get("form"), extras.get("table"), extras.get("player"))
-    result = _attach_supplemental(predict(pair["match_data"], pair["league_data"]), report, pair.get("source_files") or {})
-    result["pairing"] = {**pair["pairing"], "match_file": pair["match_file"], "league_file": pair["league_file"]}
+async def predict_bundle(files: List[UploadFile] = File(...)):
+    parsed, errors = await _read_bundle_uploads(files)
+    if errors:
+        return {
+            "ok": False,
+            "decision": "ANALYSE NICHT MÖGLICH",
+            "phase": "FILE_READ_FAILED",
+            "error": "Mindestens eine JSON-Datei konnte nicht gelesen werden.",
+            "files": errors,
+        }
+    result = _analyze_bundle(parsed)
+    result.pop("_archive_pair", None)
     return result
 
+
+@app.post("/api/archive-bundle")
+async def archive_bundle(files: List[UploadFile] = File(...)):
+    parsed, errors = await _read_bundle_uploads(files)
+    if errors:
+        return {
+            "ok": False,
+            "decision": "ANALYSE NICHT MÖGLICH",
+            "phase": "FILE_READ_FAILED",
+            "error": "Mindestens eine JSON-Datei konnte nicht gelesen werden.",
+            "files": errors,
+        }
+    result = _analyze_bundle(parsed)
+    pair = result.pop("_archive_pair", None)
+    if not result.get("ok") or not pair:
+        return result
+    package = _archive_package(parsed, pair, result)
+    return Response(
+        content=_archive_bytes(package),
+        media_type="application/json",
+        headers={
+            "Content-Disposition": f'attachment; filename="{_archive_download_name(package)}"',
+            "Cache-Control": "no-store",
+        },
+    )
 
 # ---- Temporary HubSign helper ----
 # The HubSign key is accepted only for this request, is not persisted,
