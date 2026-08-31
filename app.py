@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import base64
 import json
-from pathlib import Path
 from typing import Any, Dict, List
 
 from fastapi import FastAPI, File, UploadFile
@@ -13,7 +11,6 @@ import engine_core as core
 RELEASE_VERSION = "0.6.0"
 MODEL_VERSION = "0.5.0"
 REQUIRED_KINDS = ("match", "league", "form", "table", "player", "history")
-SHORTCUT_B64 = Path(__file__).with_name("shortcut_v3_6files.b64")
 
 app = FastAPI(
     title="FootyStats Prognose Engine",
@@ -88,9 +85,9 @@ def health() -> Dict[str, Any]:
 @app.get("/api/shortcut-source")
 def shortcut_source() -> Response:
     try:
-        data = base64.b64decode(SHORTCUT_B64.read_text(encoding="ascii"), validate=True)
+        data = core._prepared_shortcut_data()
     except Exception as exc:
-        return JSONResponse({"ok": False, "error": f"Shortcut-Datei nicht lesbar: {exc}"}, status_code=500)
+        return JSONResponse({"ok": False, "error": f"Shortcut-Datei nicht erzeugbar: {exc}"}, status_code=500)
     return Response(
         content=data,
         media_type="application/octet-stream",
