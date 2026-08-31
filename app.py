@@ -1357,6 +1357,8 @@ async def archive_bundle(files: List[UploadFile] = File(...)):
 # The HubSign key is accepted only for this request, is not persisted,
 # and is not included in application logs by this code.
 import base64 as _b64
+import copy as _copy
+import plistlib as _plistlib
 import uuid as _uuid
 import urllib.request as _urlreq
 import urllib.error as _urlerr
@@ -1382,7 +1384,7 @@ button{width:100%;padding:14px;margin-top:20px;border:0;border-radius:11px;backg
 </head>
 <body><div class="w"><div class="c">
 <h1>FootyStats API Export V2 signieren</h1>
-<p class="s">Die vorbereitete Shortcut-Datei ist bereits eingebaut. Du musst keine Datei auswählen.</p>
+<p class="s">Diese neue Version lädt automatisch alle sechs Dateien einschließlich HistoryDaten. Du musst keine Datei auswählen.</p>
 <label>Name</label>
 <input id="name" value="FootyStats API Export V2">
 <label>HubSign API-Key</label>
@@ -1420,6 +1422,84 @@ document.getElementById('go').onclick=async()=>{
 def hubsign_helper():
     return HTMLResponse(_HUBSIGN_HTML, headers={"Cache-Control":"no-store"})
 
+def _shortcut_token_ranges(value):
+    """Rebuild attachment offsets after changing a Shortcuts token string."""
+    if not isinstance(value, dict):
+        return
+    text = value.get("string")
+    attachments = value.get("attachmentsByRange")
+    if not isinstance(text, str) or not isinstance(attachments, dict):
+        return
+    ordered = [
+        attachment
+        for _, attachment in sorted(
+            attachments.items(),
+            key=lambda pair: int(pair[0].split(",", 1)[0].lstrip("{")),
+        )
+    ]
+    positions = [i for i, char in enumerate(text) if char == "\ufffc"]
+    if len(positions) != len(ordered):
+        raise ValueError("Shortcut-Tokenanzahl stimmt nach der History-Erweiterung nicht.")
+    value["attachmentsByRange"] = {
+        f"{{{position}, 1}}": attachment
+        for position, attachment in zip(positions, ordered)
+    }
+
+def _prepared_shortcut_data():
+    """Return the bundled shortcut with the paginated HistoryDaten export added."""
+    raw = _b64.b64decode(_PREPARED_SHORTCUT_B64)
+    workflow = _plistlib.loads(raw)
+    actions = workflow.get("WFWorkflowActions")
+    if not isinstance(actions, list):
+        raise ValueError("Vorbereiteter Kurzbefehl enthält keine Aktionen.")
+
+    # Idempotent: never append History twice if the bundled source is replaced later.
+    if "league-matches?" in str(actions) and "HistoryDaten" in str(actions):
+        return raw
+
+    player_start = next(
+        (
+            index
+            for index, action in enumerate(actions)
+            if "league-players?" in str(action)
+        ),
+        None,
+    )
+    if player_start is None or len(actions) - player_start < 18:
+        raise ValueError("PlayerDaten-Exportblock im Kurzbefehl nicht gefunden.")
+
+    history_actions = _copy.deepcopy(actions[player_start:player_start + 18])
+    uuid_map = {}
+    for action in history_actions:
+        params = action.get("WFWorkflowActionParameters", {})
+        for key in ("UUID", "GroupingIdentifier"):
+            old = params.get(key)
+            if isinstance(old, str) and old not in uuid_map:
+                uuid_map[old] = str(_uuid.uuid4()).upper()
+
+    def rewrite(value):
+        if isinstance(value, dict):
+            for key, item in list(value.items()):
+                value[key] = rewrite(item)
+            token = value.get("Value")
+            if isinstance(token, dict) and isinstance(token.get("string"), str):
+                _shortcut_token_ranges(token)
+            return value
+        if isinstance(value, list):
+            return [rewrite(item) for item in value]
+        if isinstance(value, str):
+            value = uuid_map.get(value, value)
+            value = value.replace("Player", "History")
+            value = value.replace("league-players", "league-matches")
+            value = value.replace("&include=stats", "")
+            value = value.replace("&page=", "&max_per_page=1000&page=")
+            return value
+        return value
+
+    history_actions = rewrite(history_actions)
+    actions.extend(history_actions)
+    return _plistlib.dumps(workflow, fmt=_plistlib.FMT_BINARY, sort_keys=False)
+
 def _multipart_body(shortcut_name: str, api_key: str):
     boundary = "----FootyStatsHubSign" + _uuid.uuid4().hex
     b = boundary.encode()
@@ -1432,7 +1512,7 @@ def _multipart_body(shortcut_name: str, api_key: str):
             b"\r\n",
         ])
     field("shortcut_name", shortcut_name)
-    data = _b64.b64decode(_PREPARED_SHORTCUT_B64)
+    data = _prepared_shortcut_data()
     chunks.extend([
         b"--"+b+b"\r\n",
         b'Content-Disposition: form-data; name="shortcut_file"; filename="FootyStats API Export V2.shortcut"\r\n',
@@ -1457,7 +1537,7 @@ async def hubsign_sign(api_key: str = Form(...), shortcut_name: str = Form("Foot
         headers={
             "Content-Type": f"multipart/form-data; boundary={boundary}",
             "Accept": "application/octet-stream",
-            "User-Agent": "FootyStats-Prognose-Engine/0.2.2",
+            "User-Agent": "FootyStats-Prognose-Engine/0.5.0",
         },
         method="POST",
     )
