@@ -73,6 +73,7 @@ def mf(data):
       'match_id':['id','match_id'],'home_id':['homeID','home_id'],'away_id':['awayID','away_id'],
       'home_name':['home_name','homeName'],'away_name':['away_name','awayName'],
       'competition_id':['competition_id','competitionID'],'season':['season'],'status':['status'],'date':['date'],
+      'date_unix':['date_unix','dateUnix','kickoff_unix','timestamp'],
       'home_prematch_xg':['team_a_xg_prematch'],'away_prematch_xg':['team_b_xg_prematch'],
       'total_prematch_xg':['total_xg_prematch'],'btts_potential':['btts_potential'],
       'o25_potential':['o25_potential','over25_potential'],'u25_potential':['u25_potential','under25_potential'],
@@ -146,9 +147,9 @@ def shotadj(sh,sot):
     if sot is not None:z+=max(-.05,min(.05,(sot-4)*.015))
     return max(-.08,min(.08,z))
 
-# ---- Worldwide league-relative probability core v0.4 / V5.5 ----
+# ---- Worldwide league-relative probability core v0.5 / V5.5 ----
 #
-# The five-file package contains the complete competition context.  Instead of
+# The six-file package adds a strictly pre-match historical score corpus. Instead of
 # applying one fixed global raw-value threshold to every league, this core
 # estimates the concrete league's home/away xG baselines and shrinks each
 # team's venue rates toward those baselines.  The shrinkage strength is learned
@@ -203,8 +204,8 @@ def league_shrunk_rate(rate,matches,rows,league_mean):
     return {'raw':float(rate),'league_mean':league_mean,'matches':float(matches),'variance':variance,
             'prior_exposure':prior_exposure,'reliability':reliability,'shrunk':posterior}
 
-def worldwide_lambdas(home_team,away_team,league,neutralize=None):
-    teams=league_team_list(league)
+def worldwide_lambdas(home_team,away_team,league,neutralize=None,teams=None):
+    teams=teams or league_team_list(league)
     specs={'home_xg':('home','xg'),'away_xg':('away','xg'),
            'home_xga':('home','xga'),'away_xga':('away','xga')}
     rows={name:league_metric_rows(teams,*spec) for name,spec in specs.items()}
@@ -264,19 +265,139 @@ def lambdas(h,a,m,venue_scale=1,prematch=True,results=True):
         d=max(-1.5,min(1.5,hppg-appg));hl*=1+d*.025;al*=1-d*.015
     return max(.18,min(3.8,hl)),max(.18,min(3.8,al))
 
-def poisson(hl,al,cap=10):
+def _dc_tau(home_goals,away_goals,home_lambda,away_lambda,rho):
+    if home_goals==0 and away_goals==0:return 1-home_lambda*away_lambda*rho
+    if home_goals==0 and away_goals==1:return 1+home_lambda*rho
+    if home_goals==1 and away_goals==0:return 1+away_lambda*rho
+    if home_goals==1 and away_goals==1:return 1-rho
+    return 1.0
+
+def poisson(hl,al,cap=10,rho=0.0):
     ph=[math.exp(-hl)*hl**i/math.factorial(i) for i in range(cap+1)]
     pa=[math.exp(-al)*al**j/math.factorial(j) for j in range(cap+1)]
-    mass=sum(ph)*sum(pa); hw=dr=aw=btts=o25=0
+    cells=[]
     for i,x in enumerate(ph):
       for j,y in enumerate(pa):
-        q=x*y/mass
+        tau=_dc_tau(i,j,hl,al,rho)
+        if tau<=0:raise ValueError('Dixon-Coles-Korrektur ist mathematisch ungültig.')
+        cells.append((i,j,x*y*tau))
+    mass=sum(q for _,_,q in cells);hw=dr=aw=btts=o25=0
+    if mass<=0:raise ValueError('Scoregrid besitzt keine gültige Wahrscheinlichkeitsmasse.')
+    for i,j,raw in cells:
+        q=raw/mass
         if i>j:hw+=q
         elif i==j:dr+=q
         else:aw+=q
         if i and j:btts+=q
         if i+j>=3:o25+=q
     return {'home_win':hw,'draw':dr,'away_win':aw,'btts_yes':btts,'btts_no':1-btts,'over_2_5':o25,'under_2_5':1-o25}
+
+def _as_unix(value):
+    direct=num(value)
+    if direct is not None:
+        # Millisecond timestamps occasionally occur in exported JSON.
+        return direct/1000 if direct>10_000_000_000 else direct
+    if not isinstance(value,str) or not value.strip():return None
+    text=value.strip().replace('Z','+00:00')
+    try:
+        parsed=datetime.fromisoformat(text)
+        if parsed.tzinfo is None:parsed=parsed.replace(tzinfo=timezone.utc)
+        return parsed.timestamp()
+    except ValueError:return None
+
+def _direct_value(item,aliases):
+    wanted={nkey(alias) for alias in aliases}
+    for key,value in (item or {}).items():
+        if nkey(key) in wanted and value not in (None,'',[],{}):return value
+    return None
+
+def _direct_num(item,aliases):
+    return num(_direct_value(item,aliases))
+
+def _history_pagination(history):
+    pages=[]
+    for candidate in dicts(history):
+        if not isinstance(candidate,dict):continue
+        current=_direct_num(candidate,['current_page','page'])
+        maximum=_direct_num(candidate,['max_page','last_page'])
+        if current is not None and maximum is not None:
+            pages.append((int(current),int(maximum)))
+    if not pages:return {'declared':False,'complete':True,'pages_seen':[],'max_page':None}
+    max_page=max(maximum for _,maximum in pages)
+    seen=sorted({current for current,_ in pages if current>0})
+    return {'declared':True,'complete':set(range(1,max_page+1)).issubset(seen),'pages_seen':seen,'max_page':max_page}
+
+def _history_rows(history,match):
+    cutoff=_as_unix(match.get('date_unix')) or _as_unix(match.get('date'))
+    target_id=num(match.get('match_id'));target_comp=num(match.get('competition_id'))
+    rows=[];seen=set();excluded={'duplicate':0,'target_match':0,'wrong_competition':0,'not_completed':0,'missing_time':0,'not_before_kickoff':0,'invalid_score':0}
+    home_aliases=['homeID','home_id','homeTeamID','home_team_id']
+    away_aliases=['awayID','away_id','awayTeamID','away_team_id']
+    hg_aliases=['homeGoalCount','home_goal_count','homeGoals','home_goals','home_score','team_a_score','goals_home']
+    ag_aliases=['awayGoalCount','away_goal_count','awayGoals','away_goals','away_score','team_b_score','goals_away']
+    for candidate in dicts(history):
+        if not isinstance(candidate,dict):continue
+        home_id=_direct_num(candidate,home_aliases);away_id=_direct_num(candidate,away_aliases)
+        home_goals=_direct_num(candidate,hg_aliases);away_goals=_direct_num(candidate,ag_aliases)
+        if home_id is None or away_id is None or home_goals is None or away_goals is None:continue
+        record_id=_direct_num(candidate,['id','match_id'])
+        identity=int(record_id) if record_id is not None else (int(home_id),int(away_id),_direct_value(candidate,['date_unix','date','timestamp']))
+        if identity in seen:excluded['duplicate']+=1;continue
+        seen.add(identity)
+        if target_id is not None and record_id is not None and int(record_id)==int(target_id):excluded['target_match']+=1;continue
+        comp=_direct_num(candidate,['competition_id','competitionID','season_id','seasonID'])
+        if target_comp is not None and comp is not None and int(comp)!=int(target_comp):excluded['wrong_competition']+=1;continue
+        status=str(_direct_value(candidate,['status','match_status','status_short']) or '').strip().lower().replace('_','-')
+        if status and status not in {'complete','completed','finished','ft','full-time','fulltime'}:
+            excluded['not_completed']+=1;continue
+        timestamp=_as_unix(_direct_value(candidate,['date_unix','dateUnix','kickoff_unix','timestamp','date']))
+        if timestamp is None:excluded['missing_time']+=1;continue
+        if cutoff is None or timestamp>=cutoff:excluded['not_before_kickoff']+=1;continue
+        if home_goals<0 or away_goals<0 or home_goals!=int(home_goals) or away_goals!=int(away_goals):
+            excluded['invalid_score']+=1;continue
+        rows.append({'match_id':int(record_id) if record_id is not None else None,'home_id':int(home_id),'away_id':int(away_id),'home_goals':int(home_goals),'away_goals':int(away_goals),'date_unix':timestamp})
+    rows.sort(key=lambda row:row['date_unix'])
+    return rows,excluded,cutoff
+
+def _fit_history_rho(history,match,league):
+    pagination=_history_pagination(history)
+    rows,excluded,cutoff=_history_rows(history,match)
+    base={'received':history is not None,'active':False,'rho':0.0,'records_eligible':len(rows),'records_used':0,'low_score_records':0,'target_cutoff_unix':cutoff,'pagination':pagination,'excluded':excluded,'method':'bounded Dixon-Coles maximum likelihood on completed pre-match league results'}
+    if history is None:
+        base['reason']='HistoryDaten nicht geliefert.';return base
+    if cutoff is None:
+        base['reason']='Anpfiffzeit des Zielspiels fehlt; sicherer Zeitfilter nicht möglich.';return base
+    if not pagination['complete']:
+        base['reason']='HistoryDaten-Paginierung ist unvollständig.';return base
+    prepared=[]
+    teams=league_team_list(league)
+    team_index={_team_identifier(team):team for team in teams}
+    for row in rows:
+        home_team=team_index.get(row['home_id']);away_team=team_index.get(row['away_id'])
+        if home_team is None or away_team is None:continue
+        try:home_lambda,away_lambda,_=worldwide_lambdas(home_team,away_team,league,teams=teams)
+        except ValueError:continue
+        prepared.append((row,home_lambda,away_lambda))
+    base['records_used']=len(prepared)
+    base['low_score_records']=sum(1 for row,_,_ in prepared if row['home_goals']<=1 and row['away_goals']<=1)
+    if len(prepared)<30 or base['low_score_records']<8:
+        base['reason']='Mindestens 30 verwertbare historische Spiele und 8 Low-Score-Spiele erforderlich.';return base
+    newest=max(row['date_unix'] for row,_,_ in prepared)
+    best_rho=0.0;best_score=-float('inf')
+    for step in range(-75,76):
+        rho=step/500.0
+        score=0.0;valid=True
+        for row,home_lambda,away_lambda in prepared:
+            tau=_dc_tau(row['home_goals'],row['away_goals'],home_lambda,away_lambda,rho)
+            if tau<=0:valid=False;break
+            age_days=max(0,(newest-row['date_unix'])/86400)
+            weight=math.exp(-age_days/365.0)
+            score+=weight*math.log(tau)
+        # Weak zero-centred regularisation prevents unstable boundary estimates.
+        score-=0.5*(rho/0.12)**2
+        if valid and score>best_score:best_score=score;best_rho=rho
+    base.update({'active':True,'rho':round(best_rho,6),'reason':'Historischer Low-Score-Zusammenhang wurde vor dem Zielspiel geschätzt.','time_decay_days':365,'rho_bound':[-0.15,0.15]})
+    return base
 
 def calibrate(p,m,h,a):
     out=dict(p); hn=h['home'].get('matches') or 0; an=a['away'].get('matches') or 0
@@ -412,13 +533,13 @@ def insufficient_data_report(m,h,aw):
       }
     }
 
-def predict(match,league):
+def predict(match,league,history=None):
     a=audit(match,league)
     if not a['valid']:return {'ok':False,'phase':'DATA_AUDIT_FAILED','audit':{k:v for k,v in a.items() if k not in {'home_team','away_team'}},'decision':'ANALYSE NICHT MÖGLICH'}
     m=a['match'];h=profile(a['home_team'],'home');aw=profile(a['away_team'],'away')
     report=insufficient_data_report(m,h,aw)
     if not report['sufficient']:
-        return {'ok':False,'model_version':'0.4.0','phase':'INSUFFICIENT_DATA','decision':'ANALYSE NICHT MÖGLICH','error':'Zu wenig belastbare historische Teamdaten für eine seriöse Marktprognose. Placeholder-Nullwerte werden nicht als echte Leistung interpretiert.','audit':{'valid':True,'errors':[],'match':m,'pager':a['pager']},'samples':report['samples'],'diagnostics':{'data_quality':'NIEDRIG','sample_security':'NIEDRIG','result_vs_underlying':'NICHT PRÜFBAR','relative_edge':'NICHT PRÜFBAR','counterargument':'UNZUREICHENDE DATENGRUNDLAGE','single_point_of_failure':True,'robustness_status':'NICHT PRÜFBAR'},'insufficient_data':report,'notes':['Keine Wahrscheinlichkeiten berechnet.','Keine künstlichen Mindest-xG-Werte als Prognose verwendet.','Odds werden vollständig ignoriert.']}
+        return {'ok':False,'model_version':'0.5.0','phase':'INSUFFICIENT_DATA','decision':'ANALYSE NICHT MÖGLICH','error':'Zu wenig belastbare historische Teamdaten für eine seriöse Marktprognose. Placeholder-Nullwerte werden nicht als echte Leistung interpretiert.','audit':{'valid':True,'errors':[],'match':m,'pager':a['pager']},'samples':report['samples'],'diagnostics':{'data_quality':'NIEDRIG','sample_security':'NIEDRIG','result_vs_underlying':'NICHT PRÜFBAR','relative_edge':'NICHT PRÜFBAR','counterargument':'UNZUREICHENDE DATENGRUNDLAGE','single_point_of_failure':True,'robustness_status':'NICHT PRÜFBAR'},'insufficient_data':report,'notes':['Keine Wahrscheinlichkeiten berechnet.','Keine künstlichen Mindest-xG-Werte als Prognose verwendet.','Odds werden vollständig ignoriert.']}
     hn,an=h['home']['matches'],aw['away']['matches'];ho,ao=h['overall']['matches'],aw['overall']['matches']
     ss=sample(hn,an,ho,ao); quality='HOCH'
     if not hn or not an:quality='MITTEL'
@@ -426,20 +547,28 @@ def predict(match,league):
     try:hl,al,world=worldwide_lambdas(a['home_team'],a['away_team'],league)
     except ValueError as e:return {'ok':False,'phase':'MODEL_INPUT_FAILED','audit':{'valid':True,'errors':[str(e)],'match':m},'decision':'ANALYSE NICHT MÖGLICH'}
     if world.get('league_team_count',0)<6:quality='MITTEL'
+    history_fit=_fit_history_rho(history,m,league)
+    rho=history_fit['rho'] if history_fit.get('active') else 0.0
+    world['dixon_coles_fitted']=bool(history_fit.get('active'))
+    world['dixon_coles_rho']=rho
+    world['dixon_coles_reason']=history_fit.get('reason')
     # One coherent score grid drives every market.  FootyStats potentials and
     # odds are not blended into the probabilities, avoiding duplicate evidence.
-    p=poisson(hl,al)
+    p=poisson(hl,al,rho=rho)
     allowed=['home_win','away_win','btts_yes','btts_no','over_2_5','under_2_5']
     rank=sorted([(x,p[x]) for x in allowed],key=lambda z:z[1],reverse=True); top,tp=rank[0]; second,sp=rank[1]
     blocks=['home_attack','away_defence','away_attack','home_defence']; stress={}
     for block in blocks:
         sh,sa,_=worldwide_lambdas(a['home_team'],a['away_team'],league,block)
-        stress[block]=poisson(sh,sa)[top]
+        stress[block]=poisson(sh,sa,rho=rho)[top]
     influence_block=max(blocks,key=lambda block:abs(stress[block]-tp))
     pooling=world.get('partial_pooling') or {}
     fragility_block=min(blocks,key=lambda block:num((pooling.get(block) or {}).get('reliability')) if num((pooling.get(block) or {}).get('reliability')) is not None else -1)
     influence_p,fragility_p=stress[influence_block],stress[fragility_block]
-    rv_detail=rvu_detail(h,aw,top,tp,hl,al);rv=rv_detail['status'];ed=edge(tp,sp)
+    rv_detail=rvu_detail(h,aw,top,tp,hl,al)
+    if history_fit.get('active'):
+        rv_detail['underlying_basis']='Liga-relatives, geschrumpftes Venue-xG-Modell mit vor Anpfiff geschätzter Dixon-Coles-Low-Score-Korrelation'
+    rv=rv_detail['status'];ed=edge(tp,sp)
     flip=(influence_p>=.5)!=(tp>=.5) or (fragility_p>=.5)!=(tp>=.5)
     spof=flip or max(tp-influence_p,tp-fragility_p)>=.10
     if tp>=.65:rob='BESTANDEN' if min(influence_p,fragility_p)>=.63 and not spof and rv in {'KONSISTENT','TEILWEISE KONSISTENT'} else ('EINGESCHRÄNKT' if min(influence_p,fragility_p)>=.60 and not flip else 'NICHT BESTANDEN')
@@ -447,8 +576,8 @@ def predict(match,league):
     counter='DOMINANTES ZENTRALES GEGENARGUMENT' if rv=='STARK WIDERSPRÜCHLICH' else ('STARKES ZENTRALES GEGENARGUMENT' if rv=='TEILWEISE WIDERSPRÜCHLICH' else ('RELEVANTES ZENTRALES GEGENARGUMENT' if ss=='NIEDRIG' or quality=='NIEDRIG' else 'KEIN RELEVANTES ZENTRALES GEGENARGUMENT'))
     dec='AUSLASSEN' if tp<.60 or rv=='STARK WIDERSPRÜCHLICH' else 'BEOBACHTEN'
     if tp>=.65 and quality in {'HOCH','MITTEL'} and ss!='NIEDRIG' and ed=='KLAR' and rv in {'KONSISTENT','TEILWEISE KONSISTENT'} and not spof and rob=='BESTANDEN':dec='SPIELEN'
-    return {'ok':True,'model_version':'0.4.0','deterministic':True,
-      'method':{'probability_core':world['method'],'league_relative':True,'empirical_bayes_shrinkage':True,'fixed_global_thresholds_used':False,'odds_used':False,'backtested':False},
+    return {'ok':True,'model_version':'0.5.0','deterministic':True,
+      'method':{'probability_core':world['method'],'league_relative':True,'empirical_bayes_shrinkage':True,'history_dixon_coles':bool(history_fit.get('active')),'fixed_global_thresholds_used':False,'odds_used':False,'backtested':False},
       'audit':{'valid':True,'errors':[],'match':m,'pager':a['pager']},
       'samples':{'home_venue':hn,'home_class':sclass(hn),'away_venue':an,'away_class':sclass(an),'security':ss},
       'expected_goals':{'home':hl,'away':al,'total':hl+al,'league_relative_model':world},
@@ -456,18 +585,18 @@ def predict(match,league):
       'markets':[{'rank':rank_index+1,'key':market_key,'label':LABEL[market_key],'probability_pct':round(probability*100,1)} for rank_index,(market_key,probability) in enumerate(rank)],
       'strongest_market':{'key':top,'label':LABEL[top],'probability_pct':round(tp*100,1)},
       'second_market':{'key':second,'label':LABEL[second],'probability_pct':round(sp*100,1)},
-      'diagnostics':{'data_quality':quality,'sample_security':ss,'result_vs_underlying':rv,'result_vs_underlying_detail':rv_detail,'relative_edge':ed,'counterargument':counter,'single_point_of_failure':spof,'influence_block':influence_block,'fragility_block':fragility_block,'influence_stress_probability_pct':round(influence_p*100,1),'fragility_stress_probability_pct':round(fragility_p*100,1),'all_central_block_stress':{key:round(value*100,1) for key,value in stress.items()},'robustness_status':rob,'insufficient_data_gate':'BESTANDEN'},
+      'diagnostics':{'data_quality':quality,'sample_security':ss,'history':history_fit,'result_vs_underlying':rv,'result_vs_underlying_detail':rv_detail,'relative_edge':ed,'counterargument':counter,'single_point_of_failure':spof,'influence_block':influence_block,'fragility_block':fragility_block,'influence_stress_probability_pct':round(influence_p*100,1),'fragility_stress_probability_pct':round(fragility_p*100,1),'all_central_block_stress':{key:round(value*100,1) for key,value in stress.items()},'robustness_status':rob,'insufficient_data_gate':'BESTANDEN'},
       'decision':dec,
-      'notes':['Odds werden vollständig ignoriert.','Alle sechs Märkte stammen aus demselben kohärenten Scoregrid.','Liga-Durchschnitt und Shrinkage werden aus den gelieferten LeagueDaten berechnet.','Version 0.4.0 mit liga-relativem V5.5-Kern, INSUFFICIENT_DATA-Sperre und V5.2-Guardrails.']}
+      'notes':['Odds werden vollständig ignoriert.','Alle sechs Märkte stammen aus demselben kohärenten Scoregrid.','Liga-Durchschnitt und Shrinkage werden aus den gelieferten LeagueDaten berechnet.','HistoryDaten beeinflussen das Modell nur nach vollständigem Zeit-, Competition-, Status- und Paginierungscheck.','Version 0.5.0 mit liga-relativem V5.5-Kern, optionalem History-Dixon-Coles, INSUFFICIENT_DATA-Sperre und V5.2-Guardrails.']}
 
-# ---- Web/API layer v0.4 ----
+# ---- Web/API layer v0.5 ----
 import json
 from typing import Any, Dict, List, Optional
 from fastapi import FastAPI, File, UploadFile, HTTPException, Form
 from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel
 
-app = FastAPI(title="FootyStats Prognose Engine", version="0.4.0")
+app = FastAPI(title="FootyStats Prognose Engine", version="0.5.0")
 
 class Payload(BaseModel):
     matchData: Dict[str, Any]
@@ -475,6 +604,7 @@ class Payload(BaseModel):
     formData: Optional[Dict[str, Any]] = None
     tableData: Optional[Dict[str, Any]] = None
     playerData: Optional[Dict[str, Any]] = None
+    historyData: Optional[Dict[str, Any]] = None
 
 
 def _source_kind(filename: str) -> Optional[str]:
@@ -482,7 +612,7 @@ def _source_kind(filename: str) -> Optional[str]:
     name = (filename or "").lower().replace(" ", "")
     for kind, marker in (("match", "matchdaten"), ("league", "leaguedaten"),
                          ("form", "formdaten"), ("table", "tabledaten"),
-                         ("player", "playerdaten")):
+                         ("player", "playerdaten"), ("history", "historydaten")):
         if marker in name:
             return kind
     return None
@@ -611,7 +741,7 @@ def _overall_matches(league_data: Any, team_id: Any, venue: str) -> Any:
     return profile(team, venue)["overall"].get("matches") if team else None
 
 
-def supplemental_report(match_data: Any, league_data: Any = None, form_data: Any = None, table_data: Any = None, player_data: Any = None) -> Dict[str, Any]:
+def supplemental_report(match_data: Any, league_data: Any = None, form_data: Any = None, table_data: Any = None, player_data: Any = None, history_data: Any = None) -> Dict[str, Any]:
     """Use all V2 sources for audit and risk checks, never inventing unbacktested probability weights."""
     match = mf(match_data)
     home_id, away_id = match.get("home_id"), match.get("away_id")
@@ -623,17 +753,20 @@ def supplemental_report(match_data: Any, league_data: Any = None, form_data: Any
         "home": _player_team_summary(player_data, home_id, home_matches),
         "away": _player_team_summary(player_data, away_id, away_matches),
     }
+    history = _fit_history_rho(history_data, match, league_data) if league_data is not None else {"received": history_data is not None, "active": False, "reason": "LeagueDaten fehlen."}
     return {
-        "received": {"form": form_data is not None, "table": table_data is not None, "player": player_data is not None},
+        "received": {"form": form_data is not None, "table": table_data is not None, "player": player_data is not None, "history": history_data is not None},
         "coverage": {
             "form": {**form, "usable_both": form["home"]["available"] and form["away"]["available"]},
             "table": {**table, "usable_both": table["home"]["available"] and table["away"]["available"]},
             "player": {**player, "usable_both": player["home"]["available"] and player["away"]["available"]},
+            "history": {**history, "usable_both": bool(history.get("active"))},
         },
         "model_use": {
             "table": "IDs sowie Overall-/Home-/Away-Abdeckung werden gegengeprüft; keine doppelte PPG-/Tore-Gewichtung.",
             "form": "Last-5 gegen längeres Formfenster ist ein Gegenargument-/Stabilitätssignal, keine unkalibrierte Wahrscheinlichkeitserhöhung.",
             "player": "Tiefe und Torbeteiligungs-Konzentration werden transparent berichtet; ohne bestätigte Aufstellung keine Match-Score-Gewichtung.",
+            "history": "Nur abgeschlossene Spiele derselben Competition vor dem Ziel-Anpfiff; bei vollständiger Paginierung wird ausschließlich die Dixon-Coles-Low-Score-Korrelation geschätzt.",
         },
     }
 
@@ -715,6 +848,8 @@ def _central_signal_blocks(result: Dict[str, Any]) -> List[str]:
         blocks.append("PRE_MATCH")
     if (result.get("diagnostics") or {}).get("result_vs_underlying") in {"KONSISTENT", "TEILWEISE KONSISTENT"}:
         blocks.append("RESULTAT")
+    if ((result.get("diagnostics") or {}).get("history") or {}).get("active"):
+        blocks.append("HISTORY_LOW_SCORE")
     return blocks
 
 
@@ -722,7 +857,7 @@ def elite_protocol_report(result: Dict[str, Any], report: Dict[str, Any]) -> Dic
     """V5.2-inspired guardrails; separate correlated sources from independent evidence."""
     if not result.get("ok"):
         return {
-            "version": "0.4.0 / V5.5 liga-relativ + V5.2-Guardrails",
+            "version": "0.5.0 / V5.5 liga-relativ + History-Dixon-Coles + V5.2-Guardrails",
             "phase_1_data_audit": "NICHT BESTANDEN",
             "phase_2_all_six_markets": "NEIN",
             "phase_3_decision_gates": "NEIN",
@@ -732,7 +867,9 @@ def elite_protocol_report(result: Dict[str, Any], report: Dict[str, Any]) -> Dic
     diagnostics = result.get("diagnostics") or {}
     coverage = report.get("coverage") or {}
     received = report.get("received") or {}
-    unusable = [kind for kind, was_received in received.items() if was_received and not (coverage.get(kind) or {}).get("usable_both")]
+    # History is an optional bounded calibration layer. An early-season or
+    # incomplete history file must never make the proven five-file core worse.
+    unusable = [kind for kind, was_received in received.items() if kind != "history" and was_received and not (coverage.get(kind) or {}).get("usable_both")]
     quality = diagnostics.get("data_quality") or "MITTEL"
     protocol_quality = "NIEDRIG" if quality == "NIEDRIG" else ("MITTEL" if unusable else quality)
     top = (result.get("strongest_market") or {}).get("key")
@@ -776,8 +913,8 @@ def elite_protocol_report(result: Dict[str, Any], report: Dict[str, Any]) -> Dic
         if cap_reasons:
             final_decision = "BEOBACHTEN"
     return {
-        "version": "0.4.0 / V5.5 liga-relativ + V5.2-Guardrails",
-        "scope": "Liga-relative xG-Wahrscheinlichkeiten plus Audit-, Gegenargument- und Robustheitsprotokoll. Form, Tabelle und Spieler bleiben ohne zeitbasierten Backtest diagnostische Gegenchecks.",
+        "version": "0.5.0 / V5.5 liga-relativ + History-Dixon-Coles + V5.2-Guardrails",
+        "scope": "Liga-relative xG-Wahrscheinlichkeiten plus zeitlich gesicherte History-Low-Score-Kalibrierung sowie Audit-, Gegenargument- und Robustheitsprotokoll. Form, Tabelle und Spieler bleiben diagnostische Gegenchecks.",
         "phase_1_data_audit": "EINGESCHRÄNKT" if unusable else "BESTANDEN",
         "phase_2_all_six_markets": "JA" if len(result.get("markets") or []) == 6 else "NEIN",
         "phase_3_decision_gates": "JA",
@@ -785,6 +922,7 @@ def elite_protocol_report(result: Dict[str, Any], report: Dict[str, Any]) -> Dic
             "form": {"received": received.get("form", False), "usable_both": (coverage.get("form") or {}).get("usable_both", False), "use": "Trend-/Gegenargument-Prüfung"},
             "table": {"received": received.get("table", False), "usable_both": (coverage.get("table") or {}).get("usable_both", False), "use": "ID- und Venue-Konsistenzprüfung"},
             "player": {"received": received.get("player", False), "usable_both": (coverage.get("player") or {}).get("usable_both", False), "use": "Kaderabdeckung/-konzentration, keine Aufstellungsannahme"},
+            "history": {"received": received.get("history", False), "usable": (coverage.get("history") or {}).get("usable_both", False), "use": "Zeitgefilterte Dixon-Coles-Low-Score-Korrelation"},
             "unusable_received_sources": unusable,
         },
         "gates": {
@@ -819,7 +957,7 @@ def _attach_supplemental(result: Dict[str, Any], report: Dict[str, Any], source_
         result["decision_before_v5_2_guardrails"] = previous_decision
         result["decision"] = protocol["final_decision"]
         result["notes"] = list(result.get("notes") or []) + ["V5.2-Guardrails haben die Entscheidung wegen: " + "; ".join(protocol.get("decision_cap_reasons") or []) + "."]
-    result["model_version"] = "0.4.0"
+    result["model_version"] = "0.5.0"
     return result
 
 
@@ -845,7 +983,7 @@ def _league_candidate_score(data: Any, filename: str, match_fields: Dict[str, An
 
 
 def select_pair(parsed_files: List[Dict[str, Any]]) -> Dict[str, Any]:
-    by_kind: Dict[str, List[Dict[str, Any]]] = {kind: [] for kind in ("match", "league", "form", "table", "player")}
+    by_kind: Dict[str, List[Dict[str, Any]]] = {kind: [] for kind in ("match", "league", "form", "table", "player", "history")}
     for item in parsed_files:
         kind = _source_kind(item["name"])
         if kind:
@@ -867,12 +1005,12 @@ def select_pair(parsed_files: List[Dict[str, Any]]) -> Dict[str, Any]:
     scored.sort(key=lambda x:x["score"],reverse=True);best=scored[0]
     if not (best["home_found"] and best["away_found"]):return {"ok":False,"decision":"ANALYSE NICHT MÖGLICH","phase":"PAIRING_FAILED","error":"Keine LeagueDaten-Datei enthält beide Teams dieses Matches.","match_file":match_file["name"],"match":match_fields,"checked_league_files":[{"name":x["name"],"home_found":x["home_found"],"away_found":x["away_found"],"pager":x["pager"],"score":x["score"]} for x in scored]}
     source_files = {kind: items[0]["name"] for kind, items in by_kind.items() if items}
-    supplemental_data = {kind: items[0]["data"] for kind, items in by_kind.items() if kind in {"form", "table", "player"} and items}
+    supplemental_data = {kind: items[0]["data"] for kind, items in by_kind.items() if kind in {"form", "table", "player", "history"} and items}
     return {"ok":True,"match_file":match_file["name"],"league_file":best["name"],"match_data":match_file["data"],"league_data":best["data"],"supplemental_data":supplemental_data,"source_files":source_files,"pairing":{"match_id":match_fields.get("match_id"),"competition_id":match_fields.get("competition_id"),"home_id":match_fields.get("home_id"),"away_id":match_fields.get("away_id"),"league_score":best["score"],"league_reasons":best["reasons"]}}
 
 # ---- Local iPhone archive package (no server-side persistence) ----
-_ARCHIVE_VERSION = "1.0.0"
-_ARCHIVE_SOURCE_KINDS = ("match", "league", "form", "table", "player")
+_ARCHIVE_VERSION = "1.1.0"
+_ARCHIVE_SOURCE_KINDS = ("match", "league", "form", "table", "player", "history")
 _ARCHIVE_SECRET_PARTS = ("apikey", "token", "authorization", "password", "secret", "credential")
 _ARCHIVE_SENSITIVE_QUERY = re.compile(r"(?i)(api[_-]?key|token|authorization|password|secret)=([^&\s]+)")
 
@@ -963,6 +1101,7 @@ def _archive_package(parsed_files: List[Dict[str, Any]], pair: Dict[str, Any], r
             "competition_id": match.get("competition_id"),
             "season": match.get("season"),
             "date": match.get("date"),
+            "date_unix": match.get("date_unix"),
         }),
         "analysis": _archive_sanitize(result),
         "sources": sources,
@@ -1013,15 +1152,17 @@ def _analyze_bundle(parsed_files: List[Dict[str, Any]]) -> Dict[str, Any]:
     if not pair.get("ok"):
         return pair
     extras = pair.get("supplemental_data") or {}
+    core = predict(pair["match_data"], pair["league_data"], extras.get("history"))
     report = supplemental_report(
         pair["match_data"],
         pair["league_data"],
         extras.get("form"),
         extras.get("table"),
         extras.get("player"),
+        extras.get("history"),
     )
     result = _attach_supplemental(
-        predict(pair["match_data"], pair["league_data"]),
+        core,
         report,
         pair.get("source_files") or {},
     )
@@ -1054,14 +1195,14 @@ pre{white-space:pre-wrap;word-break:break-word;font-size:.75rem}.sep{border-top:
 <body>
 <div class="w">
   <div class="c">
-    <h2>FootyStats Prognose Engine v0.4.0</h2>
-    <div class="s">Liga-relativer V5.5-Kern · keine Odds · keine externen Matchdaten · INSUFFICIENT_DATA-Sperre und V5.2-Guardrails aktiv</div>
+    <h2>FootyStats Prognose Engine v0.5.0</h2>
+    <div class="s">Liga-relativer V5.5-Kern · optionale History-Dixon-Coles-Kalibrierung · keine Odds · INSUFFICIENT_DATA-Sperre und V5.2-Guardrails aktiv</div>
     <h3>Match-Ordner auswählen</h3>
-    <p class="s">Empfohlen: genau MatchDaten, LeagueDaten, FormDaten, TableDaten und PlayerDaten eines Matches auswählen.</p>
+    <p class="s">Empfohlen: MatchDaten, LeagueDaten, FormDaten, TableDaten, PlayerDaten und HistoryDaten eines Matches auswählen.</p>
     <input id="folderFiles" type="file" webkitdirectory directory multiple accept=".json,application/json">
     <div class="sep"></div>
     <h3>Fallback: JSON-Dateien gemeinsam auswählen</h3>
-    <p class="s">Falls die Ordnerauswahl am iPhone nicht angeboten wird, wähle hier alle fünf JSON-Dateien gleichzeitig aus.</p>
+    <p class="s">Falls die Ordnerauswahl am iPhone nicht angeboten wird, wähle hier alle sechs JSON-Dateien gleichzeitig aus.</p>
     <input id="bundleFiles" type="file" multiple accept=".json,application/json">
     <button id="go">Analyse starten</button>
   </div>
@@ -1115,7 +1256,7 @@ document.getElementById('go').onclick=async function(){
     if(!data.ok){
       out.innerHTML='<div class="c"><h3 class="bad">Analyse nicht möglich</h3><pre>'+escapeHtml(JSON.stringify(data,null,2))+'</pre></div>';return;
     }
-    const diag=data.diagnostics||{},goal=data.expected_goals||{},protocol=diag.elite_protocol||{},gates=protocol.gates||{},rvu=diag.result_vs_underlying_detail||{};
+    const diag=data.diagnostics||{},goal=data.expected_goals||{},protocol=diag.elite_protocol||{},gates=protocol.gates||{},rvu=diag.result_vs_underlying_detail||{},history=diag.history||{};
     const rows=(data.markets||[]).map(function(item){
       return '<tr><td>'+escapeHtml(item.rank)+'</td><td>'+escapeHtml(item.label)+'</td><td><b>'+escapeHtml(item.probability_pct)+'%</b></td></tr>';
     }).join('');
@@ -1132,6 +1273,7 @@ document.getElementById('go').onclick=async function(){
       '<div class="m"><div class="s">Entscheidung</div><div class="b">'+escapeHtml(data.decision)+'</div></div>'+
       '<div class="m"><div class="s">Datenqualität</div><b>'+escapeHtml(diag.data_quality)+'</b></div>'+
       '<div class="m"><div class="s">Stichprobe</div><b>'+escapeHtml(diag.sample_security)+'</b></div>'+
+      '<div class="m"><div class="s">HistoryDaten</div><b>'+escapeHtml(history.active?'DIXON-COLES AKTIV':(history.received?'ERKANNT – NICHT AKTIV':'NICHT GELIEFERT'))+'</b><div class="s">'+escapeHtml(history.records_used==null?'':history.records_used+' historische Spiele verwendet')+'</div></div>'+
       '<div class="m"><div class="s">V5.2-Protokoll</div><b>'+escapeHtml(protocol.phase_1_data_audit||'—')+' / '+escapeHtml(protocol.phase_2_all_six_markets||'—')+'</b></div>'+
       '</div></div>'+
       '<div class="c"><h3>Result vs Underlying</h3><div class="g">'+
@@ -1160,11 +1302,11 @@ document.getElementById('go').onclick=async function(){
 @app.get("/",response_class=HTMLResponse)
 def index():return INDEX_HTML
 @app.get("/api/health")
-def health():return {"ok":True,"version":"0.4.0"}
+def health():return {"ok":True,"version":"0.5.0"}
 @app.post("/api/predict")
 def predict_json(payload:Payload):
-    report = supplemental_report(payload.matchData, payload.leagueData, payload.formData, payload.tableData, payload.playerData)
-    return _attach_supplemental(predict(payload.matchData, payload.leagueData), report, {})
+    report = supplemental_report(payload.matchData, payload.leagueData, payload.formData, payload.tableData, payload.playerData, payload.historyData)
+    return _attach_supplemental(predict(payload.matchData, payload.leagueData, payload.historyData), report, {})
 @app.post("/api/predict-files")
 async def predict_files(match_file:UploadFile=File(...),league_file:UploadFile=File(...)):
     try:match_data=json.loads((await match_file.read()).decode("utf-8"));league_data=json.loads((await league_file.read()).decode("utf-8"))
