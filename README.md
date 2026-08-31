@@ -1,6 +1,6 @@
-# FootyStats Prognose Engine — 6-Dateien Release v0.6.0
+# FootyStats Prognose Engine — 6-Dateien Release v0.6.1
 
-Dieses Repository ist der saubere 6-Dateien-Workflow für die FootyStats Match Engine.
+Dieses Repository ist der strikte 6-Dateien-Workflow für die FootyStats Match Engine.
 
 ## Erwartetes Paket pro Match
 
@@ -11,7 +11,9 @@ Dieses Repository ist der saubere 6-Dateien-Workflow für die FootyStats Match E
 5. `[MatchID]_PlayerDaten.json`
 6. `[MatchID]_HistoryDaten.json`
 
-Die sechs Dateien werden über IDs und Dateitypen geprüft. Die `HistoryDaten` stammen aus `league-matches`, werden im iPhone-Kurzbefehl mit `max_time=<Anpfiff>` und `max_per_page=1000` abgerufen und vollständig paginiert.
+V3 akzeptiert exakt eine Datei jedes dieser sechs Typen. Fehlende Dateien, Duplikate oder unbekannte zusätzliche JSON-Dateien stoppen den Data Audit.
+
+Die `HistoryDaten` stammen aus `league-matches`. Der iPhone-Kurzbefehl setzt `max_time=<date_unix des Zielspiels>` und `max_per_page=1000` und paginiert vollständig. Der Modellkern prüft die Zeitgrenze anschließend nochmals, sodass keine Spiele nach dem Ziel-Anpfiff in die History-Kalibrierung gelangen dürfen.
 
 ## Rollen
 
@@ -24,7 +26,7 @@ Die sechs Dateien werden über IDs und Dateitypen geprüft. Die `HistoryDaten` s
 
 ## Modell und Regeln
 
-Der Release-Wrapper ist v0.6.0. Der bewährte probabilistische Kern bleibt v0.5.0 / V5.5 und wird als `engine_core.py` eingebunden. Damit bleiben die bestehenden Regeln erhalten: sechs Märkte, keine Odds, INSUFFICIENT_DATA-Sperre, Result-vs-Underlying und V5.2-Decision-Gates.
+Der Release-Wrapper ist v0.6.1. Der bewährte probabilistische Kern bleibt v0.5.0 / V5.5 und wird als `engine_core.py` eingebunden. Damit bleiben die bestehenden Regeln erhalten: sechs Märkte, keine Odds, INSUFFICIENT_DATA-Sperre, Result-vs-Underlying und V5.2-Decision-Gates.
 
 ## Render
 
@@ -36,6 +38,8 @@ uvicorn app:app --host 0.0.0.0 --port $PORT
 
 Healthcheck: `/api/health`
 
+Der Blueprint nutzt `autoDeployTrigger: commit`, damit Änderungen auf dem verbundenen Branch automatisch einen neuen Render-Deploy auslösen können.
+
 ## iPhone-Kurzbefehl
 
-Die App bietet unter `/api/shortcut-source` den neuen **FootyStats API Export V3 — 6 Dateien** als unsignierte `.shortcut`-Datei an. Der API-Key wird nicht im Repository gespeichert; iOS fragt ihn beim Import als Importfrage ab. Die Datei danach auf dem iPhone über **Sign Shortcut File** signieren.
+Die App bietet unter `/api/shortcut-source` den **FootyStats API Export V3 — 6 Dateien** als unsignierte `.shortcut`-Datei an. Der API-Key wird nicht im Repository gespeichert. Die Datei danach auf dem iPhone über **Sign Shortcut File** signieren.
