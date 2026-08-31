@@ -1379,12 +1379,20 @@ h1{font-size:1.35rem}
 label{display:block;font-weight:700;margin-top:16px}
 input{box-sizing:border-box;width:100%;padding:13px;border:1px solid #d1d5db;border-radius:10px;font-size:16px;margin-top:7px}
 button{width:100%;padding:14px;margin-top:20px;border:0;border-radius:11px;background:#111827;color:white;font-size:17px;font-weight:700}
+.button{display:block;box-sizing:border-box;width:100%;padding:14px;margin-top:12px;border-radius:11px;background:#2563eb;color:white;text-align:center;text-decoration:none;font-size:17px;font-weight:700}
+.secondary{background:#e5e7eb;color:#111827}
 .s{font-size:.9rem;color:#6b7280;line-height:1.45}.ok{color:#047857}.bad{color:#b91c1c}
 </style>
 </head>
 <body><div class="w"><div class="c">
 <h1>FootyStats API Export V2 signieren</h1>
 <p class="s">Diese neue Version lädt automatisch alle sechs Dateien einschließlich HistoryDaten. Du musst keine Datei auswählen.</p>
+<h2>Sicherer iPhone-Weg</h2>
+<p class="s">Installiere einmal den offiziellen RoutineHub-Signierer. Lade danach hier die vorbereitete Rohdatei herunter und wähle sie im Signierer aus.</p>
+<a class="button" href="https://routinehub.co/shortcut/26044/" target="_blank" rel="noopener">1. Offiziellen Signierer installieren</a>
+<a class="button secondary" href="/api/shortcut-source">2. FootyStats-Rohdatei herunterladen</a>
+<hr style="border:0;border-top:1px solid #e5e7eb;margin:24px 0">
+<h2>Direkte API-Signierung</h2>
 <label>Name</label>
 <input id="name" value="FootyStats API Export V2">
 <label>HubSign API-Key</label>
@@ -1405,7 +1413,7 @@ document.getElementById('go').onclick=async()=>{
     const r=await fetch('/api/hubsign-sign',{method:'POST',body:fd});
     if(!r.ok){
       const t=await r.text();
-      st.className='s bad';st.textContent='Fehler '+r.status+': '+t.slice(0,500);return;
+      st.className='s bad';st.textContent='Direkte Signierung derzeit nicht verfügbar. Nutze oben den sicheren iPhone-Weg. Technischer Fehler '+r.status+': '+t.slice(0,300);return;
     }
     const b=await r.blob();
     const u=URL.createObjectURL(b);
@@ -1524,6 +1532,31 @@ def _multipart_body(shortcut_name: str, api_key: str):
     chunks.append(b"--"+b+b"--\r\n")
     return boundary, b"".join(chunks)
 
+def _is_signed_shortcut_payload(data: bytes):
+    """Accept only an Apple-signed shortcut archive, never an HTML/error page."""
+    return isinstance(data, bytes) and len(data) > 4 and data.startswith(b"AEA1")
+
+def _hubsign_error_response(message: str, status_code: int = 502):
+    return Response(
+        content=message,
+        status_code=status_code,
+        media_type="text/plain; charset=utf-8",
+        headers={"Cache-Control":"no-store"},
+    )
+
+@app.get("/api/shortcut-source")
+def shortcut_source():
+    """Download the unsigned bplist for signing with RoutineHub's iPhone signer."""
+    data = _prepared_shortcut_data()
+    return Response(
+        content=data,
+        media_type="application/octet-stream",
+        headers={
+            "Content-Disposition": 'attachment; filename="FootyStats API Export V2 unsigned.shortcut"',
+            "Cache-Control":"no-store",
+        },
+    )
+
 @app.post("/api/hubsign-sign")
 async def hubsign_sign(api_key: str = Form(...), shortcut_name: str = Form("FootyStats API Export V2")):
     api_key = (api_key or "").strip()
@@ -1536,8 +1569,10 @@ async def hubsign_sign(api_key: str = Form(...), shortcut_name: str = Form("Foot
         data=body,
         headers={
             "Content-Type": f"multipart/form-data; boundary={boundary}",
-            "Accept": "application/octet-stream",
-            "User-Agent": "FootyStats-Prognose-Engine/0.5.0",
+            "Accept": "application/octet-stream, application/json",
+            "Origin": "https://routinehub.co",
+            "Referer": "https://routinehub.co/",
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 Version/18.6 Mobile/15E148 Safari/604.1",
         },
         method="POST",
     )
@@ -1548,6 +1583,12 @@ async def hubsign_sign(api_key: str = Form(...), shortcut_name: str = Form("Foot
             ctype = r.headers.get("Content-Type", "application/octet-stream")
     except _urlerr.HTTPError as e:
         err = e.read()
+        if not err or b"<html" in err[:1000].lower() or b"<!doctype" in err[:1000].lower():
+            return _hubsign_error_response(
+                "RoutineHub/HubSign hat statt einer Signatur eine Cloudflare-Seite geliefert. "
+                "Nutze den sicheren iPhone-Weg auf der HubSign-Helferseite.",
+                502,
+            )
         return Response(
             content=err,
             status_code=e.code,
@@ -1558,16 +1599,11 @@ async def hubsign_sign(api_key: str = Form(...), shortcut_name: str = Form("Foot
         raise HTTPException(status_code=502, detail=f"RoutineHub nicht erreichbar: {e}")
     if status != 200:
         return Response(content=signed, status_code=status, media_type=ctype, headers={"Cache-Control":"no-store"})
-    # RoutineHub's current API contract guarantees a signed shortcut on HTTP 200,
-    # but does not guarantee the legacy AEA1 magic bytes. Reject obvious
-    # error/text responses instead of hard-coding one archive signature format.
-    ctype_l = (ctype or "").lower()
-    if not signed or "json" in ctype_l or "text/html" in ctype_l:
-        return Response(
-            content=signed or b"RoutineHub returned an empty response.",
-            status_code=502,
-            media_type=ctype or "text/plain",
-            headers={"Cache-Control":"no-store"},
+    if not _is_signed_shortcut_payload(signed):
+        return _hubsign_error_response(
+            "RoutineHub/HubSign hat keine gültige Apple-signierte Shortcut-Datei geliefert. "
+            "Der falsche Inhalt wurde blockiert; nutze den sicheren iPhone-Weg auf dieser Seite.",
+            502,
         )
     return Response(
         content=signed,
