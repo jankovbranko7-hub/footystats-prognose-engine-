@@ -478,11 +478,11 @@ class Payload(BaseModel):
 
 
 def _source_kind(filename: str) -> Optional[str]:
-    """Classify a V2 export by its filename without inspecting arbitrary JSON."""
+    """Classify a V2/V3 export by its filename without inspecting arbitrary JSON."""
     name = (filename or "").lower().replace(" ", "")
     for kind, marker in (("match", "matchdaten"), ("league", "leaguedaten"),
                          ("form", "formdaten"), ("table", "tabledaten"),
-                         ("player", "playerdaten")):
+                         ("player", "playerdaten"), ("history", "historydaten")):
         if marker in name:
             return kind
     return None
@@ -844,15 +844,92 @@ def _league_candidate_score(data: Any, filename: str, match_fields: Dict[str, An
     return {"score": score,"home_found": home_found,"away_found": away_found,"pager": pager(data),"reasons": reasons}
 
 
+def _direct_number(item: Dict[str, Any], aliases: Any) -> Optional[float]:
+    wanted = {nkey(alias) for alias in aliases}
+    for key, value in item.items():
+        if nkey(key) in wanted:
+            parsed = num(value)
+            if parsed is not None:
+                return parsed
+    return None
+
+
+def _history_archive_audit(history_data: Any, filename: str, match_fields: Dict[str, Any]) -> Dict[str, Any]:
+    """Validate HistoryDaten for attribution/archive only; never feed it to the model."""
+    match_id = match_fields.get("match_id")
+    numeric_tokens = [int(token) for token in re.findall(r"(?<!\d)(\d{5,})(?!\d)", filename or "")]
+    mapping_verified = bool(match_id is not None and int(match_id) in numeric_tokens)
+    mapping_conflict = bool(match_id is not None and numeric_tokens and not mapping_verified)
+
+    records = []
+    page_pairs = []
+    for item in dicts(history_data):
+        home_id = _direct_number(item, ("homeID", "home_id"))
+        away_id = _direct_number(item, ("awayID", "away_id"))
+        if home_id is not None and away_id is not None:
+            record_id = _direct_number(item, ("id", "match_id"))
+            records.append((record_id, int(home_id), int(away_id), str(item.get("date") or "")))
+        current_page = _direct_number(item, ("current_page", "page"))
+        max_page = _direct_number(item, ("max_page", "last_page"))
+        if current_page is not None and max_page is not None:
+            page_pairs.append((int(current_page), int(max_page)))
+
+    unique_records = len(set(records))
+    declared_max_page = max((maximum for _, maximum in page_pairs), default=None)
+    seen_pages = sorted({current for current, _ in page_pairs if current > 0})
+    pagination_declared = declared_max_page is not None
+    pagination_complete = (
+        set(range(1, declared_max_page + 1)).issubset(seen_pages)
+        if declared_max_page and declared_max_page > 0
+        else None
+    )
+
+    warnings = []
+    if not numeric_tokens:
+        warnings.append("Match-ID ist im History-Dateinamen nicht prüfbar.")
+    if unique_records == 0:
+        warnings.append("Keine eindeutig erkennbaren historischen Matchdatensätze gefunden.")
+    if pagination_declared and pagination_complete is False:
+        warnings.append("Die gemeldete History-Paginierung ist unvollständig.")
+
+    if mapping_conflict:
+        status = "MAPPING FEHLER"
+    elif pagination_declared and pagination_complete is False:
+        status = "PAGINATION UNVOLLSTÄNDIG"
+    elif unique_records == 0:
+        status = "STRUKTUR UNKLAR"
+    else:
+        status = "OK"
+
+    return {
+        "received": True,
+        "filename": filename,
+        "archived": True,
+        "model_use": False,
+        "status": status,
+        "target_match_id": match_id,
+        "mapping_verified": mapping_verified,
+        "mapping_conflict": mapping_conflict,
+        "record_count_detected": unique_records,
+        "pagination": {
+            "declared": pagination_declared,
+            "seen_pages": seen_pages,
+            "max_page": declared_max_page,
+            "complete": pagination_complete,
+        },
+        "warnings": warnings,
+    }
+
+
 def select_pair(parsed_files: List[Dict[str, Any]]) -> Dict[str, Any]:
-    by_kind: Dict[str, List[Dict[str, Any]]] = {kind: [] for kind in ("match", "league", "form", "table", "player")}
+    by_kind: Dict[str, List[Dict[str, Any]]] = {kind: [] for kind in ("match", "league", "form", "table", "player", "history")}
     for item in parsed_files:
         kind = _source_kind(item["name"])
         if kind:
             by_kind[kind].append(item)
     duplicate_kinds = [kind for kind, items in by_kind.items() if len(items) > 1]
     if duplicate_kinds:
-        return {"ok": False, "decision": "ANALYSE NICHT MÖGLICH", "phase": "PAIRING_FAILED", "error": "Mehrere V2-Dateien desselben Typs erkannt.", "duplicate_types": duplicate_kinds}
+        return {"ok": False, "decision": "ANALYSE NICHT MÖGLICH", "phase": "PAIRING_FAILED", "error": "Mehrere V2/V3-Dateien desselben Typs erkannt.", "duplicate_types": duplicate_kinds}
     match_candidates = by_kind["match"] or [x for x in parsed_files if _is_match_data(x["data"], x["name"])]
     if len(match_candidates) == 0:return {"ok":False,"decision":"ANALYSE NICHT MÖGLICH","phase":"PAIRING_FAILED","error":"Keine MatchDaten-Datei im ausgewählten Paket erkannt.","files":[x["name"] for x in parsed_files]}
     if len(match_candidates) > 1:return {"ok":False,"decision":"ANALYSE NICHT MÖGLICH","phase":"PAIRING_FAILED","error":"Mehrere MatchDaten-Dateien erkannt. Bitte genau einen Match-Unterordner auswählen.","match_files":[x["name"] for x in match_candidates]}
@@ -868,11 +945,18 @@ def select_pair(parsed_files: List[Dict[str, Any]]) -> Dict[str, Any]:
     if not (best["home_found"] and best["away_found"]):return {"ok":False,"decision":"ANALYSE NICHT MÖGLICH","phase":"PAIRING_FAILED","error":"Keine LeagueDaten-Datei enthält beide Teams dieses Matches.","match_file":match_file["name"],"match":match_fields,"checked_league_files":[{"name":x["name"],"home_found":x["home_found"],"away_found":x["away_found"],"pager":x["pager"],"score":x["score"]} for x in scored]}
     source_files = {kind: items[0]["name"] for kind, items in by_kind.items() if items}
     supplemental_data = {kind: items[0]["data"] for kind, items in by_kind.items() if kind in {"form", "table", "player"} and items}
-    return {"ok":True,"match_file":match_file["name"],"league_file":best["name"],"match_data":match_file["data"],"league_data":best["data"],"supplemental_data":supplemental_data,"source_files":source_files,"pairing":{"match_id":match_fields.get("match_id"),"competition_id":match_fields.get("competition_id"),"home_id":match_fields.get("home_id"),"away_id":match_fields.get("away_id"),"league_score":best["score"],"league_reasons":best["reasons"]}}
+    history_archive = (
+        _history_archive_audit(by_kind["history"][0]["data"], by_kind["history"][0]["name"], match_fields)
+        if by_kind["history"]
+        else {"received": False, "archived": False, "model_use": False, "status": "NICHT GELIEFERT", "warnings": []}
+    )
+    if history_archive.get("mapping_conflict"):
+        return {"ok":False,"decision":"ANALYSE NICHT MÖGLICH","phase":"PAIRING_FAILED","error":"Die HistoryDaten-Datei gehört laut Dateiname nicht zur Match-ID.","match_file":match_file["name"],"history_archive":history_archive}
+    return {"ok":True,"match_file":match_file["name"],"league_file":best["name"],"match_data":match_file["data"],"league_data":best["data"],"supplemental_data":supplemental_data,"source_files":source_files,"history_archive":history_archive,"pairing":{"match_id":match_fields.get("match_id"),"competition_id":match_fields.get("competition_id"),"home_id":match_fields.get("home_id"),"away_id":match_fields.get("away_id"),"league_score":best["score"],"league_reasons":best["reasons"]}}
 
 # ---- Local iPhone archive package (no server-side persistence) ----
-_ARCHIVE_VERSION = "1.0.0"
-_ARCHIVE_SOURCE_KINDS = ("match", "league", "form", "table", "player")
+_ARCHIVE_VERSION = "1.1.0"
+_ARCHIVE_SOURCE_KINDS = ("match", "league", "form", "table", "player", "history")
 _ARCHIVE_SECRET_PARTS = ("apikey", "token", "authorization", "password", "secret", "credential")
 _ARCHIVE_SENSITIVE_QUERY = re.compile(r"(?i)(api[_-]?key|token|authorization|password|secret)=([^&\s]+)")
 
@@ -1030,6 +1114,13 @@ def _analyze_bundle(parsed_files: List[Dict[str, Any]]) -> Dict[str, Any]:
         "match_file": pair["match_file"],
         "league_file": pair["league_file"],
     }
+    result["history_archive"] = pair.get("history_archive") or {
+        "received": False,
+        "archived": False,
+        "model_use": False,
+        "status": "NICHT GELIEFERT",
+        "warnings": [],
+    }
     result["_archive_pair"] = pair
     return result
 
@@ -1055,13 +1146,13 @@ pre{white-space:pre-wrap;word-break:break-word;font-size:.75rem}.sep{border-top:
 <div class="w">
   <div class="c">
     <h2>FootyStats Prognose Engine v0.4.0</h2>
-    <div class="s">Liga-relativer V5.5-Kern · keine Odds · keine externen Matchdaten · INSUFFICIENT_DATA-Sperre und V5.2-Guardrails aktiv</div>
+    <div class="s">Liga-relativer V5.5-Kern · keine Odds · HistoryDaten nur geprüft/archiviert, ohne Modellwirkung · INSUFFICIENT_DATA-Sperre und V5.2-Guardrails aktiv</div>
     <h3>Match-Ordner auswählen</h3>
-    <p class="s">Empfohlen: genau MatchDaten, LeagueDaten, FormDaten, TableDaten und PlayerDaten eines Matches auswählen.</p>
+    <p class="s">Empfohlen: MatchDaten, LeagueDaten, FormDaten, TableDaten, PlayerDaten und HistoryDaten eines Matches auswählen.</p>
     <input id="folderFiles" type="file" webkitdirectory directory multiple accept=".json,application/json">
     <div class="sep"></div>
     <h3>Fallback: JSON-Dateien gemeinsam auswählen</h3>
-    <p class="s">Falls die Ordnerauswahl am iPhone nicht angeboten wird, wähle hier alle fünf JSON-Dateien gleichzeitig aus.</p>
+    <p class="s">Falls die Ordnerauswahl am iPhone nicht angeboten wird, wähle hier alle sechs JSON-Dateien gleichzeitig aus. Die bisherigen fünf Dateien funktionieren weiterhin.</p>
     <input id="bundleFiles" type="file" multiple accept=".json,application/json">
     <button id="go">Analyse starten</button>
   </div>
@@ -1115,7 +1206,7 @@ document.getElementById('go').onclick=async function(){
     if(!data.ok){
       out.innerHTML='<div class="c"><h3 class="bad">Analyse nicht möglich</h3><pre>'+escapeHtml(JSON.stringify(data,null,2))+'</pre></div>';return;
     }
-    const diag=data.diagnostics||{},goal=data.expected_goals||{},protocol=diag.elite_protocol||{},gates=protocol.gates||{},rvu=diag.result_vs_underlying_detail||{};
+    const diag=data.diagnostics||{},goal=data.expected_goals||{},protocol=diag.elite_protocol||{},gates=protocol.gates||{},rvu=diag.result_vs_underlying_detail||{},history=data.history_archive||{};
     const rows=(data.markets||[]).map(function(item){
       return '<tr><td>'+escapeHtml(item.rank)+'</td><td>'+escapeHtml(item.label)+'</td><td><b>'+escapeHtml(item.probability_pct)+'%</b></td></tr>';
     }).join('');
@@ -1139,6 +1230,11 @@ document.getElementById('go').onclick=async function(){
       '<div class="m"><div class="s">Underlying (xG-Modell)</div><div class="b">'+escapeHtml(rvu.underlying_probability_pct==null?'—':rvu.underlying_probability_pct+'%')+'</div><div class="s">λ Heim '+escapeHtml((rvu.underlying_expected_goals||{}).home||'—')+' · λ Auswärts '+escapeHtml((rvu.underlying_expected_goals||{}).away||'—')+'</div></div>'+
       '<div class="m"><div class="s">Prüfstatus</div><div class="b">'+escapeHtml(rvu.status||diag.result_vs_underlying||'—')+'</div><div class="s">Differenz '+escapeHtml(rvu.difference_pp==null?'—':rvu.difference_pp+' Prozentpunkte')+'</div></div>'+
       '</div></div>'+
+      '<div class="c"><h3>HistoryDaten</h3><div class="g">'+
+      '<div class="m"><div class="s">Prüfstatus</div><div class="b">'+escapeHtml(history.status||'NICHT GELIEFERT')+'</div><div class="s">Erkannte Datensätze: '+escapeHtml(history.record_count_detected==null?'—':history.record_count_detected)+'</div></div>'+
+      '<div class="m"><div class="s">Im Archiv</div><div class="b">'+escapeHtml(history.archived?'JA':'NEIN')+'</div></div>'+
+      '<div class="m"><div class="s">Einfluss auf Modell</div><div class="b">NEIN</div><div class="s">Wahrscheinlichkeiten und Entscheidung bleiben v0.4.0.</div></div>'+
+      '</div></div>'+
       '<div class="c"><h3>Alle Märkte</h3><table><tr><th>Rang</th><th>Markt</th><th>Modell</th></tr>'+rows+'</table></div>'+
       '<div class="c"><h3>Archiv</h3><p class="s">Erstellt eine einzelne, bereinigte Datei mit Analyse und allen ausgewählten FootyStats-Quellen. Sie wird nicht auf Render gespeichert.</p><button class="secondary" id="archive">Archivpaket herunterladen</button><p id="archiveStatus" class="s"></p></div>'+
       '<div class="c"><details><summary>Technische Diagnose</summary><pre>'+escapeHtml(JSON.stringify(data,null,2))+'</pre></details></div>';
@@ -1160,7 +1256,7 @@ document.getElementById('go').onclick=async function(){
 @app.get("/",response_class=HTMLResponse)
 def index():return INDEX_HTML
 @app.get("/api/health")
-def health():return {"ok":True,"version":"0.4.0"}
+def health():return {"ok":True,"version":"0.4.0","history_archive_support":True,"history_model_use":False}
 @app.post("/api/predict")
 def predict_json(payload:Payload):
     report = supplemental_report(payload.matchData, payload.leagueData, payload.formData, payload.tableData, payload.playerData)
