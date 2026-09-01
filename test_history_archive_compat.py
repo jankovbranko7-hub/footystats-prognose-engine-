@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 import app
 
@@ -80,6 +81,13 @@ def parsed_bundle(include_history=True, history_name="123456_HistoryDaten.json",
 
 
 class HistoryModelTests(unittest.TestCase):
+    def test_bundle_fits_history_only_once(self):
+        original = app._fit_history_rho
+        with patch.object(app, "_fit_history_rho", wraps=original) as fitted:
+            result = app._analyze_bundle(parsed_bundle())
+        self.assertTrue(result["ok"])
+        self.assertEqual(fitted.call_count, 1)
+
     def test_sixth_file_is_a_real_model_input(self):
         result = app._analyze_bundle(parsed_bundle())
         self.assertTrue(result["ok"])
