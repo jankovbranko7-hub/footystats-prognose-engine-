@@ -204,12 +204,17 @@ def league_shrunk_rate(rate,matches,rows,league_mean):
     return {'raw':float(rate),'league_mean':league_mean,'matches':float(matches),'variance':variance,
             'prior_exposure':prior_exposure,'reliability':reliability,'shrunk':posterior}
 
-def worldwide_lambdas(home_team,away_team,league,neutralize=None,teams=None):
+def league_model_context(league,teams=None):
     teams=teams or league_team_list(league)
     specs={'home_xg':('home','xg'),'away_xg':('away','xg'),
            'home_xga':('home','xga'),'away_xga':('away','xga')}
     rows={name:league_metric_rows(teams,*spec) for name,spec in specs.items()}
     baseline={name:weighted_league_mean(metric_rows) for name,metric_rows in rows.items()}
+    return {'teams':teams,'rows':rows,'baseline':baseline}
+
+def worldwide_lambdas(home_team,away_team,league,neutralize=None,teams=None,context=None):
+    context=context or league_model_context(league,teams)
+    teams=context['teams'];rows=context['rows'];baseline=context['baseline']
     required={
       'home_attack':(tnum(home_team,'xg','home'),tnum(home_team,'matches','home'),'home_xg'),
       'away_defence':(tnum(away_team,'xga','away'),tnum(away_team,'matches','away'),'away_xga'),
@@ -358,7 +363,7 @@ def _history_rows(history,match):
     rows.sort(key=lambda row:row['date_unix'])
     return rows,excluded,cutoff
 
-def _fit_history_rho(history,match,league):
+def _fit_history_rho(history,match,league,context=None):
     pagination=_history_pagination(history)
     rows,excluded,cutoff=_history_rows(history,match)
     base={'received':history is not None,'active':False,'rho':0.0,'records_eligible':len(rows),'records_used':0,'low_score_records':0,'target_cutoff_unix':cutoff,'pagination':pagination,'excluded':excluded,'method':'bounded Dixon-Coles maximum likelihood on completed pre-match league results'}
@@ -369,12 +374,20 @@ def _fit_history_rho(history,match,league):
     if not pagination['complete']:
         base['reason']='HistoryDaten-Paginierung ist unvollständig.';return base
     prepared=[]
-    teams=league_team_list(league)
+    context=context or league_model_context(league)
+    teams=context['teams']
     team_index={_team_identifier(team):team for team in teams}
+    pair_cache={}
     for row in rows:
         home_team=team_index.get(row['home_id']);away_team=team_index.get(row['away_id'])
         if home_team is None or away_team is None:continue
-        try:home_lambda,away_lambda,_=worldwide_lambdas(home_team,away_team,league,teams=teams)
+        pair=(row['home_id'],row['away_id'])
+        try:
+            if pair not in pair_cache:
+                home_lambda,away_lambda,_=worldwide_lambdas(home_team,away_team,league,context=context)
+                pair_cache[pair]=(home_lambda,away_lambda)
+            else:
+                home_lambda,away_lambda=pair_cache[pair]
         except ValueError:continue
         prepared.append((row,home_lambda,away_lambda))
     base['records_used']=len(prepared)
@@ -542,10 +555,12 @@ def predict(match,league,history=None):
     ss=sample(hn,an,ho,ao); quality='HOCH'
     if not hn or not an:quality='MITTEL'
     if sum(x is not None for x in [h['overall']['xg'],h['overall']['xga'],aw['overall']['xg'],aw['overall']['xga']])<3:quality='MITTEL'
-    try:hl,al,world=worldwide_lambdas(a['home_team'],a['away_team'],league)
+    try:
+        league_context=league_model_context(league)
+        hl,al,world=worldwide_lambdas(a['home_team'],a['away_team'],league,context=league_context)
     except ValueError as e:return {'ok':False,'phase':'MODEL_INPUT_FAILED','audit':{'valid':True,'errors':[str(e)],'match':m},'decision':'ANALYSE NICHT MÖGLICH'}
     if world.get('league_team_count',0)<6:quality='MITTEL'
-    history_fit=_fit_history_rho(history,m,league)
+    history_fit=_fit_history_rho(history,m,league,context=league_context)
     rho=history_fit['rho'] if history_fit.get('active') else 0.0
     world['dixon_coles_fitted']=bool(history_fit.get('active'))
     world['dixon_coles_rho']=rho
@@ -557,7 +572,7 @@ def predict(match,league,history=None):
     rank=sorted([(x,p[x]) for x in allowed],key=lambda z:z[1],reverse=True); top,tp=rank[0]; second,sp=rank[1]
     blocks=['home_attack','away_defence','away_attack','home_defence']; stress={}
     for block in blocks:
-        sh,sa,_=worldwide_lambdas(a['home_team'],a['away_team'],league,block)
+        sh,sa,_=worldwide_lambdas(a['home_team'],a['away_team'],league,block,context=league_context)
         stress[block]=poisson(sh,sa,rho=rho)[top]
     influence_block=max(blocks,key=lambda block:abs(stress[block]-tp))
     pooling=world.get('partial_pooling') or {}
@@ -739,7 +754,7 @@ def _overall_matches(league_data: Any, team_id: Any, venue: str) -> Any:
     return profile(team, venue)["overall"].get("matches") if team else None
 
 
-def supplemental_report(match_data: Any, league_data: Any = None, form_data: Any = None, table_data: Any = None, player_data: Any = None, history_data: Any = None) -> Dict[str, Any]:
+def supplemental_report(match_data: Any, league_data: Any = None, form_data: Any = None, table_data: Any = None, player_data: Any = None, history_data: Any = None, history_fit: Any = None) -> Dict[str, Any]:
     """Use all V2 sources for audit and risk checks, never inventing unbacktested probability weights."""
     match = mf(match_data)
     home_id, away_id = match.get("home_id"), match.get("away_id")
@@ -751,7 +766,7 @@ def supplemental_report(match_data: Any, league_data: Any = None, form_data: Any
         "home": _player_team_summary(player_data, home_id, home_matches),
         "away": _player_team_summary(player_data, away_id, away_matches),
     }
-    history = _fit_history_rho(history_data, match, league_data) if league_data is not None else {"received": history_data is not None, "active": False, "reason": "LeagueDaten fehlen."}
+    history = history_fit if isinstance(history_fit,dict) else (_fit_history_rho(history_data, match, league_data) if league_data is not None else {"received": history_data is not None, "active": False, "reason": "LeagueDaten fehlen."})
     return {
         "received": {"form": form_data is not None, "table": table_data is not None, "player": player_data is not None, "history": history_data is not None},
         "coverage": {
@@ -1231,6 +1246,8 @@ def _analyze_bundle(parsed_files: List[Dict[str, Any]]) -> Dict[str, Any]:
     if not pair.get("ok"):
         return pair
     extras = pair.get("supplemental_data") or {}
+    core = predict(pair["match_data"], pair["league_data"], extras.get("history"))
+    history_fit = (core.get("diagnostics") or {}).get("history")
     report = supplemental_report(
         pair["match_data"],
         pair["league_data"],
@@ -1238,9 +1255,10 @@ def _analyze_bundle(parsed_files: List[Dict[str, Any]]) -> Dict[str, Any]:
         extras.get("table"),
         extras.get("player"),
         extras.get("history"),
+        history_fit,
     )
     result = _attach_supplemental(
-        predict(pair["match_data"], pair["league_data"], extras.get("history")),
+        core,
         report,
         pair.get("source_files") or {},
     )
@@ -1398,8 +1416,10 @@ def index():return INDEX_HTML
 def health():return {"ok":True,"version":"0.5.0","history_archive_support":True,"history_model_support":True,"history_model_use":"conditional_dixon_coles"}
 @app.post("/api/predict")
 def predict_json(payload:Payload):
-    report = supplemental_report(payload.matchData, payload.leagueData, payload.formData, payload.tableData, payload.playerData, payload.historyData)
-    return _attach_supplemental(predict(payload.matchData, payload.leagueData, payload.historyData), report, {})
+    core = predict(payload.matchData, payload.leagueData, payload.historyData)
+    history_fit = (core.get("diagnostics") or {}).get("history")
+    report = supplemental_report(payload.matchData, payload.leagueData, payload.formData, payload.tableData, payload.playerData, payload.historyData, history_fit)
+    return _attach_supplemental(core, report, {})
 @app.post("/api/predict-files")
 async def predict_files(match_file:UploadFile=File(...),league_file:UploadFile=File(...)):
     try:match_data=json.loads((await match_file.read()).decode("utf-8"));league_data=json.loads((await league_file.read()).decode("utf-8"))
