@@ -8,6 +8,7 @@ import threading
 import time
 import unicodedata
 import urllib.error
+import urllib.parse
 import urllib.request
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -102,7 +103,6 @@ def _date_score(requested: Optional[str], candidate: Any) -> float:
         return 0.0
     if rq == cd:
         return 0.18
-    # YYYYMMDD versus DDMMYYYY
     if len(rq) == 8 and len(cd) == 8 and rq[:4].isdigit():
         swapped = rq[6:8] + rq[4:6] + rq[:4]
         if swapped == cd:
