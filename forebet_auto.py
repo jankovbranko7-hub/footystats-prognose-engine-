@@ -15,7 +15,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 ACTOR_ID = "locos08~forebet-predictions-scraper"
 APIFY_ENDPOINT = f"https://api.apify.com/v2/acts/{ACTOR_ID}/run-sync-get-dataset-items"
-CACHE_SECONDS = 12 * 60
+CACHE_SECONDS = 30 * 60
 _CACHE: Dict[str, Any] = {"at": 0.0, "items": None}
 _LOCK = threading.Lock()
 
