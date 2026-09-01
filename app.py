@@ -467,7 +467,7 @@ from fastapi import FastAPI, File, UploadFile, HTTPException, Form
 from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel
 
-app = FastAPI(title="FootyStats Prognose Engine", version="0.4.0")
+app = FastAPI(title="FootyStats + Forebet Super Analyse", version="0.6.0")
 
 class Payload(BaseModel):
     matchData: Dict[str, Any]
@@ -475,6 +475,7 @@ class Payload(BaseModel):
     formData: Optional[Dict[str, Any]] = None
     tableData: Optional[Dict[str, Any]] = None
     playerData: Optional[Dict[str, Any]] = None
+    forebetData: Dict[str, Any]
 
 
 def _source_kind(filename: str) -> Optional[str]:
@@ -482,10 +483,175 @@ def _source_kind(filename: str) -> Optional[str]:
     name = (filename or "").lower().replace(" ", "")
     for kind, marker in (("match", "matchdaten"), ("league", "leaguedaten"),
                          ("form", "formdaten"), ("table", "tabledaten"),
-                         ("player", "playerdaten")):
+                         ("player", "playerdaten"), ("forebet", "forebetdaten")):
         if marker in name:
             return kind
     return None
+
+
+def _forebet_probability(value: Any, field: str) -> float:
+    parsed = num(value)
+    if parsed is None:
+        raise ValueError(f"Forebet-Feld {field} fehlt oder ist keine Zahl.")
+    probability = parsed / 100.0 if parsed > 1 else parsed
+    if not 0 <= probability <= 1:
+        raise ValueError(f"Forebet-Feld {field} muss zwischen 0 und 100 Prozent liegen.")
+    return float(probability)
+
+
+def _forebet_snapshot(data: Any, match_fields: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(data, dict):
+        raise ValueError("ForebetDaten müssen ein JSON-Objekt sein.")
+    raw = data.get("raw_entry") or data.get("raw")
+    values = dict(data)
+    if isinstance(raw, str) and raw.strip():
+        parts = [part.strip() for part in raw.split(";")]
+        if len(parts) < 7:
+            raise ValueError("Forebet-Eingabe benötigt: 1;X;2;BTTS-Ja;Over-2,5;Ergebnistipp;Ø-Tore[;URL].")
+        values.update({
+            "home_win": parts[0], "draw": parts[1], "away_win": parts[2],
+            "btts_yes": parts[3], "over_2_5": parts[4],
+            "predicted_score": parts[5], "average_goals": parts[6],
+        })
+        if len(parts) > 7 and parts[7]:
+            values["source_url"] = parts[7]
+    match_id = firstnum(values, ["match_id", "matchID"])
+    expected_match_id = num(match_fields.get("match_id"))
+    if match_id is None or expected_match_id is None or int(match_id) != int(expected_match_id):
+        raise ValueError("ForebetDaten gehören nicht zur Match-ID der FootyStats-Dateien.")
+    home = _forebet_probability(first(values, ["home_win", "home_probability", "p1"]), "1")
+    draw = _forebet_probability(first(values, ["draw", "draw_probability", "px"]), "X")
+    away = _forebet_probability(first(values, ["away_win", "away_probability", "p2"]), "2")
+    total = home + draw + away
+    if not 0.95 <= total <= 1.05:
+        raise ValueError("Forebet-1X2-Werte müssen zusammen ungefähr 100 Prozent ergeben.")
+    home, draw, away = home / total, draw / total, away / total
+    btts_yes = _forebet_probability(first(values, ["btts_yes", "btts", "both_teams_to_score_yes"]), "BTTS-Ja")
+    over_2_5 = _forebet_probability(first(values, ["over_2_5", "over25", "o25"]), "Over 2,5")
+    predicted_score = str(first(values, ["predicted_score", "correct_score", "score_prediction"]) or "").strip()
+    score_match = re.fullmatch(r"(\d{1,2})\s*[-:]\s*(\d{1,2})", predicted_score)
+    if not score_match:
+        raise ValueError("Forebet-Ergebnistipp muss wie 2-1 eingegeben werden.")
+    score_home, score_away = int(score_match.group(1)), int(score_match.group(2))
+    average_goals = num(first(values, ["average_goals", "avg_goals", "expected_goals"] ))
+    if average_goals is None or not 0 <= average_goals <= 10:
+        raise ValueError("Forebet-Ø-Tore müssen zwischen 0 und 10 liegen.")
+    source_url = str(first(values, ["source_url", "forebet_url", "url"]) or "").strip()
+    if source_url and not re.match(r"^https://(www\.)?forebet\.com/", source_url, re.I):
+        raise ValueError("Forebet-Quelllink muss auf forebet.com verweisen.")
+    return {
+        "match_id": int(match_id),
+        "source": "Forebet public pre-match prediction (manual snapshot)",
+        "source_url": source_url or None,
+        "captured_at": first(values, ["captured_at", "created_at"]),
+        "probabilities": {
+            "home_win": home, "draw": draw, "away_win": away,
+            "btts_yes": btts_yes, "btts_no": 1 - btts_yes,
+            "over_2_5": over_2_5, "under_2_5": 1 - over_2_5,
+        },
+        "predicted_score": f"{score_home}-{score_away}",
+        "predicted_score_goals": {"home": score_home, "away": score_away, "total": score_home + score_away},
+        "average_goals": float(average_goals),
+        "odds_used": False,
+    }
+
+
+def _bounded_probability(value: float) -> float:
+    return max(1e-6, min(1 - 1e-6, float(value)))
+
+
+def _binary_log_opinion_pool(first_probability: float, second_probability: float) -> float:
+    first_probability = _bounded_probability(first_probability)
+    second_probability = _bounded_probability(second_probability)
+    log_odds = 0.5 * math.log(first_probability / (1 - first_probability)) + 0.5 * math.log(second_probability / (1 - second_probability))
+    return 1 / (1 + math.exp(-log_odds))
+
+
+def _multiclass_log_opinion_pool(first_model: Dict[str, float], second_model: Dict[str, float], keys: List[str]) -> Dict[str, float]:
+    raw = {key: math.sqrt(_bounded_probability(first_model[key]) * _bounded_probability(second_model[key])) for key in keys}
+    total = sum(raw.values())
+    return {key: value / total for key, value in raw.items()}
+
+
+def _attach_forebet_ensemble(result: Dict[str, Any], forebet: Dict[str, Any]) -> Dict[str, Any]:
+    if not result.get("ok"):
+        return result
+    result = dict(result)
+    footystats_probabilities = dict(result.get("probabilities") or {})
+    footystats_snapshot = {
+        "version": "0.4.0",
+        "probabilities": footystats_probabilities,
+        "markets": list(result.get("markets") or []),
+        "strongest_market": dict(result.get("strongest_market") or {}),
+        "decision_after_guardrails": result.get("decision"),
+        "expected_goals": result.get("expected_goals"),
+    }
+    forebet_probabilities = forebet["probabilities"]
+    fused = _multiclass_log_opinion_pool(
+        footystats_probabilities, forebet_probabilities,
+        ["home_win", "draw", "away_win"],
+    )
+    for positive, negative in (("btts_yes", "btts_no"), ("over_2_5", "under_2_5")):
+        fused[positive] = _binary_log_opinion_pool(footystats_probabilities[positive], forebet_probabilities[positive])
+        fused[negative] = 1 - fused[positive]
+    allowed = ["home_win", "away_win", "btts_yes", "btts_no", "over_2_5", "under_2_5"]
+    ranking = sorted(((key, fused[key]) for key in allowed), key=lambda item: item[1], reverse=True)
+    footystats_top = max(allowed, key=lambda key: footystats_probabilities[key])
+    forebet_top = max(allowed, key=lambda key: forebet_probabilities[key])
+    fused_top, fused_probability = ranking[0]
+    comparison = []
+    for key in allowed:
+        difference = abs(footystats_probabilities[key] - forebet_probabilities[key])
+        comparison.append({
+            "key": key, "label": LABEL[key],
+            "footystats_probability_pct": round(footystats_probabilities[key] * 100, 1),
+            "forebet_probability_pct": round(forebet_probabilities[key] * 100, 1),
+            "combined_probability_pct": round(fused[key] * 100, 1),
+            "difference_pp": round(difference * 100, 1),
+        })
+    top_difference = abs(footystats_probabilities[fused_top] - forebet_probabilities[fused_top])
+    top_agreement = footystats_top == forebet_top == fused_top
+    base_decision = result.get("decision")
+    if fused_probability < 0.60 or top_difference >= 0.18:
+        final_decision = "AUSLASSEN"
+    elif base_decision == "SPIELEN" and top_agreement and fused_probability >= 0.65 and top_difference <= 0.08:
+        final_decision = "SPIELEN"
+    else:
+        final_decision = "BEOBACHTEN"
+    agreement_status = "HOCH" if top_agreement and top_difference <= 0.08 else ("MITTEL" if top_difference < 0.18 else "NIEDRIG")
+    result["footystats_model"] = footystats_snapshot
+    result["forebet_model"] = forebet
+    result["probabilities"] = fused
+    result["markets"] = [
+        {"rank": index + 1, "key": key, "label": LABEL[key], "probability_pct": round(probability * 100, 1)}
+        for index, (key, probability) in enumerate(ranking)
+    ]
+    result["strongest_market"] = {"key": fused_top, "label": LABEL[fused_top], "probability_pct": round(fused_probability * 100, 1)}
+    result["second_market"] = {"key": ranking[1][0], "label": LABEL[ranking[1][0]], "probability_pct": round(ranking[1][1] * 100, 1)}
+    result["decision_before_forebet_ensemble"] = base_decision
+    result["decision"] = final_decision
+    result["ensemble"] = {
+        "active": True,
+        "method": "symmetrischer logarithmischer Opinion-Pool",
+        "weights": {"footystats": 0.5, "forebet": 0.5},
+        "backtested_weights": False,
+        "market_comparison": comparison,
+        "footystats_top_market": footystats_top,
+        "forebet_top_market": forebet_top,
+        "combined_top_market": fused_top,
+        "top_market_agreement": top_agreement,
+        "top_market_difference_pp": round(top_difference * 100, 1),
+        "agreement_status": agreement_status,
+        "decision_rule": "SPIELEN nur bei bereits bestandenem FootyStats-V5.2-Protokoll, gleichem Top-Markt, mindestens 65 % gemeinsam und höchstens 8 Prozentpunkten Differenz.",
+    }
+    result["method"] = {**dict(result.get("method") or {}), "forebet_ensemble": True, "opinion_pool": "equal-weight log pool", "odds_used": False}
+    result["model_version"] = "0.6.0"
+    result["notes"] = list(result.get("notes") or []) + [
+        "Forebet beeinflusst alle sechs Marktwerte über einen symmetrischen logarithmischen Opinion-Pool.",
+        "Die Gewichte sind transparent gleich verteilt und noch nicht backtest-kalibriert.",
+        "Forebet-Quoten werden nicht übernommen oder verwendet.",
+    ]
+    return result
 
 
 def _same_team_id(value: Any, team_id: Any) -> bool:
@@ -845,7 +1011,7 @@ def _league_candidate_score(data: Any, filename: str, match_fields: Dict[str, An
 
 
 def select_pair(parsed_files: List[Dict[str, Any]]) -> Dict[str, Any]:
-    by_kind: Dict[str, List[Dict[str, Any]]] = {kind: [] for kind in ("match", "league", "form", "table", "player")}
+    by_kind: Dict[str, List[Dict[str, Any]]] = {kind: [] for kind in ("match", "league", "form", "table", "player", "forebet")}
     for item in parsed_files:
         kind = _source_kind(item["name"])
         if kind:
@@ -866,13 +1032,18 @@ def select_pair(parsed_files: List[Dict[str, Any]]) -> Dict[str, Any]:
         info=_league_candidate_score(item["data"],item["name"],match_fields);scored.append({**item,**info})
     scored.sort(key=lambda x:x["score"],reverse=True);best=scored[0]
     if not (best["home_found"] and best["away_found"]):return {"ok":False,"decision":"ANALYSE NICHT MÖGLICH","phase":"PAIRING_FAILED","error":"Keine LeagueDaten-Datei enthält beide Teams dieses Matches.","match_file":match_file["name"],"match":match_fields,"checked_league_files":[{"name":x["name"],"home_found":x["home_found"],"away_found":x["away_found"],"pager":x["pager"],"score":x["score"]} for x in scored]}
+    if not by_kind["forebet"]:
+        return {"ok":False,"decision":"ANALYSE NICHT MÖGLICH","phase":"FOREBET_DATA_MISSING","error":"ForebetDaten-Datei fehlt. Die Super Analyse benötigt fünf FootyStats-Dateien und eine ForebetDaten-Datei.","match_file":match_file["name"]}
+    forebet_file = by_kind["forebet"][0]
+    if str(int(match_fields.get("match_id"))) not in forebet_file["name"]:
+        return {"ok":False,"decision":"ANALYSE NICHT MÖGLICH","phase":"PAIRING_FAILED","error":"ForebetDaten-Dateiname enthält nicht die Match-ID der FootyStats-Dateien.","match_file":match_file["name"],"forebet_file":forebet_file["name"]}
     source_files = {kind: items[0]["name"] for kind, items in by_kind.items() if items}
     supplemental_data = {kind: items[0]["data"] for kind, items in by_kind.items() if kind in {"form", "table", "player"} and items}
-    return {"ok":True,"match_file":match_file["name"],"league_file":best["name"],"match_data":match_file["data"],"league_data":best["data"],"supplemental_data":supplemental_data,"source_files":source_files,"pairing":{"match_id":match_fields.get("match_id"),"competition_id":match_fields.get("competition_id"),"home_id":match_fields.get("home_id"),"away_id":match_fields.get("away_id"),"league_score":best["score"],"league_reasons":best["reasons"]}}
+    return {"ok":True,"match_file":match_file["name"],"league_file":best["name"],"forebet_file":forebet_file["name"],"match_data":match_file["data"],"league_data":best["data"],"forebet_data":forebet_file["data"],"supplemental_data":supplemental_data,"source_files":source_files,"pairing":{"match_id":match_fields.get("match_id"),"competition_id":match_fields.get("competition_id"),"home_id":match_fields.get("home_id"),"away_id":match_fields.get("away_id"),"league_score":best["score"],"league_reasons":best["reasons"]}}
 
 # ---- Local iPhone archive package (no server-side persistence) ----
-_ARCHIVE_VERSION = "1.0.0"
-_ARCHIVE_SOURCE_KINDS = ("match", "league", "form", "table", "player")
+_ARCHIVE_VERSION = "2.0.0"
+_ARCHIVE_SOURCE_KINDS = ("match", "league", "form", "table", "player", "forebet")
 _ARCHIVE_SECRET_PARTS = ("apikey", "token", "authorization", "password", "secret", "credential")
 _ARCHIVE_SENSITIVE_QUERY = re.compile(r"(?i)(api[_-]?key|token|authorization|password|secret)=([^&\s]+)")
 
@@ -950,7 +1121,7 @@ def _archive_package(parsed_files: List[Dict[str, Any]], pair: Dict[str, Any], r
     })
     available = sorted(sources)
     return {
-        "archive_schema": "footystats-ios-archive-v1",
+        "archive_schema": "footystats-forebet-ios-archive-v2",
         "archive_version": _ARCHIVE_VERSION,
         "record_id": f"{_archive_name_piece(match.get('match_id'), 'match')}-{created_at.replace(':', '').replace('-', '')}-{fingerprint[:10]}",
         "created_at": created_at,
@@ -974,7 +1145,9 @@ def _archive_package(parsed_files: List[Dict[str, Any]], pair: Dict[str, Any], r
         "policies": {
             "odds_removed_before_download": True,
             "secret_like_fields_removed_before_download": True,
-            "external_data_used": False,
+            "external_data_used": True,
+            "forebet_public_prediction_snapshot": True,
+            "forebet_odds_used": False,
             "actual_result_pending": True,
         },
     }
@@ -984,7 +1157,7 @@ def _archive_download_name(package: Dict[str, Any]) -> str:
     match = package.get("match") or {}
     decision = ((package.get("analysis") or {}).get("decision")) or "ANALYSE"
     stamp = str(package.get("created_at") or "").replace(":", "").replace("-", "")
-    return "FootyStats-Archiv-{}-{}-vs-{}-{}-{}.json".format(
+    return "FootyStats-Forebet-Archiv-{}-{}-vs-{}-{}-{}.json".format(
         _archive_name_piece(match.get("match_id"), "match"),
         _archive_name_piece(match.get("home_name"), "heim"),
         _archive_name_piece(match.get("away_name"), "auswaerts"),
@@ -1025,10 +1198,16 @@ def _analyze_bundle(parsed_files: List[Dict[str, Any]]) -> Dict[str, Any]:
         report,
         pair.get("source_files") or {},
     )
+    try:
+        forebet = _forebet_snapshot(pair["forebet_data"], mf(pair["match_data"]))
+    except ValueError as exc:
+        return {"ok":False,"model_version":"0.6.0","phase":"FOREBET_VALIDATION_FAILED","decision":"ANALYSE NICHT MÖGLICH","error":str(exc),"pairing":pair.get("pairing"),"input_sources":pair.get("source_files") or {}}
+    result = _attach_forebet_ensemble(result, forebet)
     result["pairing"] = {
         **pair["pairing"],
         "match_file": pair["match_file"],
         "league_file": pair["league_file"],
+        "forebet_file": pair["forebet_file"],
     }
     result["_archive_pair"] = pair
     return result
@@ -1039,7 +1218,7 @@ INDEX_HTML = r'''<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>FootyStats Prognose Engine</title>
+<title>FootyStats + Forebet Super Analyse</title>
 <style>
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f3f4f6;margin:0;color:#111827}
 .w{max-width:900px;margin:auto;padding:18px}.c{background:#fff;border-radius:15px;padding:17px;margin:12px 0;box-shadow:0 1px 5px #0001}
@@ -1054,14 +1233,14 @@ pre{white-space:pre-wrap;word-break:break-word;font-size:.75rem}.sep{border-top:
 <body>
 <div class="w">
   <div class="c">
-    <h2>FootyStats Prognose Engine v0.4.0</h2>
-    <div class="s">Liga-relativer V5.5-Kern · keine Odds · keine externen Matchdaten · INSUFFICIENT_DATA-Sperre und V5.2-Guardrails aktiv</div>
+    <h2>FootyStats + Forebet Super Analyse v0.6.0</h2>
+    <div class="s">FootyStats-V5.5-Kern + Forebet-Konsensmodell · keine Odds · INSUFFICIENT_DATA-Sperre und V5.2-Guardrails aktiv</div>
     <h3>Match-Ordner auswählen</h3>
-    <p class="s">Empfohlen: genau MatchDaten, LeagueDaten, FormDaten, TableDaten und PlayerDaten eines Matches auswählen.</p>
+    <p class="s">Empfohlen: MatchDaten, LeagueDaten, FormDaten, TableDaten, PlayerDaten und ForebetDaten desselben Matches auswählen.</p>
     <input id="folderFiles" type="file" webkitdirectory directory multiple accept=".json,application/json">
     <div class="sep"></div>
     <h3>Fallback: JSON-Dateien gemeinsam auswählen</h3>
-    <p class="s">Falls die Ordnerauswahl am iPhone nicht angeboten wird, wähle hier alle fünf JSON-Dateien gleichzeitig aus.</p>
+    <p class="s">Falls die Ordnerauswahl am iPhone nicht angeboten wird, wähle hier alle sechs JSON-Dateien gleichzeitig aus.</p>
     <input id="bundleFiles" type="file" multiple accept=".json,application/json">
     <button id="go">Analyse starten</button>
   </div>
@@ -1095,7 +1274,7 @@ async function downloadArchive(files,status){
   }
   const blob=await response.blob();
   const match=disposition.match(/filename="([^"]+)"/);
-  const name=match?match[1]:'FootyStats-Archiv.json';
+  const name=match?match[1]:'FootyStats-Forebet-Archiv.json';
   const url=URL.createObjectURL(blob);
   const link=document.createElement('a');
   link.href=url;link.download=name;document.body.appendChild(link);link.click();link.remove();
@@ -1105,8 +1284,8 @@ async function downloadArchive(files,status){
 }
 document.getElementById('go').onclick=async function(){
   const files=chosenFiles(),out=document.getElementById('out');
-  if(files.length<2){
-    out.innerHTML='<div class="c bad"><b>Mindestens zwei JSON-Dateien nötig.</b></div>';return;
+  if(files.length<6){
+    out.innerHTML='<div class="c bad"><b>Fünf FootyStats-Dateien und eine ForebetDaten-Datei nötig.</b></div>';return;
   }
   out.innerHTML='<div class="c">Paket wird geprüft und analysiert…</div>';
   try{
@@ -1115,13 +1294,16 @@ document.getElementById('go').onclick=async function(){
     if(!data.ok){
       out.innerHTML='<div class="c"><h3 class="bad">Analyse nicht möglich</h3><pre>'+escapeHtml(JSON.stringify(data,null,2))+'</pre></div>';return;
     }
-    const diag=data.diagnostics||{},goal=data.expected_goals||{},protocol=diag.elite_protocol||{},gates=protocol.gates||{},rvu=diag.result_vs_underlying_detail||{};
+    const diag=data.diagnostics||{},goal=data.expected_goals||{},protocol=diag.elite_protocol||{},gates=protocol.gates||{},rvu=diag.result_vs_underlying_detail||{},ensemble=data.ensemble||{},forebet=data.forebet_model||{};
     const rows=(data.markets||[]).map(function(item){
       return '<tr><td>'+escapeHtml(item.rank)+'</td><td>'+escapeHtml(item.label)+'</td><td><b>'+escapeHtml(item.probability_pct)+'%</b></td></tr>';
     }).join('');
     const sources=Object.entries(data.input_sources||{}).map(function(entry){
       return escapeHtml(entry[0])+': '+escapeHtml(entry[1]);
     }).join('<br>');
+    const comparison=(ensemble.market_comparison||[]).map(function(item){
+      return '<tr><td>'+escapeHtml(item.label)+'</td><td>'+escapeHtml(item.footystats_probability_pct)+'%</td><td>'+escapeHtml(item.forebet_probability_pct)+'%</td><td><b>'+escapeHtml(item.combined_probability_pct)+'%</b></td><td>'+escapeHtml(item.difference_pp)+' PP</td></tr>';
+    }).join('');
     out.innerHTML=
       '<div class="c"><div class="ok"><b>Dateien automatisch zugeordnet</b></div><p class="s">'+
       (sources||'Match: '+escapeHtml((data.pairing||{}).match_file)+'<br>League: '+escapeHtml((data.pairing||{}).league_file))+
@@ -1133,14 +1315,21 @@ document.getElementById('go').onclick=async function(){
       '<div class="m"><div class="s">Datenqualität</div><b>'+escapeHtml(diag.data_quality)+'</b></div>'+
       '<div class="m"><div class="s">Stichprobe</div><b>'+escapeHtml(diag.sample_security)+'</b></div>'+
       '<div class="m"><div class="s">V5.2-Protokoll</div><b>'+escapeHtml(protocol.phase_1_data_audit||'—')+' / '+escapeHtml(protocol.phase_2_all_six_markets||'—')+'</b></div>'+
+      '<div class="m"><div class="s">Modellkonsens</div><b>'+escapeHtml(ensemble.agreement_status||'—')+'</b><div class="s">Differenz Top-Markt '+escapeHtml(ensemble.top_market_difference_pp==null?'—':ensemble.top_market_difference_pp+' PP')+'</div></div>'+
       '</div></div>'+
-      '<div class="c"><h3>Result vs Underlying</h3><div class="g">'+
+      '<div class="c"><h3>FootyStats + Forebet Vergleich</h3><div class="g">'+
+      '<div class="m"><div class="s">Forebet Ergebnistipp</div><div class="b">'+escapeHtml(forebet.predicted_score||'—')+'</div><div class="s">Ø Tore '+escapeHtml(forebet.average_goals==null?'—':forebet.average_goals)+'</div></div>'+
+      '<div class="m"><div class="s">FootyStats Top-Markt</div><div class="b">'+escapeHtml(ensemble.footystats_top_market||'—')+'</div></div>'+
+      '<div class="m"><div class="s">Forebet Top-Markt</div><div class="b">'+escapeHtml(ensemble.forebet_top_market||'—')+'</div></div>'+
+      '<div class="m"><div class="s">Gemeinsamer Top-Markt</div><div class="b">'+escapeHtml(ensemble.combined_top_market||'—')+'</div></div>'+
+      '</div><table><tr><th>Markt</th><th>FootyStats</th><th>Forebet</th><th>Gemeinsam</th><th>Differenz</th></tr>'+comparison+'</table></div>'+
+      '<div class="c"><h3>FootyStats Result vs Underlying</h3><div class="g">'+
       '<div class="m"><div class="s">Result (historische Quote)</div><div class="b">'+escapeHtml(rvu.result_probability_pct==null?'—':rvu.result_probability_pct+'%')+'</div><div class="s">'+escapeHtml(rvu.result_basis||'Nicht verfügbar')+'</div></div>'+
       '<div class="m"><div class="s">Underlying (xG-Modell)</div><div class="b">'+escapeHtml(rvu.underlying_probability_pct==null?'—':rvu.underlying_probability_pct+'%')+'</div><div class="s">λ Heim '+escapeHtml((rvu.underlying_expected_goals||{}).home||'—')+' · λ Auswärts '+escapeHtml((rvu.underlying_expected_goals||{}).away||'—')+'</div></div>'+
       '<div class="m"><div class="s">Prüfstatus</div><div class="b">'+escapeHtml(rvu.status||diag.result_vs_underlying||'—')+'</div><div class="s">Differenz '+escapeHtml(rvu.difference_pp==null?'—':rvu.difference_pp+' Prozentpunkte')+'</div></div>'+
       '</div></div>'+
       '<div class="c"><h3>Alle Märkte</h3><table><tr><th>Rang</th><th>Markt</th><th>Modell</th></tr>'+rows+'</table></div>'+
-      '<div class="c"><h3>Archiv</h3><p class="s">Erstellt eine einzelne, bereinigte Datei mit Analyse und allen ausgewählten FootyStats-Quellen. Sie wird nicht auf Render gespeichert.</p><button class="secondary" id="archive">Archivpaket herunterladen</button><p id="archiveStatus" class="s"></p></div>'+
+      '<div class="c"><h3>Gemeinsames Archiv</h3><p class="s">Speichert die Analyse, alle fünf FootyStats-Quellen und den Forebet-Snapshot gemeinsam. Es wird nichts dauerhaft auf Render gespeichert.</p><button class="secondary" id="archive">Gemeinsames Archiv herunterladen</button><p id="archiveStatus" class="s"></p></div>'+
       '<div class="c"><details><summary>Technische Diagnose</summary><pre>'+escapeHtml(JSON.stringify(data,null,2))+'</pre></details></div>';
     document.getElementById('archive').onclick=async function(){
       const button=document.getElementById('archive'),status=document.getElementById('archiveStatus');
@@ -1160,16 +1349,22 @@ document.getElementById('go').onclick=async function(){
 @app.get("/",response_class=HTMLResponse)
 def index():return INDEX_HTML
 @app.get("/api/health")
-def health():return {"ok":True,"version":"0.4.0"}
+def health():return {"ok":True,"version":"0.6.0","footystats_backup":"0.4.0","forebet_ensemble":True}
 @app.post("/api/predict")
 def predict_json(payload:Payload):
     report = supplemental_report(payload.matchData, payload.leagueData, payload.formData, payload.tableData, payload.playerData)
-    return _attach_supplemental(predict(payload.matchData, payload.leagueData), report, {})
+    result = _attach_supplemental(predict(payload.matchData, payload.leagueData), report, {})
+    try:
+        forebet = _forebet_snapshot(payload.forebetData, mf(payload.matchData))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    return _attach_forebet_ensemble(result, forebet)
 @app.post("/api/predict-files")
 async def predict_files(match_file:UploadFile=File(...),league_file:UploadFile=File(...)):
-    try:match_data=json.loads((await match_file.read()).decode("utf-8"));league_data=json.loads((await league_file.read()).decode("utf-8"))
-    except Exception as exc:raise HTTPException(status_code=400,detail=f"Ungültige JSON-Datei: {exc}")
-    return _attach_supplemental(predict(match_data,league_data), supplemental_report(match_data, league_data), {"match": match_file.filename or "MatchDaten.json", "league": league_file.filename or "LeagueDaten.json"})
+    raise HTTPException(
+        status_code=422,
+        detail="Die v0.6.0-Super-Analyse akzeptiert keinen unvollständigen Zwei-Dateien-Weg. Bitte /api/predict-bundle mit fünf FootyStats-Dateien und einer ForebetDaten-Datei verwenden.",
+    )
 @app.post("/api/predict-bundle")
 async def predict_bundle(files: List[UploadFile] = File(...)):
     parsed, errors = await _read_bundle_uploads(files)
@@ -1221,6 +1416,8 @@ import urllib.error as _urlerr
 
 _PREPARED_SHORTCUT_B64 = "YnBsaXN0MDDcAAEAAgADAAQABQAGAAcACAAJAAoACwAMAA0ADgAPABQAFQAWABcC3gLyAvoC+wAWXxAkV0ZXb3JrZmxvd01pbmltdW1DbGllbnRWZXJzaW9uU3RyaW5nXxAeV0ZXb3JrZmxvd01pbmltdW1DbGllbnRWZXJzaW9uXldGV29ya2Zsb3dJY29uXxAXV0ZXb3JrZmxvd0NsaWVudFZlcnNpb25fECJXRldvcmtmbG93T3V0cHV0Q29udGVudEl0ZW1DbGFzc2VzXxAbV0ZXb3JrZmxvd0hhc091dHB1dEZhbGxiYWNrXxARV0ZXb3JrZmxvd0FjdGlvbnNfECFXRldvcmtmbG93SW5wdXRDb250ZW50SXRlbUNsYXNzZXNfEBlXRldvcmtmbG93SW1wb3J0UXVlc3Rpb25zXxAVV0ZRdWlja0FjdGlvblN1cmZhY2VzXxAPV0ZXb3JrZmxvd1R5cGVzXxAjV0ZXb3JrZmxvd0hhc1Nob3J0Y3V0SW5wdXRWYXJpYWJsZXNUMjAyNREH6dIAEAARABIAE18QGFdGV29ya2Zsb3dJY29uU3RhcnRDb2xvcl8QGVdGV29ya2Zsb3dJY29uR2x5cGhOdW1iZXISGb0D/xHwAFQ0NzExoAivEFkAGAAhACkAPgBJAFQAXABgAGYAcQB4AH4AiACYAJwAoACnAK0AtwC8AMIAxwDNANIA2ADeAOUA8QD3AP4BBwESARkBIAElATABNwE8AUIBSAFNAVcBXQFlAWsBdgF+AYIBhQGZAaUBrgG4AcYB0QHZAeIB7AHzAfgCAAIHAgsCGAIiAisCNAI/AkYCUAJZAmICbQJ0AnkCfgKDAogCjQKSApcCnAKnAq4CsgK1AsICzALV0gAZABoAGwAcXxAaV0ZXb3JrZmxvd0FjdGlvbklkZW50aWZpZXJfEBpXRldvcmtmbG93QWN0aW9uUGFyYW1ldGVyc18QG2lzLndvcmtmbG93LmFjdGlvbnMuZ2V0dGV4dNIAHQAeAB8AIFRVVUlEXxAQV0ZUZXh0QWN0aW9uVGV4dF8QJEJBRkIzNzEzLTg4NEYtNDA1Ny05ODMzLUQwNTE1MTA1OEVFNlDSABkAGgAiACNfEBdpcy53b3JrZmxvdy5hY3Rpb25zLmFza9MAJAAlAB0AJgAnAChbV0ZJbnB1dFR5cGVfEBFXRkFza0FjdGlvblByb21wdFRUZXh0XVdlbGNoZXIgVGFnID9fECRCRDM0REVFRi1BRDYxLTQyRUUtQTM0OC1BQTI0NEU2REVFRkXSABkAGgAbACrSAB0AHgArACxfECQ0RkMzQzI4Qy1ENUNELTRDNzgtOTVCRS04RTg4Mzg5OThBNkTSAC0ALgAvAD1VVmFsdWVfEBNXRlNlcmlhbGl6YXRpb25UeXBl0gAwADEAMgAzVnN0cmluZ18QEmF0dGFjaG1lbnRzQnlSYW5nZW8QVABoAHQAdABwAHMAOgAvAC8AYQBwAGkALgBmAG8AbwB0AGIAYQBsAGwALQBkAGEAdABhAC0AYQBwAGkALgBjAG8AbQAvAHQAbwBkAGEAeQBzAC0AbQBhAHQAYwBoAGUAcwA/AGQAYQB0AGUAPf/8ACYAdABpAG0AZQB6AG8AbgBlAD0ARQB1AHIAbwBwAGUALwBWAGkAZQBuAG4AYQAmAGsAZQB5AD3//NIANAA1ADYAPFd7NTQsIDF9V3s4MywgMX3TADcAOAA5ACgAOgA7Wk91dHB1dFVVSURUVHlwZVpPdXRwdXROYW1lXEFjdGlvbk91dHB1dF8QE05hY2ggRWluZ2FiZSBmcmFnZW7TADcAOAA5AB8AOgAmXxARV0ZUZXh0VG9rZW5TdHJpbmfSABkAGgA/AEBfEB9pcy53b3JrZmxvdy5hY3Rpb25zLmRvd25sb2FkdXJs0gBBAB0AQgBIVVdGVVJM0gAtAC4AQwA90gAwADEARABFYf/80QBGAEdWezAsIDF90wA3ADgAOQArADoAJl8QJDIyRDc4MDkzLTMwNUEtNDkxOS04RkEyLTA0NDkzQ0E2Njg3QtIAGQAaAEoAS18QImlzLndvcmtmbG93LmFjdGlvbnMuZ2V0dmFsdWVmb3JrZXnTAEwAHQBNAE4AUgBTV1dGSW5wdXRfEA9XRkRpY3Rpb25hcnlLZXnSAC0ALgBPAFHTADcAOAA5AEgAOgBQXkluaGFsdCBkZXIgVVJMXxAVV0ZUZXh0VG9rZW5BdHRhY2htZW50XxAkRTg2REYwQjItRjQwNy00OTMzLThBQTEtNzc4NjA2NEQyQzcyVGRhdGHSABkAGgBVAFZfEB9pcy53b3JrZmxvdy5hY3Rpb25zLnNldHZhcmlhYmxl0gBMAFcAWABbXldGVmFyaWFibGVOYW1l0gAtAC4AWQBR0wA3ADgAOQBSADoAWm4AVwD2AHIAdABlAHIAYgB1AGMAaAB3AGUAcgB0W1NwaWVsZURhdGVu0gAZABoAXQBeXxAeaXMud29ya2Zsb3cuYWN0aW9ucy5kaWN0aW9uYXJ50QAdAF9fECRGRDNEMkU3Qy04NkQ4LTQ0M0ItOUU2OS05OTc1QTgwNkI5NjfSABkAGgBVAGHSAEwAVwBiAGXSAC0ALgBjAFHTADcAOAA5AF8AOgBkagBXAPYAcgB0AGUAcgBiAHUAYwBoXCAgICBTcGllbE1hcNIAGQAaAGcAaF8QH2lzLndvcmtmbG93LmFjdGlvbnMucmVwZWF0LmVhY2jTAEwAaQBqAGsAbwBwXxASR3JvdXBpbmdJZGVudGlmaWVyXxARV0ZDb250cm9sRmxvd01vZGXSAC0ALgBsAFHSAG0AOABbAG5cVmFyaWFibGVOYW1lWFZhcmlhYmxlXxAkMzM5QTIwM0MtQTM5Ni00OEM2LUJCNkMtNTZEMDhBRjZCQ0VBEADSABkAGgBKAHLTAEwAHQBNAHMAdgB30gAtAC4AdABR0gBtADgAdQBuW1JlcGVhdCBJdGVtXxAkM0ZCRjJBQzItNjJEQy00RTA3LUJFQzYtOTU4MDkwNTU0NTUxWWhvbWVfbmFtZdIAGQAaAEoAedMATABNAB0AegB8AH3SAC0ALgB7AFHSAG0AOAB1AG5ZYXdheV9uYW1lXxAkNjFDQkIyQTMtRUZBQi00ODAzLTk1QjMtREREOUFFRTdGMTk40gAZABoAGwB/0gAdAB4AgACBXxAkMTM3MEY0ODEtMDRCNy00NUQxLUFBOEEtRjA5ODZGN0UwNkNG0gAtAC4AggA90gAwADEAgwCEZv/8ACAAdgBzACD//NIAhQBGAIYAh1Z7NSwgMX3TADcAOAA5AH0AOgBa0wA3ADgAOQB2ADoAWtIAGQAaAIkAil8QImlzLndvcmtmbG93LmFjdGlvbnMuc2V0dmFsdWVmb3JrZXnUAIsAHQCMAE0AjQCRAJIAlF8QEVdGRGljdGlvbmFyeVZhbHVlXFdGRGljdGlvbmFyedIALQAuAI4APdIAMAAxAEQAj9EARgCQ0gBtADgAdQBuXxAkRDQwOTkzNTYtMUM4OS00MEM4LTkzMTktNjFFQkVENDk0NzZB0gAtAC4AkwBR0gBtADgAZQBu0gAtAC4AlQA90gAwADEARACW0QBGAJfTADcAOAA5AIAAOgAm0gAZABoAVQCZ0gBMAFcAmgBl0gAtAC4AmwBR0wA3ADgAOQCRADoAZNIAGQAaAGcAndMAHQBpAGoAngBvAJ9fECQxMENBOUJGMS0xOEJFLTRBREItQjhEOC1FRTI2NUJEREQyOUUQAtIAGQAaAEoAodMATACiAB0AowClAKZfEBhXRkdldERpY3Rpb25hcnlWYWx1ZVR5cGXSAC0ALgCkAFHSAG0AOABlAG5YQWxsIEtleXNfECRFODQ4NUE0My1EOUJDLTQzOTEtOUZFMS05ODAwNUIxMENEQznSABkAGgCoAKlfECJpcy53b3JrZmxvdy5hY3Rpb25zLmNob29zZWZyb21saXN00gBMAB0AqgCs0gAtAC4AqwBR0wA3ADgAOQCmADoAWl8QJDc3MDFFN0FELTNERTMtNDZFMy1BNENGLUU4QjVGN0M2MkMwNNIAGQAaAEoArtMATAAdAE0ArwCxALLSAC0ALgCwAFHSAG0AOABlAG5fECQ3QTkxMzNCOS04MzVFLTRBREEtQUNCQy0yMDYzQjY2ODFDRjPSAC0ALgCzAD3SADAAMQBEALTRAEYAtdMANwA4ADkArAA6ALZvEBMAQQB1AHMAZwBlAHcA5ABoAGwAdABlAHMAIABPAGIAagBlAGsAdNIAGQAaAFUAuNIATABXALkAu9IALQAuALoAUdMANwA4ADkAsQA6AFpfEBcgICAgICAgIEdlZnVuZGVuZXNTcGllbNIAGQAaAEoAvdMATAAdAE0AvgDAAMHSAC0ALgC/AFHSAG0AOAC7AG5fECQwRDAwNkNBRC1FRkExLTRGNDMtQTQ0NC0wOEMzQUY0NzY4NEFeY29tcGV0aXRpb25faWTSABkAGgBVAMPSAEwAVwDEAMbSAC0ALgDFAFHTADcAOAA5AMAAOgBaWFNlYXNvbklE0gAZABoASgDI0wBMAB0ATQDJAMsAzNIALQAuAMoAUdIAbQA4ALsAbl8QJDU3MkE2NTg0LTAwMUItNEExNi1BMDk1LUQ2MkIzQTBDQTc4M1JpZNIAGQAaAFUAztIATABXAM8A0dIALQAuANAAUdMANwA4ADkAywA6AFpXTWF0Y2hJRNIAGQAaAEoA09MATAAdAE0A1ADWANfSAC0ALgDVAFHSAG0AOAC7AG5fECQ2MkIzQkM2RS1DMzZCLTREQjAtQTkzNi1ENzA0Q0Q1MzU1MENWaG9tZUlE0gAZABoASgDZ0wBMAB0ATQDaANwA3dIALQAuANsAUdIAbQA4ALsAbl8QJDlDMDZDQUE5LUZDRTUtNEEyNC05QjgwLUI3OEJENjFBNTk0M1Zhd2F5SUTSABkAGgAbAN/SAB0AHgDgAOFfECQzNUREMjE2OS1CN0FELTQ4NzktQkY4Mi0wNTYxODk1NkVFMzfSAC0ALgDiAD3SADAAMQBEAOPRAEYA5NMANwA4ADkAHwA6ACbSABkAGgDmAOdfECBpcy53b3JrZmxvdy5hY3Rpb25zLnRleHQucmVwbGFjZdQATADoAB0A6QDqAO4A7wDwXxAeV0ZSZXBsYWNlVGV4dFJlZ3VsYXJFeHByZXNzaW9uXxARV0ZSZXBsYWNlVGV4dEZpbmTSAC0ALgDrAD3SADAAMQBEAOzRAEYA7dMANwA4ADkA4AA6ACYJXxAkRTgyQUE1NDctQzgyMC00QkJDLUE2NTktMTI5QUFEQTQ5QUVFU1xzK9IAGQAaAFUA8tIATABXAPMA9tIALQAuAPQAUdMANwA4ADkA7wA6APVfEBNBa3R1YWxpc2llcnRlciBUZXh0VkFQSUtledIAGQAaAPgA+V8QHmlzLndvcmtmbG93LmFjdGlvbnMudGV4dC5zcGxpdNIA+gAdAPsA/VR0ZXh00gAtAC4A/ABR0wA3ADgAOQDvADoA9V8QJEU1MUVCRTRFLUY4M0MtNERBQy1BQjY5LTEzMkJBOUJBNzk4OdIAGQAaAP8BAF8QIGlzLndvcmtmbG93LmFjdGlvbnMudGV4dC5jb21iaW5l0wEBAPoAHQECAQMBBl8QD1dGVGV4dFNlcGFyYXRvclZDdXN0b23SAC0ALgEEAFHTADcAOAA5AP0AOgEFXlRleHQgYXVmdGVpbGVuXxAkNjE4QUU0MzctRjBFMy00N0EzLUJCQzEtQUU2Njc0Q0VCOEU00gAZABoAGwEI0gAdAB4BCQEKXxAkRUFFMkFEMDktQ0RBNi00Q0QwLThDMDEtNjg5MUI5QTIyMzQ10gAtAC4BCwA90gAwADEBDAENbxA4AGgAdAB0AHAAcwA6AC8ALwBhAHAAaQAuAGYAbwBvAHQAYgBh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OTI1NUY1N0NGNzHSAC0ALgLQAD3SADAAMQLRAtJvEBT//AAv//wAXwBQAGwAYQB5AGUAcgBEAGEAdABlAG4ALgBqAHMAbwBu0gBGAbUC0wLU0gBtADgA0QBu0gBtADgA0QBu0gAZABoBuQLW1QBMAbsAHQG8Ab0C1wAWAtkAFgLa0gAtAC4C2ABR0wA3ADgAOQLLADoBwF8QJDIyQjdBQjUzLTdEMzAtNEM2OS1CRjYzLTAyMTk5OTIzNEQ4MNIALQAuAtsAPdIAMAAxAEQC3NEARgLd0wA3ADgAOQLOADoAJq8QEwLfAuAC4QLiAuMC5ALlAuYC5wLoAukC6gLrAuwC7QLuAu8C8ALxXxAQV0ZBcHBDb250ZW50SXRlbV8QGFdGQXBwU3RvcmVBcHBDb250ZW50SXRlbV8QFFdGQXJ0aWNsZUNvbnRlbnRJdGVtXxAUV0ZDb250YWN0Q29udGVudEl0ZW1fEBFXRkRhdGVDb250ZW50SXRlbV8QGVdGRW1haWxBZGRyZXNzQ29udGVudEl0ZW1fEBNXRkZvbGRlckNvbnRlbnRJdGVtXxAYV0ZHZW5lcmljRmlsZUNvbnRlbnRJdGVtXxASV0ZJbWFnZUNvbnRlbnRJdGVtXxAaV0ZpVHVuZXNQcm9kdWN0Q29udGVudEl0ZW1fEBVXRkxvY2F0aW9uQ29udGVudEl0ZW1fEBdXRkRDTWFwc0xpbmtDb250ZW50SXRlbV8QFFdGQVZBc3NldENvbnRlbnRJdGVtXxAQV0ZQREZDb250ZW50SXRlbV8QGFdGUGhvbmVOdW1iZXJDb250ZW50SXRlbV8QFVdGUmljaFRleHRDb250ZW50SXRlbV8QGldGU2FmYXJpV2ViUGFnZUNvbnRlbnRJdGVtXxATV0ZTdHJpbmdDb250ZW50SXRlbV8QEFdGVVJMQ29udGVudEl0ZW2hAvPVAvQC9QL2AvcAJgBwAvgAIAAeAvlbQWN0aW9uSW5kZXhYQ2F0ZWdvcnlcRGVmYXVsdFZhbHVlXFBhcmFtZXRlcktleVlQYXJhbWV0ZXJfEBtGb290eVN0YXRzIEFQSS1LZXkgZWluZ2ViZW6gogL8Av1VV2F0Y2hfEBpXRldvcmtmbG93VHlwZVNob3dJblNlYXJjaAAIADkAYACBAJAAqgDPAO0BAQElAUEBWQFrAZEBlgGZAaIBvQHZAd4B4QHmAecB6AKdAqYCwwLgAv4DBwMMAx8DRgNHA1ADagN3A4MDlwOcA6oD0QPaA+MECgQTBBkELwQ4BD8EVAT/BQgFEAUYBSUFMAU1BUAFTQVjBXAFhAWNBa8FuAW+BccF0AXTBdgF3wXsBhMGHAZBBk4GVgZoBnEGfgaNBqUGzAbRBtoG/AcFBxQHHQcqB0cHUwdcB30HggepB7IHuwfEB9EH5gfzB/wIHggrCEAIVAhdCGYIcwh8CKMIpQiuCLsIxAjNCNkJAAkKCRMJIAkpCTIJPAljCWwJdQmcCaUJrgm7CcQJywnYCeUJ7goTCiQKOApFCk4KVwpcCmUKjAqVCp4KpwqwCrUKwgrLCtQK3QrqCvMLAAsnCykLMgs/C1oLYwtsC3ULnAulC8oL0wvcC+kMEAwZDCYMLww4DF8MaAxxDHYMgwysDLUMvgzHDNQM7gz3DQQNDQ0WDT0NTA1VDV4NZw10DX0Nhg2TDZwNpQ3MDc8N2A3hDeoN9w3/DggOFQ4eDicOTg5VDl4Oaw50Dn0OpA6rDrQOvQ7kDu0O9g77DwgPEQ80D0UPZg96D4MPjA+RD54Pnw/GD8oP0w/cD+UP8hAIEA8QGBA5EEIQRxBQEF0QhBCNELAQvRDPENYQ3xDsEPsRIhErETQRWxFkEW0R4BHpEfER+RICEg8SGBI5Ej4SRxJQElUSYhJrEnQSfRKGEosSmBK/EsgS0RLaEucS8hL7EwQTKxM0Ez0T6hPzE/sUAxQMFBUUHhQnFDAUORQ+FEsUchR7FIQUjRSaFKYUrxS8FMUUzhT1FPsVBBURFRoVJxVOFVcVYBVpFXIVfxWHFZAVqxW8Fc4V3BXlFe4V8BYXFhkWIhZHFlAWWRZiFm8WeBabFqgWtha/FswW5hcNFxYXIxcsFzUXQhdpF3IXexeiF6sXtBhhGG4Ydhh/GIgYlRieGKsYtxjAGMkYzhjbGQIZCxkUGR0ZKhkzGUAZZxlwGXkZgRmKGY8ZrRmwGb0ZwxnOGdYZ3xnkGesZ9Bn9GgYaKxpEGmsadBqWGqMaqhqzGrwa4xroGvEa+hsHGy4bNxtfG2gbcxt8G4UbihuTG7obwxvMG/Mb/BwFHDIcOxxCHEscVBxdHIccnByvHMUc3RzmHPMdCB0vHTgdQR1GHVMdXB1tHYodkx2cHcEdxh3PHdgd4R4IHhEeGh5BHkoeUx5+HocekB6ZHqoesx7AHuce8B75Hv4fCx8UHx0fRB9NH1Yfxx/QH9gf4R/uH/cgACAJIBIgFyAkIEsgVCBdIGYgcyB9IIYgjyC2IL8gyCDRINog5yDwIPkhAiELIRAhHSFEIU0hViFfIWwhdSF+IYchjCGPIZwhpSGqIbAhuSHCIcsh8iH7IgwiFSIeIkEiRiJPIlgiZSKMIpUiniLFIs4i1yL+IwcjECMZIyIjNyNAI00jdCN9I4YjiyOYI6EjqiPRI9oj4ySEJI0klSSdJKYkryS4JMEkyiTTJNgk5SUMJRUlJiUvJTglXSViJWsldCWBJaglsSW6JeEl6iXzJhwmJSYuJjcmQCZVJl4mayaSJpsmpCapJrYmvybIJu8m+CcBJ7InuyfDJ8sn1CfdJ+Yn7yf4KAEoBigTKDooQyhMKFUoYihuKHcohCiNKJYovSjGKNMo3CjpKRApGSkiKSspOClGKU8pYClpKXIpmSmiKasptCm9Kcop0yngKekp9iodKiYqMyo8KkUqbCp1Kn4qpSquKrcraCt1K30rhiuPK5wrpSuyK7srxCvJK9Yr/SwGLA8sGCwlLC4sOyxiLGssdCx9LIIshSySLJssoCymLK8suCzBLOgs8S0CLQstFC07LUAtSS1SLV8thi2PLZgtvy3ILdEt/C4FLg4uFy4gLjUuPi5LLnIuey6ELokuli6/LtIu7S8ELxsvLy9LL2EvfC+RL64vxi/gL/cwCjAlMD0wWjBwMIMwhjCbMKcwsDC9MMow1DDyMPMw+DD+AAAAAAAAAgIAAAAAAAAC/gAAAAAAAAAAAAAAAAAAMRs="
 
+_PREPARED_SHORTCUT_V4_B64 = "YnBsaXN0MDDdAAEAAgADAAQABQAGAAcACAAJAAoACwAMAA0ADgAPABAAFQAWABcAGAMIAxwDJAMlABcDKF8QJFdGV29ya2Zsb3dNaW5pbXVtQ2xpZW50VmVyc2lvblN0cmluZ18QHldGV29ya2Zsb3dNaW5pbXVtQ2xpZW50VmVyc2lvbl5XRldvcmtmbG93SWNvbl8QF1dGV29ya2Zsb3dDbGllbnRWZXJzaW9uXxAiV0ZXb3JrZmxvd091dHB1dENvbnRlbnRJdGVtQ2xhc3Nlc18QG1dGV29ya2Zsb3dIYXNPdXRwdXRGYWxsYmFja18QEVdGV29ya2Zsb3dBY3Rpb25zXxAhV0ZXb3JrZmxvd0lucHV0Q29udGVudEl0ZW1DbGFzc2VzXxAZV0ZXb3JrZmxvd0ltcG9ydFF1ZXN0aW9uc18QFVdGUXVpY2tBY3Rpb25TdXJmYWNlc18QD1dGV29ya2Zsb3dUeXBlc18QI1dGV29ya2Zsb3dIYXNTaG9ydGN1dElucHV0VmFyaWFibGVzXldGV29ya2Zsb3dOYW1lVDIwMjURB+nSABEAEgATABRfEBhXRldvcmtmbG93SWNvblN0YXJ0Q29sb3JfEBlXRldvcmtmbG93SWNvbkdseXBoTnVtYmVyEhm9A/8R8ABUNDcxMaAIrxBeABkAIgAqAD8ASgBVAF0AYQBnAHIAeQB/AIkAmQCdAKEAqACuALgAvQDDAMgAzgDTANkA3wDmAPIA+AD/AQgBEwEaASEBJgExATgBPQFDAUkBTgFYAV4BZgFsAXcBfwGDAYYBmgGmAa8BuQHHAdIB2gHjAe0B9AH5AgECCAIMAhkCIwIsAjUCQAJHAlECWgJjAm4CdQJ6An8ChAKJAo4CkwKYAp0CqAKvArMCtgLDAs0C1gLfAuMC7gL4AwHSABoAGwAcAB1fEBpXRldvcmtmbG93QWN0aW9uSWRlbnRpZmllcl8QGldGV29ya2Zsb3dBY3Rpb25QYXJhbWV0ZXJzXxAbaXMud29ya2Zsb3cuYWN0aW9ucy5nZXR0ZXh00gAeAB8AIAAhVFVVSURfEBBXRlRleHRBY3Rpb25UZXh0XxAkQkFGQjM3MTMtODg0Ri00MDU3LTk4MzMtRDA1MTUxMDU4RUU2UNIAGgAbACMAJF8QF2lzLndvcmtmbG93LmFjdGlvbnMuYXNr0wAlACYAHgAnACgAKVtXRklucHV0VHlwZV8QEVdGQXNrQWN0aW9uUHJvbXB0VFRleHRdV2VsY2hlciBUYWcgP18QJEJEMzRERUVGLUFENjEtNDJFRS1BMzQ4LUFBMjQ0RTZERUVGRdIAGgAbABwAK9IAHgAfACwALV8QJDRGQzNDMjhDLUQ1Q0QtNEM3OC05NUJFLThFODgzODk5OEE2RNIALgAvADAAPlVWYWx1ZV8QE1dGU2VyaWFsaXphdGlvblR5cGXSADEAMgAzADRWc3RyaW5nXxASYXR0YWNobWVudHNCeVJhbmdlbxBUAGgAdAB0AHAAcwA6AC8ALwBhAHAAaQAuAGYAbwBvAHQAYgBhAGwAbAAtAGQAYQB0AGEALQBhAHAAaQAuAGMAbwBtAC8AdABvAGQAYQB5AHMALQBtAGEAdABjAGgAZQBzAD8AZABhAHQAZQA9//wAJgB0AGkAbQBlAHoAbwBuAGUAPQBFAHUAcgBvAHAAZQAvAFYAaQBlAG4AbgBhACYAawBlAHkAPf/80gA1ADYANwA9V3s1NCwgMX1XezgzLCAxfdMAOAA5ADoAKQA7ADxaT3V0cHV0VVVJRFRUeXBlWk91dHB1dE5hbWVcQWN0aW9uT3V0cHV0XxATTmFjaCBFaW5nYWJlIGZyYWdlbtMAOAA5ADoAIAA7ACdfEBFXRlRleHRUb2tlblN0cmluZ9IAGgAbAEAAQV8QH2lzLndvcmtmbG93LmFjdGlvbnMuZG93bmxvYWR1cmzSAEIAHgBDAElVV0ZVUkzSAC4ALwBEAD7SADEAMgBFAEZh//zRAEcASFZ7MCwgMX3TADgAOQA6ACwAOwAnXxAkMjJENzgwOTMtMzA1QS00OTE5LThGQTItMDQ0OTNDQTY2ODdC0gAaABsASwBMXxAiaXMud29ya2Zsb3cuYWN0aW9ucy5nZXR2YWx1ZWZvcmtledMATQAeAE4ATwBTAFRXV0ZJbnB1dF8QD1dGRGljdGlvbmFyeUtledIALgAvAFAAUtMAOAA5ADoASQA7AFFeSW5oYWx0IGRlciBVUkxfEBVXRlRleHRUb2tlbkF0dGFjaG1lbnRfECRFODZERjBCMi1GNDA3LTQ5MzMtOEFBMS03Nzg2MDY0RDJDNzJUZGF0YdIAGgAbAFYAV18QH2lzLndvcmtmbG93LmFj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ADsAW1dNYXRjaElE0gAaABsASwDU0wBNAB4ATgDVANcA2NIALgAvANYAUtIAbgA5ALwAb18QJDYyQjNCQzZFLUMzNkItNERCMC1BOTM2LUQ3MDRDRDUzNTUwQ1Zob21lSUTSABoAGwBLANrTAE0AHgBOANsA3QDe0gAuAC8A3ABS0gBuADkAvABvXxAkOUMwNkNBQTktRkNFNS00QTI0LTlCODAtQjc4QkQ2MUE1OTQzVmF3YXlJRNIAGgAbABwA4NIAHgAfAOEA4l8QJDM1REQyMTY5LUI3QUQtNDg3OS1CRjgyLTA1NjE4OTU2RUUzN9IALgAvAOMAPtIAMQAyAEUA5NEARwDl0wA4ADkAOgAgADsAJ9IAGgAbAOcA6F8QIGlzLndvcmtmbG93LmFjdGlvbnMudGV4dC5yZXBsYWNl1ABNAOkAHgDqAOsA7wDwAPFfEB5XRlJlcGxhY2VUZXh0UmVndWxhckV4cHJlc3Npb25fEBFXRlJlcGxhY2VUZXh0RmluZNIALgAvAOwAPtIAMQAyAEUA7dEARwDu0wA4ADkAOgDhADsAJwlfECRFODJBQTU0Ny1DODIwLTRCQkMtQTY1OS0xMjlBQURBNDlBRUVTXHMr0gAaABsAVgDz0gBNAFgA9AD30gAuAC8A9QBS0wA4ADkAOgDwADsA9l8QE0FrdHVhbGlzaWVydGVyIFRleHRWQVBJS2V50gAaABsA+QD6XxAeaXMud29ya2Zsb3cuYWN0aW9ucy50ZXh0LnNwbGl00gD7AB4A/AD+VHRleHTSAC4ALwD9AFLTADgAOQA6APAAOwD2XxAkRTUxRUJFNEUtRjgzQy00REFDLUFCNjktMTMyQkE5QkE3OTg50gAaABsBAAEBXxAgaXMud29ya2Zsb3cuYWN0aW9ucy50ZXh0LmNvbWJpbmXTAQIA+wAeAQMBBAEHXxAPV0ZUZXh0U2VwYXJhdG9yVkN1c3RvbdIALgAvAQUAUtMAOAA5ADoA/gA7AQZeVGV4dCBhdWZ0ZWlsZW5fECQ2MThBRTQzNy1GMEUzLTQ3QTMtQkJDMS1BRTY2NzRDRUI4RTTSABoAGwAcAQnSAB4AHwEKAQtfECRFQUUyQUQwOS1DREE2LTRDRDAtOEMwMS02ODkxQjlBMjIzNDXSAC4ALwEMAD7SADEAMgENAQ5vEDgAaAB0AHQA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AGUAYgBlAHQARABhAHQAZQBuAC4AagBzAG8AbtEARwL30gBuADkA0gBv0gAaABsAHAL50gAeAB8C+gL7XxAkOUJFMEVEMTMtOUJCNS00RUI2LUIwMTktODQzMzdGNzAwMTE10gAuAC8C/AA+0gAxADIC/QL+bxAV//wAL//8AF8ARgBvAHIAZQBiAGUAdABEAGEAdABlAG4ALgBqAHMAbwBu0gBHAbYC/wMA0gBuADkA0gBv0gBuADkA0gBv0gAaABsBugMC1QAeAbwBvQBNAb4DAwAXABcDBAMGXxAkRUVCQzExMzMtMzUyQS00MTM4LUFDNDEtQzdGN0FCRjZDODFC0gAuAC8DBQBS0wA4ADkAOgLwADsBwdIALgAvAwcAUtMAOAA5ADoC+gA7ACevEBMDCQMKAwsDDAMNAw4DDwMQAxEDEgMTAxQDFQMWAxcDGAMZAxoDG18QEFdGQXBwQ29udGVudEl0ZW1fEBhXRkFwcFN0b3JlQXBwQ29udGVudEl0ZW1fEBRXRkFydGljbGVDb250ZW50SXRlbV8QFFdGQ29udGFjdENvbnRlbnRJdGVtXxARV0ZEYXRlQ29udGVudEl0ZW1fEBlXRkVtYWlsQWRkcmVzc0NvbnRlbnRJdGVtXxATV0ZGb2xkZXJDb250ZW50SXRlbV8QGFdGR2VuZXJpY0ZpbGVDb250ZW50SXRlbV8QEldGSW1hZ2VDb250ZW50SXRlbV8QGldGaVR1bmVzUHJvZHVjdENvbnRlbnRJdGVtXxAVV0ZMb2NhdGlvbkNvbnRlbnRJdGVtXxAXV0ZEQ01hcHNMaW5rQ29udGVudEl0ZW1fEBRXRkFWQXNzZXRDb250ZW50SXRlbV8QEFdGUERGQ29udGVudEl0ZW1fEBhXRlBob25lTnVtYmVyQ29udGVudEl0ZW1fEBVXRlJpY2hUZXh0Q29udGVudEl0ZW1fEBpXRlNhZmFyaVdlYlBhZ2VDb250ZW50SXRlbV8QE1dGU3RyaW5nQ29udGVudEl0ZW1fEBBXRlVSTENvbnRlbnRJdGVtoQMd1QMeAx8DIAMhACcAcQMiACEAHwMjW0FjdGlvbkluZGV4WENhdGVnb3J5XERlZmF1bHRWYWx1ZVxQYXJhbWV0ZXJLZXlZUGFyYW1ldGVyXxAbRm9vdHlTdGF0cyBBUEktS2V5IGVp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"
+
 _HUBSIGN_HTML = r"""<!doctype html>
 <html lang="de">
 <head>
@@ -1239,10 +1436,10 @@ button{width:100%;padding:14px;margin-top:20px;border:0;border-radius:11px;backg
 </style>
 </head>
 <body><div class="w"><div class="c">
-<h1>FootyStats API Export V2 signieren</h1>
-<p class="s">Die vorbereitete Shortcut-Datei ist bereits eingebaut. Du musst keine Datei auswählen.</p>
+<h1>FootyStats + Forebet Export V4 signieren</h1>
+<p class="s">Neuer separater Kurzbefehl für fünf FootyStats-Dateien plus ForebetDaten. Dein bestehender V2-Kurzbefehl bleibt unverändert.</p>
 <label>Name</label>
-<input id="name" value="FootyStats API Export V2">
+<input id="name" value="FootyStats + Forebet Export V4">
 <label>HubSign API-Key</label>
 <input id="key" type="password" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="HubSign-Key hier einfügen">
 <p class="s">Der Key wird nicht gespeichert. Er wird nur für diesen Signiervorgang über deinen Render-Dienst an RoutineHub gesendet.</p>
@@ -1252,7 +1449,7 @@ button{width:100%;padding:14px;margin-top:20px;border:0;border-radius:11px;backg
 <script>
 document.getElementById('go').onclick=async()=>{
   const key=document.getElementById('key').value.trim();
-  const name=document.getElementById('name').value.trim()||'FootyStats API Export V2';
+  const name=document.getElementById('name').value.trim()||'FootyStats + Forebet Export V4';
   const st=document.getElementById('status');
   if(!key){st.className='s bad';st.textContent='HubSign-Key fehlt.';return}
   st.className='s';st.textContent='Signierung läuft…';
@@ -1265,7 +1462,7 @@ document.getElementById('go').onclick=async()=>{
     }
     const b=await r.blob();
     const u=URL.createObjectURL(b);
-    const a=document.createElement('a'); a.href=u; a.download='FootyStats API Export V2.shortcut';
+    const a=document.createElement('a'); a.href=u; a.download='FootyStats + Forebet Export V4.shortcut';
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(()=>URL.revokeObjectURL(u),5000);
     st.className='s ok';st.textContent='Fertig. Die signierte .shortcut-Datei wurde heruntergeladen.';
@@ -1290,10 +1487,10 @@ def _multipart_body(shortcut_name: str, api_key: str):
             b"\r\n",
         ])
     field("shortcut_name", shortcut_name)
-    data = _b64.b64decode(_PREPARED_SHORTCUT_B64)
+    data = _b64.b64decode(_PREPARED_SHORTCUT_V4_B64)
     chunks.extend([
         b"--"+b+b"\r\n",
-        b'Content-Disposition: form-data; name="shortcut_file"; filename="FootyStats API Export V2.shortcut"\r\n',
+        b'Content-Disposition: form-data; name="shortcut_file"; filename="FootyStats + Forebet Export V4.shortcut"\r\n',
         b"Content-Type: application/octet-stream\r\n\r\n",
         data,
         b"\r\n",
@@ -1303,9 +1500,9 @@ def _multipart_body(shortcut_name: str, api_key: str):
     return boundary, b"".join(chunks)
 
 @app.post("/api/hubsign-sign")
-async def hubsign_sign(api_key: str = Form(...), shortcut_name: str = Form("FootyStats API Export V2")):
+async def hubsign_sign(api_key: str = Form(...), shortcut_name: str = Form("FootyStats + Forebet Export V4")):
     api_key = (api_key or "").strip()
-    shortcut_name = (shortcut_name or "FootyStats API Export V2").strip()
+    shortcut_name = (shortcut_name or "FootyStats + Forebet Export V4").strip()
     if not api_key:
         raise HTTPException(status_code=400, detail="HubSign API-Key fehlt.")
     boundary, body = _multipart_body(shortcut_name, api_key)
@@ -1315,7 +1512,7 @@ async def hubsign_sign(api_key: str = Form(...), shortcut_name: str = Form("Foot
         headers={
             "Content-Type": f"multipart/form-data; boundary={boundary}",
             "Accept": "application/octet-stream",
-            "User-Agent": "FootyStats-Prognose-Engine/0.2.2",
+            "User-Agent": "FootyStats-Forebet-Super-Analyse/0.6.0",
         },
         method="POST",
     )
@@ -1351,7 +1548,7 @@ async def hubsign_sign(api_key: str = Form(...), shortcut_name: str = Form("Foot
         content=signed,
         media_type="application/octet-stream",
         headers={
-            "Content-Disposition": 'attachment; filename="FootyStats API Export V2.shortcut"',
+            "Content-Disposition": 'attachment; filename="FootyStats + Forebet Export V4.shortcut"',
             "Cache-Control":"no-store",
         },
     )
