@@ -1,6 +1,6 @@
 # FootyStats + Forebet AUTO V4
 
-Status: **separater Teststand**. `main`, V0.4.0, der alte V2-Kurzbefehl und der bestehende Render-Produktionsstand werden nicht verändert.
+Status: **separater Teststand**. `main`, der alte V2-Kurzbefehl und der bestehende Render-Produktionsstand werden durch diesen Branch nicht weiter verändert.
 
 ## Ziel
 
@@ -71,4 +71,4 @@ Beispielstruktur:
 - Kein Apify-Token wird in Archive geschrieben.
 - Unsichere Forebet-Teamzuordnungen werden blockiert.
 - Ergebnisse werden nicht zur Pre-Match-Auswahl benutzt.
-- Der Actor-Datensatz wird im Prozess 12 Minuten gecacht, damit nicht für jedes einzelne Match erneut der komplette Forebet-Crawl gestartet wird.
+- Der Actor-Datensatz wird im Prozess 30 Minuten gecacht, damit nicht für jedes einzelne Match erneut der komplette Forebet-Crawl gestartet wird.
