@@ -8,7 +8,6 @@ import threading
 import time
 import unicodedata
 import urllib.error
-import urllib.parse
 import urllib.request
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -66,12 +65,15 @@ def _actor_items(force: bool = False) -> List[Dict[str, Any]]:
         if cached is not None and not force and now - float(_CACHE.get("at") or 0) < CACHE_SECONDS:
             return list(cached)
 
-        url = APIFY_ENDPOINT + "?token=" + urllib.parse.quote(token) + "&clean=true&format=json&timeout=150"
         request = urllib.request.Request(
-            url,
+            APIFY_ENDPOINT + "?clean=true&format=json&timeout=150",
             data=b"{}",
             method="POST",
-            headers={"Content-Type": "application/json", "Accept": "application/json"},
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "Authorization": f"Bearer {token}",
+            },
         )
         try:
             with urllib.request.urlopen(request, timeout=165) as response:
