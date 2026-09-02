@@ -86,7 +86,7 @@ def test_six_file_bundle_uses_both_models_and_changes_probabilities():
 
     result = app._analyze_bundle(parsed)
     assert result["ok"] is True
-    assert result["model_version"] == "0.7.0"
+    assert result["model_version"] == "0.7.1"
     assert result["ensemble"]["active"] is True
     assert result["ensemble"]["weights"] == {"footystats": 0.5, "forebet": 0.5}
     assert result["forebet_model"]["odds_used"] is False
@@ -173,14 +173,15 @@ def test_http_health_and_homepage_identify_new_product_and_backup():
     assert health.status_code == 200
     assert health.json() == {
         "ok": True,
-        "version": "0.7.0",
+        "version": "0.7.1",
         "footystats_backup": "0.4.0",
         "forebet_ensemble": True,
         "date_only_shortcut": True,
+        "hubsign_format": "AEA1",
     }
     homepage = client.get("/")
     assert homepage.status_code == 200
-    assert "FootyStats + Forebet ELITE Analyse v0.7.0" in homepage.text
+    assert "FootyStats + Forebet ELITE Analyse v0.7.1" in homepage.text
     assert "alle sechs JSON-Dateien" in homepage.text
 
 
@@ -246,3 +247,63 @@ def test_forebet_score_and_average_goals_are_real_decision_gates():
     under = app._forebet_internal_coherence(forebet, "under_2_5")
     assert over["passed"] is True
     assert under["passed"] is False
+
+
+class _HubSignResponse:
+    status = 200
+    headers = {"Content-Type": "application/octet-stream"}
+
+    def __init__(self, body):
+        self.body = body
+
+    def read(self):
+        return self.body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+
+def test_hubsign_uses_current_json_service_and_returns_only_aea1(monkeypatch):
+    captured = {}
+
+    def fake_urlopen(request, timeout):
+        captured["url"] = request.full_url
+        captured["payload"] = json.loads(request.data)
+        captured["timeout"] = timeout
+        return _HubSignResponse(b"AEA1\x00\x00signed-shortcut")
+
+    monkeypatch.setattr(app._urlreq, "urlopen", fake_urlopen)
+    client = TestClient(app.app, base_url="https://testserver")
+    response = client.post("/api/hubsign-sign", data={"shortcut_name": "ELITE AUTO"})
+
+    assert response.status_code == 200
+    assert response.content.startswith(b"AEA1")
+    assert captured["url"] == "https://hubsign.routinehub.services/sign"
+    assert captured["payload"]["shortcutName"] == "ELITE AUTO"
+    assert captured["payload"]["shortcut"].startswith("<?xml")
+    assert "api_key" not in captured["payload"]
+
+
+def test_hubsign_rejects_http_200_without_apple_signature(monkeypatch):
+    monkeypatch.setattr(
+        app._urlreq,
+        "urlopen",
+        lambda *_args, **_kwargs: _HubSignResponse(b"bplist00-not-signed"),
+    )
+    client = TestClient(app.app, base_url="https://testserver")
+    response = client.post("/api/hubsign-sign", data={"shortcut_name": "ELITE AUTO"})
+
+    assert response.status_code == 502
+    assert b"AEA1" in response.content
+
+
+def test_hubsign_helper_never_claims_unsigned_download_is_valid():
+    client = TestClient(app.app)
+    response = client.get("/hubsign-helper")
+
+    assert response.status_code == 200
+    assert "HubSign API-Key" not in response.text
+    assert "magic!=='AEA1'" in response.text

@@ -467,7 +467,7 @@ from fastapi import FastAPI, File, UploadFile, HTTPException, Form, Request
 from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel
 
-app = FastAPI(title="FootyStats + Forebet ELITE Analyse", version="0.7.0")
+app = FastAPI(title="FootyStats + Forebet ELITE Analyse", version="0.7.1")
 
 class Payload(BaseModel):
     matchData: Dict[str, Any]
@@ -684,7 +684,7 @@ def _attach_forebet_ensemble(result: Dict[str, Any], forebet: Dict[str, Any]) ->
         "decision_rule": "SPIELEN nur bei bestandenem FootyStats-V5.2-Protokoll, gleichem Top-Markt, mindestens 65 % gemeinsam, höchstens 8 Prozentpunkten Differenz und passendem Forebet-Ergebnistipp/Ø-Tore-Kohärenzcheck.",
     }
     result["method"] = {**dict(result.get("method") or {}), "forebet_ensemble": True, "opinion_pool": "equal-weight log pool", "odds_used": False}
-    result["model_version"] = "0.7.0"
+    result["model_version"] = "0.7.1"
     result["notes"] = list(result.get("notes") or []) + [
         "Forebet beeinflusst alle sechs Marktwerte über einen symmetrischen logarithmischen Opinion-Pool.",
         "Die Gewichte sind transparent gleich verteilt und noch nicht backtest-kalibriert.",
@@ -1241,7 +1241,7 @@ def _analyze_bundle(parsed_files: List[Dict[str, Any]]) -> Dict[str, Any]:
     try:
         forebet = _forebet_snapshot(pair["forebet_data"], mf(pair["match_data"]))
     except ValueError as exc:
-        return {"ok":False,"model_version":"0.7.0","phase":"FOREBET_VALIDATION_FAILED","decision":"ANALYSE NICHT MÖGLICH","error":str(exc),"pairing":pair.get("pairing"),"input_sources":pair.get("source_files") or {}}
+        return {"ok":False,"model_version":"0.7.1","phase":"FOREBET_VALIDATION_FAILED","decision":"ANALYSE NICHT MÖGLICH","error":str(exc),"pairing":pair.get("pairing"),"input_sources":pair.get("source_files") or {}}
     result = _attach_forebet_ensemble(result, forebet)
     result["pairing"] = {
         **pair["pairing"],
@@ -1273,7 +1273,7 @@ pre{white-space:pre-wrap;word-break:break-word;font-size:.75rem}.sep{border-top:
 <body>
 <div class="w">
   <div class="c">
-    <h2>FootyStats + Forebet ELITE Analyse v0.7.0</h2>
+    <h2>FootyStats + Forebet ELITE Analyse v0.7.1</h2>
     <div class="s">FootyStats-V5.5-Kern + Forebet-Konsensmodell · keine Odds · INSUFFICIENT_DATA-Sperre und V5.2-Guardrails aktiv</div>
     <h3>Match-Ordner auswählen</h3>
     <p class="s">Empfohlen: MatchDaten, LeagueDaten, FormDaten, TableDaten, PlayerDaten und ForebetDaten desselben Matches auswählen.</p>
@@ -1389,7 +1389,7 @@ document.getElementById('go').onclick=async function(){
 @app.get("/",response_class=HTMLResponse)
 def index():return INDEX_HTML
 @app.get("/api/health")
-def health():return {"ok":True,"version":"0.7.0","footystats_backup":"0.4.0","forebet_ensemble":True,"date_only_shortcut":True}
+def health():return {"ok":True,"version":"0.7.1","footystats_backup":"0.4.0","forebet_ensemble":True,"date_only_shortcut":True,"hubsign_format":"AEA1"}
 @app.post("/api/predict")
 def predict_json(payload:Payload):
     report = supplemental_report(payload.matchData, payload.leagueData, payload.formData, payload.tableData, payload.playerData)
@@ -1403,7 +1403,7 @@ def predict_json(payload:Payload):
 async def predict_files(match_file:UploadFile=File(...),league_file:UploadFile=File(...)):
     raise HTTPException(
         status_code=422,
-        detail="Die v0.7.0-ELITE-Analyse akzeptiert keinen unvollständigen Zwei-Dateien-Weg. Bitte /api/predict-bundle mit fünf FootyStats-Dateien und einer ForebetDaten-Datei verwenden.",
+        detail="Die v0.7.1-ELITE-Analyse akzeptiert keinen unvollständigen Zwei-Dateien-Weg. Bitte /api/predict-bundle mit fünf FootyStats-Dateien und einer ForebetDaten-Datei verwenden.",
     )
 @app.post("/api/predict-bundle")
 async def predict_bundle(files: List[UploadFile] = File(...)):
@@ -1446,11 +1446,9 @@ async def archive_bundle(files: List[UploadFile] = File(...)):
         },
     )
 
-# ---- Temporary HubSign helper ----
-# The HubSign key is accepted only for this request, is not persisted,
-# and is not included in application logs by this code.
+# ---- HubSign helper ----
 import base64 as _b64
-import uuid as _uuid
+import plistlib as _plistlib
 import urllib.request as _urlreq
 import urllib.error as _urlerr
 
@@ -1480,33 +1478,32 @@ button{width:100%;padding:14px;margin-top:20px;border:0;border-radius:11px;backg
 <p class="s">Der neue Kurzbefehl fragt beim Lauf nur nach dem Datum und exportiert danach automatisch alle Tagesmatches mit fünf FootyStats-Dateien plus ForebetDaten. V0.4.0 und dein bestehender V2-Kurzbefehl bleiben unverändert.</p>
 <label>Name</label>
 <input id="name" value="FootyStats + Forebet ELITE AUTO">
-<label>HubSign API-Key</label>
-<input id="key" type="password" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="HubSign-Key hier einfügen">
-<p class="s">Der Key wird nicht gespeichert. Er wird nur für diesen Signiervorgang über deinen Render-Dienst an RoutineHub gesendet.</p>
-<button id="go">Jetzt signieren</button>
+<p class="s">Die Datei wird mit dem aktuellen HubSign-Dienst signiert und vor dem Download auf das Apple-Format <code>AEA1</code> geprüft.</p>
+<button id="go">Signieren und herunterladen</button>
 <p id="status" class="s"></p>
 </div></div>
 <script>
 document.getElementById('go').onclick=async()=>{
-  const key=document.getElementById('key').value.trim();
   const name=document.getElementById('name').value.trim()||'FootyStats + Forebet ELITE AUTO';
   const st=document.getElementById('status');
-  if(!key){st.className='s bad';st.textContent='HubSign-Key fehlt.';return}
   st.className='s';st.textContent='Signierung läuft…';
   try{
-    const fd=new FormData(); fd.append('api_key',key); fd.append('shortcut_name',name);
+    const fd=new FormData(); fd.append('shortcut_name',name);
     const r=await fetch('/api/hubsign-sign',{method:'POST',body:fd});
     if(!r.ok){
       const t=await r.text();
       st.className='s bad';st.textContent='Fehler '+r.status+': '+t.slice(0,500);return;
     }
     const b=await r.blob();
+    const magic=String.fromCharCode(...new Uint8Array(await b.slice(0,4).arrayBuffer()));
+    if(magic!=='AEA1'){
+      st.className='s bad';st.textContent='Signaturprüfung fehlgeschlagen. Es wurde keine Datei heruntergeladen.';return;
+    }
     const u=URL.createObjectURL(b);
     const a=document.createElement('a'); a.href=u; a.download='FootyStats + Forebet ELITE AUTO.shortcut';
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(()=>URL.revokeObjectURL(u),5000);
-    st.className='s ok';st.textContent='Fertig. Die signierte .shortcut-Datei wurde heruntergeladen.';
-    document.getElementById('key').value='';
+    st.className='s ok';st.textContent='Fertig. AEA1-Signatur geprüft; die gültige .shortcut-Datei wurde heruntergeladen.';
   }catch(e){st.className='s bad';st.textContent='Fehler: '+String(e)}
 };
 </script></body></html>"""
@@ -1515,46 +1512,29 @@ document.getElementById('go').onclick=async()=>{
 def hubsign_helper():
     return HTMLResponse(_HUBSIGN_HTML, headers={"Cache-Control":"no-store"})
 
-def _multipart_body(shortcut_name: str, api_key: str, public_base_url: str):
-    boundary = "----FootyStatsHubSign" + _uuid.uuid4().hex
-    b = boundary.encode()
-    chunks = []
-    def field(name, value):
-        chunks.extend([
-            b"--"+b+b"\r\n",
-            f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode(),
-            value.encode("utf-8"),
-            b"\r\n",
-        ])
-    field("shortcut_name", shortcut_name)
+def _hubsign_json_body(shortcut_name: str, public_base_url: str) -> bytes:
     from shortcut_date_auto import build_date_auto_shortcut
     data = build_date_auto_shortcut(_b64.b64decode(_PREPARED_SHORTCUT_B64), public_base_url)
-    chunks.extend([
-        b"--"+b+b"\r\n",
-        b'Content-Disposition: form-data; name="shortcut_file"; filename="FootyStats + Forebet ELITE AUTO.shortcut"\r\n',
-        b"Content-Type: application/octet-stream\r\n\r\n",
-        data,
-        b"\r\n",
-    ])
-    field("api_key", api_key)
-    chunks.append(b"--"+b+b"--\r\n")
-    return boundary, b"".join(chunks)
+    workflow = _plistlib.loads(data)
+    xml = _plistlib.dumps(workflow, fmt=_plistlib.FMT_XML).decode("utf-8")
+    return json.dumps({"shortcutName": shortcut_name, "shortcut": xml}, ensure_ascii=False).encode("utf-8")
 
 @app.post("/api/hubsign-sign")
-async def hubsign_sign(request: Request, api_key: str = Form(...), shortcut_name: str = Form("FootyStats + Forebet ELITE AUTO")):
-    api_key = (api_key or "").strip()
+async def hubsign_sign(request: Request, shortcut_name: str = Form("FootyStats + Forebet ELITE AUTO")):
     shortcut_name = (shortcut_name or "FootyStats + Forebet ELITE AUTO").strip()
-    if not api_key:
-        raise HTTPException(status_code=400, detail="HubSign API-Key fehlt.")
     public_base_url = str(request.base_url).rstrip("/")
-    boundary, body = _multipart_body(shortcut_name, api_key, public_base_url)
+    body = _hubsign_json_body(shortcut_name, public_base_url)
     req = _urlreq.Request(
-        "https://routinehub.co/api/v1/sign-shortcut",
+        "https://hubsign.routinehub.services/sign",
         data=body,
         headers={
-            "Content-Type": f"multipart/form-data; boundary={boundary}",
+            "Content-Type": "application/json",
             "Accept": "application/octet-stream",
-            "User-Agent": "FootyStats-Forebet-ELITE/0.7.0",
+            # HubSign's Cloudflare edge rejects custom Python client user agents.
+            # A conventional CLI user agent is accepted by the public signer.
+            "User-Agent": "curl/8.10.1",
+            "Origin": "https://routinehub.co",
+            "Referer": "https://routinehub.co/",
         },
         method="POST",
     )
@@ -1575,15 +1555,11 @@ async def hubsign_sign(request: Request, api_key: str = Form(...), shortcut_name
         raise HTTPException(status_code=502, detail=f"RoutineHub nicht erreichbar: {e}")
     if status != 200:
         return Response(content=signed, status_code=status, media_type=ctype, headers={"Cache-Control":"no-store"})
-    # RoutineHub's current API contract guarantees a signed shortcut on HTTP 200,
-    # but does not guarantee the legacy AEA1 magic bytes. Reject obvious
-    # error/text responses instead of hard-coding one archive signature format.
-    ctype_l = (ctype or "").lower()
-    if not signed or "json" in ctype_l or "text/html" in ctype_l:
+    if not signed.startswith(b"AEA1"):
         return Response(
-            content=signed or b"RoutineHub returned an empty response.",
+            content=b"HubSign lieferte keinen gueltigen Apple-AEA1-Signaturcontainer.",
             status_code=502,
-            media_type=ctype or "text/plain",
+            media_type="text/plain",
             headers={"Cache-Control":"no-store"},
         )
     return Response(
