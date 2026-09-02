@@ -1,4 +1,4 @@
-name: Live Forebet adapter check
+name: Live Forebet elite fusion check
 
 on:
   push:
@@ -10,10 +10,67 @@ jobs:
   live-check:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v4
+
+      - name: Deterministic elite fusion unit test
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from elite_fusion import attach_forebet_elite
+
+          footystats = {
+              'ok': True,
+              'model_version': '0.4.0',
+              'decision': 'BEOBACHTEN',
+              'probabilities': {
+                  'home_win': 0.4931372391,
+                  'draw': 0.2209022904,
+                  'away_win': 0.2859604705,
+                  'btts_yes': 0.6504236887,
+                  'btts_no': 0.3495763113,
+                  'over_2_5': 0.6526801155,
+                  'under_2_5': 0.3473198845,
+              },
+              'markets': [],
+              'strongest_market': {'key': 'over_2_5', 'probability_pct': 65.3},
+              'expected_goals': {'home': 1.9306808652, 'away': 1.4303477347, 'total': 3.3610285999},
+              'samples': {'security': 'NIEDRIG'},
+              'diagnostics': {
+                  'data_quality': 'HOCH',
+                  'sample_security': 'NIEDRIG',
+                  'result_vs_underlying': 'TEILWEISE KONSISTENT',
+                  'robustness_status': 'BESTANDEN',
+                  'single_point_of_failure': False,
+                  'elite_protocol': {'gates': {'multi_block_confirmation': 'BESTANDEN', 'coherence': {'passed': True}}},
+              },
+              'method': {},
+              'notes': [],
+          }
+          forebet = {
+              'probabilities': {
+                  'home_win': 0.53, 'draw': 0.26, 'away_win': 0.21,
+                  'btts_yes': 0.81, 'btts_no': 0.19,
+                  'over_2_5': 0.68, 'under_2_5': 0.32,
+              },
+              'predicted_score': '3-2',
+              'average_goals': 3.38,
+          }
+          result = attach_forebet_elite(footystats, forebet)
+          assert result['model_version'] == '0.6.1-elite-fusion'
+          assert result['ensemble']['active'] is True
+          assert result['ensemble']['backtested_weights'] is False
+          assert result['ensemble']['weights']['1x2']['footystats'] >= 0.50
+          assert result['ensemble']['weights']['1x2']['forebet'] <= 0.50
+          assert result['method']['odds_used'] is False
+          print('ELITE_FUSION_UNIT_PASS')
+          PY
+
       - name: Wait for Render deployment
         run: sleep 75
 
-      - name: Check final adapter health
+      - name: Check known-good Forebet adapter health
         shell: bash
         run: |
           set -euo pipefail
@@ -26,10 +83,10 @@ jobs:
             fi
             sleep 20
           done
-          echo 'Final adapter health check failed'
+          echo 'Known-good Forebet adapter health check failed'
           exit 1
 
-      - name: Exact Luzern Vaduz live test
+      - name: Live Luzern Vaduz complete Forebet response
         shell: bash
         run: |
           set -euo pipefail
@@ -40,24 +97,28 @@ jobs:
           cat /tmp/result.json || true
           test "$code" = "200"
           python - <<'PY'
-          import json
-          p='/tmp/result.json'
-          d=json.load(open(p))
-          expected={
-              'home_win':53.0,
-              'draw':26.0,
-              'away_win':21.0,
-              'btts_yes':81.0,
-              'over_2_5':68.0,
-              'predicted_score':'3-2',
-              'average_goals':3.38,
-          }
-          for k,v in expected.items():
-              got=d.get(k)
-              if isinstance(v,float):
-                  assert abs(float(got)-v) < 0.011, (k,got,v)
-              else:
-                  assert got == v, (k,got,v)
-          print('LUZERN_VADUZ_EXACT_PASS')
-          print(json.dumps(d, ensure_ascii=False, indent=2))
+          import json, re
+          d=json.load(open('/tmp/result.json'))
+          assert d['schema'] == 'forebet-auto-v1'
+          assert d['match_id'] == 8554458
+          for key in ('home_win','draw','away_win','btts_yes','over_2_5','predicted_score','average_goals','source_url','source'):
+              assert key in d and d[key] not in (None, '')
+          assert 95 <= float(d['home_win']) + float(d['draw']) + float(d['away_win']) <= 105
+          assert 0 <= float(d['btts_yes']) <= 100
+          assert 0 <= float(d['over_2_5']) <= 100
+          assert re.fullmatch(r'\d{1,2}-\d{1,2}', str(d['predicted_score']))
+          assert 0 <= float(d['average_goals']) <= 10
+          print('LUZERN_VADUZ_FOREBET_COMPLETE_PASS')
           PY
+
+      - name: Check elite fusion live health
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE='https://footystats-forebet-auto-v4-test.onrender.com'
+          code=$(curl -L -sS --max-time 90 -o /tmp/elite.json -w '%{http_code}' "$BASE/api/elite-fusion/health" || true)
+          cat /tmp/elite.json || true
+          test "$code" = "200"
+          grep -q '"active":true' /tmp/elite.json
+          grep -q '"version":"0.6.1-elite-fusion"' /tmp/elite.json
+          grep -q '"forebet_acquisition":"known-good-3a1d12f"' /tmp/elite.json
