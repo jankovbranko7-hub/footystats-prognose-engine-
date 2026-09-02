@@ -13,7 +13,7 @@ jobs:
       - name: Wait for Render deployment
         run: sleep 75
 
-      - name: Check V7 health
+      - name: Check V8 health
         shell: bash
         run: |
           set -euo pipefail
@@ -21,32 +21,13 @@ jobs:
           for i in {1..8}; do
             code=$(curl -L -sS --max-time 90 -o /tmp/health.json -w '%{http_code}' "$BASE/api/forebet-auto/health" || true)
             cat /tmp/health.json || true
-            if [ "$code" = "200" ] && grep -q 'forebet-auto-v7-direct-dom' /tmp/health.json; then
+            if [ "$code" = "200" ] && grep -q 'forebet-auto-v8-click-tabs' /tmp/health.json; then
               exit 0
             fi
             sleep 20
           done
-          echo 'V7 health check failed'
+          echo 'V8 health check failed'
           exit 1
-
-      - name: Dump direct-match DOM diagnostics
-        shell: bash
-        run: |
-          set -u
-          BASE='https://footystats-forebet-auto-v4-test.onrender.com'
-          URL="$BASE/api/forebet-auto/debug-direct?home=Luzern&away=Vaduz&date=2026-09-02"
-          code=$(curl -L -sS --max-time 300 -o /tmp/direct.json -w '%{http_code}' "$URL" || true)
-          echo "DEBUG_HTTP=$code"
-          python - <<'PY'
-          import json
-          p='/tmp/direct.json'
-          try:
-              d=json.load(open(p))
-          except Exception:
-              print(open(p).read()[:20000])
-          else:
-              print(json.dumps(d, ensure_ascii=False, indent=2)[:60000])
-          PY
 
       - name: Exact Luzern Vaduz live test
         shell: bash
