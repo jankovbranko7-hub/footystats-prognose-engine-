@@ -13,7 +13,7 @@ jobs:
       - name: Wait for Render deployment
         run: sleep 75
 
-      - name: Check V9 health
+      - name: Check final adapter health
         shell: bash
         run: |
           set -euo pipefail
@@ -21,12 +21,12 @@ jobs:
           for i in {1..8}; do
             code=$(curl -L -sS --max-time 90 -o /tmp/health.json -w '%{http_code}' "$BASE/api/forebet-auto/health" || true)
             cat /tmp/health.json || true
-            if [ "$code" = "200" ] && grep -q 'forebet-auto-v9-direct-first' /tmp/health.json; then
+            if [ "$code" = "200" ] && grep -q '"final_adapter":true' /tmp/health.json && grep -q '"dom_textcontent":true' /tmp/health.json; then
               exit 0
             fi
             sleep 20
           done
-          echo 'V9 health check failed'
+          echo 'Final adapter health check failed'
           exit 1
 
       - name: Exact Luzern Vaduz live test
