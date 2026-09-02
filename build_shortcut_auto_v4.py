@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import base64
-import copy
 import os
 import plistlib
 import re
@@ -10,8 +9,11 @@ from pathlib import Path
 
 
 APP_PATH = Path(__file__).with_name("app.py")
-OUTPUT_PATH = Path(__file__).with_name("FootyStats_Forebet_AUTO_V4_unsigned.shortcut")
-BASE_URL = os.environ.get("FOREBET_AUTO_BASE_URL", "").rstrip("/")
+OUTPUT_PATH = Path(__file__).with_name("FootyStats_Forebet_AUTO_V4_TEST_unsigned.shortcut")
+DEFAULT_BASE_URL = "https://footystats-forebet-auto-v4-test.onrender.com"
+BASE_URL = os.environ.get("FOREBET_AUTO_BASE_URL", DEFAULT_BASE_URL).rstrip("/")
+DATE_ASK_UUID = "BD34DEEF-AD61-42EE-A348-AA244E6DEEFE"
+DATE_ASK_OUTPUT_NAME = "Nach Eingabe fragen"
 
 
 def new_uuid():
@@ -45,16 +47,29 @@ def variable_attachment(name):
 
 def main():
     if not BASE_URL.startswith("https://"):
-        raise SystemExit("FOREBET_AUTO_BASE_URL muss zuerst auf die HTTPS-URL des separaten Testservices gesetzt werden.")
+        raise SystemExit("FOREBET_AUTO_BASE_URL muss eine HTTPS-URL sein.")
 
     app_text = APP_PATH.read_text(encoding="utf-8")
-    encoded = re.search(r'_PREPARED_SHORTCUT_B64 = "([A-Za-z0-9+/=]+)"', app_text).group(1)
-    workflow = plistlib.loads(base64.b64decode(encoded))
+    encoded_match = re.search(r'_PREPARED_SHORTCUT_B64 = "([A-Za-z0-9+/=]+)"', app_text)
+    if not encoded_match:
+        raise SystemExit("Originaler V2-Kurzbefehl wurde in app.py nicht gefunden.")
+    workflow = plistlib.loads(base64.b64decode(encoded_match.group(1)))
     actions = workflow["WFWorkflowActions"]
 
+    # Der bestehende V2 bleibt die Basis. Nur im neuen AUTO-V4-Testworkflow
+    # werden vorhandene Dateien desselben Match-Laufs sauber überschrieben.
     for action in actions:
         if action.get("WFWorkflowActionIdentifier") == "is.workflow.actions.documentpicker.save":
             action.setdefault("WFWorkflowActionParameters", {})["WFSaveFileOverwrite"] = True
+
+    # Sicherheitsprüfung: Das Datum muss aus dem bereits vorhandenen
+    # "Welcher Tag?"-Schritt des V2 stammen. So wird kein neues Eingabefeld erzeugt.
+    if not any(
+        action.get("WFWorkflowActionIdentifier") == "is.workflow.actions.ask"
+        and action.get("WFWorkflowActionParameters", {}).get("UUID") == DATE_ASK_UUID
+        for action in actions
+    ):
+        raise SystemExit("Der erwartete V2-Datumsschritt wurde nicht gefunden.")
 
     home_get = new_uuid()
     home_enc = new_uuid()
@@ -99,10 +114,13 @@ def main():
         },
     })
 
-    template = BASE_URL + "/api/forebet-auto?match_id=\ufffc&home=\ufffc&away=\ufffc"
+    # Das Datum kommt automatisch aus dem vorhandenen V2-Schritt. Der Nutzer
+    # muss für Forebet nichts zusätzlich eingeben.
+    template = BASE_URL + "/api/forebet-auto?match_id=\ufffc&home=\ufffc&away=\ufffc&date=\ufffc"
     p1 = template.index("\ufffc")
     p2 = template.index("\ufffc", p1 + 1)
     p3 = template.index("\ufffc", p2 + 1)
+    p4 = template.index("\ufffc", p3 + 1)
     actions.append({
         "WFWorkflowActionIdentifier": "is.workflow.actions.gettext",
         "WFWorkflowActionParameters": {
@@ -111,6 +129,7 @@ def main():
                 f"{{{p1}, 1}}": {"VariableName": "MatchID", "Type": "Variable"},
                 f"{{{p2}, 1}}": {"OutputUUID": home_enc, "Type": "ActionOutput", "OutputName": "URL Encoded Text"},
                 f"{{{p3}, 1}}": {"OutputUUID": away_enc, "Type": "ActionOutput", "OutputName": "URL Encoded Text"},
+                f"{{{p4}, 1}}": {"OutputUUID": DATE_ASK_UUID, "Type": "ActionOutput", "OutputName": DATE_ASK_OUTPUT_NAME},
             }),
         },
     })
@@ -157,13 +176,27 @@ def main():
         },
     })
 
-    workflow["WFWorkflowName"] = "FootyStats + Forebet AUTO V4"
+    workflow["WFWorkflowName"] = "FootyStats + Forebet AUTO V4 TEST"
     payload = plistlib.dumps(workflow, fmt=plistlib.FMT_BINARY, sort_keys=False)
     check = plistlib.loads(payload)
+
     if len(check.get("WFWorkflowActions", [])) != 98:
         raise SystemExit("Unerwartete Aktionszahl; Builder stoppt sicherheitshalber.")
+    if not payload.startswith(b"bplist00"):
+        raise SystemExit("Erzeugte Datei ist kein Apple Binary Property List Shortcut.")
+    if any(
+        action.get("WFWorkflowActionIdentifier") == "is.workflow.actions.ask"
+        and "Forebet:" in str(action.get("WFWorkflowActionParameters", {}).get("WFAskActionPrompt", ""))
+        for action in check["WFWorkflowActions"]
+    ):
+        raise SystemExit("Manuelle Forebet-Eingabe wurde unerwartet gefunden.")
+
     OUTPUT_PATH.write_bytes(payload)
     print(OUTPUT_PATH)
+    print(f"actions={len(check['WFWorkflowActions'])}")
+    print(f"endpoint={BASE_URL}/api/forebet-auto")
+    print("forebet_manual_input=false")
+    print("date_source=existing_v2_ask")
 
 
 if __name__ == "__main__":
