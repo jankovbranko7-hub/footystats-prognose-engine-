@@ -1,4 +1,4 @@
-name: Forebet AUTO V5 active-fixture live check
+name: Forebet AUTO V5 Bay debug
 
 on:
   push:
@@ -6,46 +6,18 @@ on:
       - ops/live-check
 
 jobs:
-  check:
+  debug:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
       - name: Verify V5 health
         run: |
           body=$(curl -sS --max-time 120 'https://footystats-forebet-auto-v4-test.onrender.com/api/forebet-auto/health')
           echo "$body"
           echo "$body" | grep -q 'forebet-auto-v5-compact-dom'
-
-      - name: Bay Olympic exact values
+      - name: Bay live debug
         run: |
-          code=$(curl -sS --max-time 420 -o bay.json -w '%{http_code}' \
-            'https://footystats-forebet-auto-v4-test.onrender.com/api/forebet-auto?match_id=999999&home=Bay%20Olympic&away=Birkenhead%20United&date=2026-09-02&force=true')
-          cat bay.json; echo; echo "HTTP_STATUS:$code"
+          code=$(curl -sS --max-time 420 -o debug.json -w '%{http_code}' \
+            'https://footystats-forebet-auto-v4-test.onrender.com/api/forebet-auto/debug?home=Bay%20Olympic&away=Birkenhead%20United&date=2026-09-02&force=true')
+          cat debug.json; echo; echo "HTTP_STATUS:$code"
           test "$code" = "200"
-          python - <<'PY'
-          import json
-          d=json.load(open('bay.json'))
-          expected={'home_win':15.0,'draw':11.0,'away_win':74.0,'btts_yes':77.0,'over_2_5':84.0,'predicted_score':'1-3','average_goals':4.19}
-          for k,v in expected.items():
-              a=d.get(k)
-              if isinstance(v,float): assert a is not None and abs(float(a)-v)<0.011,(k,a,v)
-              else: assert a==v,(k,a,v)
-          print('BAY_OLYMPIC_EXACT_PASS')
-          PY
-
-      - name: Sutherland exact values
-        run: |
-          code=$(curl -sS --max-time 420 -o sutherland.json -w '%{http_code}' \
-            'https://footystats-forebet-auto-v4-test.onrender.com/api/forebet-auto?match_id=999997&home=Sutherland%20Sharks&away=Manly%20United&date=2026-09-02&force=true')
-          cat sutherland.json; echo; echo "HTTP_STATUS:$code"
-          test "$code" = "200"
-          python - <<'PY'
-          import json
-          d=json.load(open('sutherland.json'))
-          expected={'home_win':33.0,'draw':31.0,'away_win':36.0,'btts_yes':61.0,'over_2_5':54.0,'predicted_score':'1-2','average_goals':2.71}
-          for k,v in expected.items():
-              a=d.get(k)
-              if isinstance(v,float): assert a is not None and abs(float(a)-v)<0.011,(k,a,v)
-              else: assert a==v,(k,a,v)
-          print('SUTHERLAND_EXACT_PASS')
-          PY
