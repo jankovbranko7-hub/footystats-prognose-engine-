@@ -13,7 +13,7 @@ jobs:
       - name: Wait for Render deployment
         run: sleep 75
 
-      - name: Check V8 health
+      - name: Check V9 health
         shell: bash
         run: |
           set -euo pipefail
@@ -21,12 +21,12 @@ jobs:
           for i in {1..8}; do
             code=$(curl -L -sS --max-time 90 -o /tmp/health.json -w '%{http_code}' "$BASE/api/forebet-auto/health" || true)
             cat /tmp/health.json || true
-            if [ "$code" = "200" ] && grep -q 'forebet-auto-v8-click-tabs' /tmp/health.json; then
+            if [ "$code" = "200" ] && grep -q 'forebet-auto-v9-direct-first' /tmp/health.json; then
               exit 0
             fi
             sleep 20
           done
-          echo 'V8 health check failed'
+          echo 'V9 health check failed'
           exit 1
 
       - name: Exact Luzern Vaduz live test
@@ -37,7 +37,7 @@ jobs:
           URL="$BASE/api/forebet-auto?match_id=8554458&home=Luzern&away=Vaduz&date=2026-09-02&force=true"
           code=$(curl -L -sS --max-time 300 -o /tmp/result.json -w '%{http_code}' "$URL" || true)
           echo "HTTP=$code"
-          cat /tmp/result.json
+          cat /tmp/result.json || true
           test "$code" = "200"
           python - <<'PY'
           import json
