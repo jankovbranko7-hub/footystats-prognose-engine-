@@ -41,7 +41,8 @@ def _run_web_pages(urls: Iterable[str], *, include_links: bool = False) -> List[
         f" {links_js}"
         " const visible = document.body ? document.body.innerText : '';"
         " const allDom = document.body ? (document.body.textContent || '') : '';"
-        " const body = visible + '\n\n__HIDDEN_DOM__\n' + allDom;"
+        " const nl = String.fromCharCode(10);"
+        " const body = visible + nl + nl + '__HIDDEN_DOM__' + nl + allDom;"
         " return {url: context.request.url, title: document.title, text: body, links};"
         "}"
     )
