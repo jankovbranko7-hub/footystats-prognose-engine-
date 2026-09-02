@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 from app import app
 from forebet_auto import ForebetAutoError
 from forebet_auto_v6 import build_snapshot, debug_match, health
+from forebet_auto_v6_debug import debug_direct
 from forebet_debug import debug_pages
 
 
@@ -28,6 +29,28 @@ def forebet_auto_debug_pages(
                 "ok": False,
                 "phase": "FOREBET_BROWSER_DEBUG_FAILED",
                 "error": str(exc),
+                "date": date,
+            },
+        )
+
+
+@app.get("/api/forebet-auto/debug-direct")
+def forebet_auto_debug_direct(
+    home: str = Query(..., min_length=1),
+    away: str = Query(..., min_length=1),
+    date: str | None = Query(default=None),
+):
+    try:
+        return debug_direct(home=home, away=away, date=date)
+    except ForebetAutoError as exc:
+        return JSONResponse(
+            status_code=422,
+            content={
+                "ok": False,
+                "phase": "FOREBET_DIRECT_DEBUG_FAILED",
+                "error": str(exc),
+                "home": home,
+                "away": away,
                 "date": date,
             },
         )
