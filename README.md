@@ -1,6 +1,6 @@
-# FootyStats + Forebet ELITE Analyse v0.7.1
+# FootyStats + Forebet ELITE Analyse v0.7.2
 
-V0.7.1 verbindet den unveränderten FootyStats-Kern aus V0.4.0 mit den
+V0.7.2 verbindet den unveränderten FootyStats-Kern aus V0.4.0 mit den
 öffentlichen Pre-Match-Prognosen von Forebet. Der stabile Fünf-Dateien-Stand
 bleibt in `main` und `backup/v0.4.0-five-files` erhalten.
 
@@ -69,7 +69,8 @@ APIFY_TOKEN=<Token>
 ```
 
 Der Token wird nicht in Matchdateien oder den iPhone-Kurzbefehl geschrieben.
-Unter `/hubsign-helper` wird ausschließlich der neue ELITE-AUTO-Kurzbefehl
-über den aktuellen HubSign-Dienst signiert. Vor dem Download wird der
-Apple-`AEA1`-Signaturcontainer zwingend geprüft. Der bestehende V2-Kurzbefehl
-wird nicht überschrieben.
+Unter `/hubsign-helper` wird ausschließlich der vorab signierte ELITE-AUTO-
+Kurzbefehl ausgeliefert. Vor jedem Download wird der Apple-`AEA1`-
+Signaturcontainer zwingend geprüft. Dadurch ist der Download nicht von einem
+HubSign-Aufruf aus Render abhängig. Der bestehende V2-Kurzbefehl wird nicht
+überschrieben.
