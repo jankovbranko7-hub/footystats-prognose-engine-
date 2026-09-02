@@ -29,6 +29,25 @@ jobs:
           echo 'V6 health check failed'
           exit 1
 
+      - name: Dump direct-match DOM diagnostics
+        shell: bash
+        run: |
+          set -u
+          BASE='https://footystats-forebet-auto-v4-test.onrender.com'
+          URL="$BASE/api/forebet-auto/debug-direct?home=Luzern&away=Vaduz&date=2026-09-02"
+          code=$(curl -L -sS --max-time 300 -o /tmp/direct.json -w '%{http_code}' "$URL" || true)
+          echo "DEBUG_HTTP=$code"
+          python - <<'PY'
+          import json
+          p='/tmp/direct.json'
+          try:
+              d=json.load(open(p))
+          except Exception:
+              print(open(p).read()[:20000])
+          else:
+              print(json.dumps(d, ensure_ascii=False, indent=2)[:60000])
+          PY
+
       - name: Exact Luzern Vaduz live test
         shell: bash
         run: |
