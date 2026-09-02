@@ -77,3 +77,30 @@ def forebet_auto(
                 "away": away,
             },
         )
+
+
+@app.get("/api/forebet-auto/export")
+def forebet_auto_export(
+    match_id: int = Query(..., ge=1),
+    home: str = Query(..., min_length=1),
+    away: str = Query(..., min_length=1),
+    date: str | None = Query(default=None),
+    force: bool = Query(default=False),
+):
+    """Always return a JSON file so one missing Forebet match cannot stop a day run."""
+    try:
+        result = build_snapshot(match_id=match_id, home=home, away=away, date=date, force=force)
+        return {"ok": True, **result}
+    except ForebetAutoError as exc:
+        return {
+            "ok": False,
+            "schema": "forebet-auto-error-v1",
+            "phase": "FOREBET_UNAVAILABLE",
+            "error": str(exc),
+            "match_id": match_id,
+            "home": home,
+            "away": away,
+            "match_date": date,
+            "source_url": "https://www.forebet.com/",
+            "odds_used": False,
+        }

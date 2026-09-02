@@ -463,11 +463,11 @@ def predict(match,league):
 # ---- Web/API layer v0.4 ----
 import json
 from typing import Any, Dict, List, Optional
-from fastapi import FastAPI, File, UploadFile, HTTPException, Form
+from fastapi import FastAPI, File, UploadFile, HTTPException, Form, Request
 from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel
 
-app = FastAPI(title="FootyStats + Forebet Super Analyse", version="0.6.0")
+app = FastAPI(title="FootyStats + Forebet ELITE Analyse", version="0.7.0")
 
 class Payload(BaseModel):
     matchData: Dict[str, Any]
@@ -502,6 +502,9 @@ def _forebet_probability(value: Any, field: str) -> float:
 def _forebet_snapshot(data: Any, match_fields: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(data, dict):
         raise ValueError("ForebetDaten müssen ein JSON-Objekt sein.")
+    if data.get("ok") is False:
+        reason = str(data.get("error") or "Für dieses Spiel wurden keine sicheren Forebet-Daten gefunden.")
+        raise ValueError(f"Forebet-Automatik nicht verfügbar: {reason}")
     raw = data.get("raw_entry") or data.get("raw")
     values = dict(data)
     if isinstance(raw, str) and raw.strip():
@@ -541,7 +544,7 @@ def _forebet_snapshot(data: Any, match_fields: Dict[str, Any]) -> Dict[str, Any]
         raise ValueError("Forebet-Quelllink muss auf forebet.com verweisen.")
     return {
         "match_id": int(match_id),
-        "source": "Forebet public pre-match prediction (manual snapshot)",
+        "source": str(values.get("source") or "Forebet public pre-match prediction"),
         "source_url": source_url or None,
         "captured_at": first(values, ["captured_at", "created_at"]),
         "probabilities": {
@@ -573,6 +576,40 @@ def _multiclass_log_opinion_pool(first_model: Dict[str, float], second_model: Di
     return {key: value / total for key, value in raw.items()}
 
 
+def _forebet_internal_coherence(forebet: Dict[str, Any], market: str) -> Dict[str, Any]:
+    """Use Forebet score and average-goals fields as consistency gates, not fake probabilities."""
+    score = forebet.get("predicted_score_goals") or {}
+    home = int(score.get("home", 0))
+    away = int(score.get("away", 0))
+    total = home + away
+    average_goals = float(forebet.get("average_goals"))
+    score_markets = {
+        "home_win": home > away,
+        "away_win": away > home,
+        "btts_yes": home > 0 and away > 0,
+        "btts_no": home == 0 or away == 0,
+        "over_2_5": total >= 3,
+        "under_2_5": total <= 2,
+    }
+    average_market = None
+    if market == "over_2_5":
+        average_market = average_goals >= 2.65
+    elif market == "under_2_5":
+        average_market = average_goals <= 2.35
+    score_support = bool(score_markets.get(market))
+    passed = score_support and average_market is not False
+    return {
+        "passed": passed,
+        "market": market,
+        "predicted_score": forebet.get("predicted_score"),
+        "predicted_score_supports_market": score_support,
+        "average_goals": average_goals,
+        "average_goals_supports_market": average_market,
+        "average_goals_neutral_zone": "2.36-2.64" if average_market is None and market in {"over_2_5", "under_2_5"} else None,
+        "use": "Kohärenz- und Freigabekontrolle; Ergebnistipp und Ø-Tore werden nicht als zusätzliche Wahrscheinlichkeiten doppelt gewichtet.",
+    }
+
+
 def _attach_forebet_ensemble(result: Dict[str, Any], forebet: Dict[str, Any]) -> Dict[str, Any]:
     if not result.get("ok"):
         return result
@@ -599,6 +636,7 @@ def _attach_forebet_ensemble(result: Dict[str, Any], forebet: Dict[str, Any]) ->
     footystats_top = max(allowed, key=lambda key: footystats_probabilities[key])
     forebet_top = max(allowed, key=lambda key: forebet_probabilities[key])
     fused_top, fused_probability = ranking[0]
+    forebet_coherence = _forebet_internal_coherence(forebet, fused_top)
     comparison = []
     for key in allowed:
         difference = abs(footystats_probabilities[key] - forebet_probabilities[key])
@@ -614,7 +652,7 @@ def _attach_forebet_ensemble(result: Dict[str, Any], forebet: Dict[str, Any]) ->
     base_decision = result.get("decision")
     if fused_probability < 0.60 or top_difference >= 0.18:
         final_decision = "AUSLASSEN"
-    elif base_decision == "SPIELEN" and top_agreement and fused_probability >= 0.65 and top_difference <= 0.08:
+    elif base_decision == "SPIELEN" and top_agreement and fused_probability >= 0.65 and top_difference <= 0.08 and forebet_coherence["passed"]:
         final_decision = "SPIELEN"
     else:
         final_decision = "BEOBACHTEN"
@@ -642,14 +680,16 @@ def _attach_forebet_ensemble(result: Dict[str, Any], forebet: Dict[str, Any]) ->
         "top_market_agreement": top_agreement,
         "top_market_difference_pp": round(top_difference * 100, 1),
         "agreement_status": agreement_status,
-        "decision_rule": "SPIELEN nur bei bereits bestandenem FootyStats-V5.2-Protokoll, gleichem Top-Markt, mindestens 65 % gemeinsam und höchstens 8 Prozentpunkten Differenz.",
+        "forebet_internal_coherence": forebet_coherence,
+        "decision_rule": "SPIELEN nur bei bestandenem FootyStats-V5.2-Protokoll, gleichem Top-Markt, mindestens 65 % gemeinsam, höchstens 8 Prozentpunkten Differenz und passendem Forebet-Ergebnistipp/Ø-Tore-Kohärenzcheck.",
     }
     result["method"] = {**dict(result.get("method") or {}), "forebet_ensemble": True, "opinion_pool": "equal-weight log pool", "odds_used": False}
-    result["model_version"] = "0.6.0"
+    result["model_version"] = "0.7.0"
     result["notes"] = list(result.get("notes") or []) + [
         "Forebet beeinflusst alle sechs Marktwerte über einen symmetrischen logarithmischen Opinion-Pool.",
         "Die Gewichte sind transparent gleich verteilt und noch nicht backtest-kalibriert.",
         "Forebet-Quoten werden nicht übernommen oder verwendet.",
+        "Forebet-Ergebnistipp und Average Goals wirken als unabhängige Kohärenz-Gates und werden nicht als erfundene Zusatzwahrscheinlichkeiten doppelt gezählt.",
     ]
     return result
 
@@ -1201,7 +1241,7 @@ def _analyze_bundle(parsed_files: List[Dict[str, Any]]) -> Dict[str, Any]:
     try:
         forebet = _forebet_snapshot(pair["forebet_data"], mf(pair["match_data"]))
     except ValueError as exc:
-        return {"ok":False,"model_version":"0.6.0","phase":"FOREBET_VALIDATION_FAILED","decision":"ANALYSE NICHT MÖGLICH","error":str(exc),"pairing":pair.get("pairing"),"input_sources":pair.get("source_files") or {}}
+        return {"ok":False,"model_version":"0.7.0","phase":"FOREBET_VALIDATION_FAILED","decision":"ANALYSE NICHT MÖGLICH","error":str(exc),"pairing":pair.get("pairing"),"input_sources":pair.get("source_files") or {}}
     result = _attach_forebet_ensemble(result, forebet)
     result["pairing"] = {
         **pair["pairing"],
@@ -1233,7 +1273,7 @@ pre{white-space:pre-wrap;word-break:break-word;font-size:.75rem}.sep{border-top:
 <body>
 <div class="w">
   <div class="c">
-    <h2>FootyStats + Forebet Super Analyse v0.6.0</h2>
+    <h2>FootyStats + Forebet ELITE Analyse v0.7.0</h2>
     <div class="s">FootyStats-V5.5-Kern + Forebet-Konsensmodell · keine Odds · INSUFFICIENT_DATA-Sperre und V5.2-Guardrails aktiv</div>
     <h3>Match-Ordner auswählen</h3>
     <p class="s">Empfohlen: MatchDaten, LeagueDaten, FormDaten, TableDaten, PlayerDaten und ForebetDaten desselben Matches auswählen.</p>
@@ -1349,7 +1389,7 @@ document.getElementById('go').onclick=async function(){
 @app.get("/",response_class=HTMLResponse)
 def index():return INDEX_HTML
 @app.get("/api/health")
-def health():return {"ok":True,"version":"0.6.0","footystats_backup":"0.4.0","forebet_ensemble":True}
+def health():return {"ok":True,"version":"0.7.0","footystats_backup":"0.4.0","forebet_ensemble":True,"date_only_shortcut":True}
 @app.post("/api/predict")
 def predict_json(payload:Payload):
     report = supplemental_report(payload.matchData, payload.leagueData, payload.formData, payload.tableData, payload.playerData)
@@ -1363,7 +1403,7 @@ def predict_json(payload:Payload):
 async def predict_files(match_file:UploadFile=File(...),league_file:UploadFile=File(...)):
     raise HTTPException(
         status_code=422,
-        detail="Die v0.6.0-Super-Analyse akzeptiert keinen unvollständigen Zwei-Dateien-Weg. Bitte /api/predict-bundle mit fünf FootyStats-Dateien und einer ForebetDaten-Datei verwenden.",
+        detail="Die v0.7.0-ELITE-Analyse akzeptiert keinen unvollständigen Zwei-Dateien-Weg. Bitte /api/predict-bundle mit fünf FootyStats-Dateien und einer ForebetDaten-Datei verwenden.",
     )
 @app.post("/api/predict-bundle")
 async def predict_bundle(files: List[UploadFile] = File(...)):
@@ -1436,10 +1476,10 @@ button{width:100%;padding:14px;margin-top:20px;border:0;border-radius:11px;backg
 </style>
 </head>
 <body><div class="w"><div class="c">
-<h1>FootyStats + Forebet Export V4 signieren</h1>
-<p class="s">Neuer separater Kurzbefehl für fünf FootyStats-Dateien plus ForebetDaten. Dein bestehender V2-Kurzbefehl bleibt unverändert.</p>
+<h1>FootyStats + Forebet ELITE AUTO signieren</h1>
+<p class="s">Der neue Kurzbefehl fragt beim Lauf nur nach dem Datum und exportiert danach automatisch alle Tagesmatches mit fünf FootyStats-Dateien plus ForebetDaten. V0.4.0 und dein bestehender V2-Kurzbefehl bleiben unverändert.</p>
 <label>Name</label>
-<input id="name" value="FootyStats + Forebet Export V4">
+<input id="name" value="FootyStats + Forebet ELITE AUTO">
 <label>HubSign API-Key</label>
 <input id="key" type="password" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="HubSign-Key hier einfügen">
 <p class="s">Der Key wird nicht gespeichert. Er wird nur für diesen Signiervorgang über deinen Render-Dienst an RoutineHub gesendet.</p>
@@ -1449,7 +1489,7 @@ button{width:100%;padding:14px;margin-top:20px;border:0;border-radius:11px;backg
 <script>
 document.getElementById('go').onclick=async()=>{
   const key=document.getElementById('key').value.trim();
-  const name=document.getElementById('name').value.trim()||'FootyStats + Forebet Export V4';
+  const name=document.getElementById('name').value.trim()||'FootyStats + Forebet ELITE AUTO';
   const st=document.getElementById('status');
   if(!key){st.className='s bad';st.textContent='HubSign-Key fehlt.';return}
   st.className='s';st.textContent='Signierung läuft…';
@@ -1462,7 +1502,7 @@ document.getElementById('go').onclick=async()=>{
     }
     const b=await r.blob();
     const u=URL.createObjectURL(b);
-    const a=document.createElement('a'); a.href=u; a.download='FootyStats + Forebet Export V4.shortcut';
+    const a=document.createElement('a'); a.href=u; a.download='FootyStats + Forebet ELITE AUTO.shortcut';
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(()=>URL.revokeObjectURL(u),5000);
     st.className='s ok';st.textContent='Fertig. Die signierte .shortcut-Datei wurde heruntergeladen.';
@@ -1475,7 +1515,7 @@ document.getElementById('go').onclick=async()=>{
 def hubsign_helper():
     return HTMLResponse(_HUBSIGN_HTML, headers={"Cache-Control":"no-store"})
 
-def _multipart_body(shortcut_name: str, api_key: str):
+def _multipart_body(shortcut_name: str, api_key: str, public_base_url: str):
     boundary = "----FootyStatsHubSign" + _uuid.uuid4().hex
     b = boundary.encode()
     chunks = []
@@ -1487,10 +1527,11 @@ def _multipart_body(shortcut_name: str, api_key: str):
             b"\r\n",
         ])
     field("shortcut_name", shortcut_name)
-    data = _b64.b64decode(_PREPARED_SHORTCUT_V4_B64)
+    from shortcut_date_auto import build_date_auto_shortcut
+    data = build_date_auto_shortcut(_b64.b64decode(_PREPARED_SHORTCUT_B64), public_base_url)
     chunks.extend([
         b"--"+b+b"\r\n",
-        b'Content-Disposition: form-data; name="shortcut_file"; filename="FootyStats + Forebet Export V4.shortcut"\r\n',
+        b'Content-Disposition: form-data; name="shortcut_file"; filename="FootyStats + Forebet ELITE AUTO.shortcut"\r\n',
         b"Content-Type: application/octet-stream\r\n\r\n",
         data,
         b"\r\n",
@@ -1500,19 +1541,20 @@ def _multipart_body(shortcut_name: str, api_key: str):
     return boundary, b"".join(chunks)
 
 @app.post("/api/hubsign-sign")
-async def hubsign_sign(api_key: str = Form(...), shortcut_name: str = Form("FootyStats + Forebet Export V4")):
+async def hubsign_sign(request: Request, api_key: str = Form(...), shortcut_name: str = Form("FootyStats + Forebet ELITE AUTO")):
     api_key = (api_key or "").strip()
-    shortcut_name = (shortcut_name or "FootyStats + Forebet Export V4").strip()
+    shortcut_name = (shortcut_name or "FootyStats + Forebet ELITE AUTO").strip()
     if not api_key:
         raise HTTPException(status_code=400, detail="HubSign API-Key fehlt.")
-    boundary, body = _multipart_body(shortcut_name, api_key)
+    public_base_url = str(request.base_url).rstrip("/")
+    boundary, body = _multipart_body(shortcut_name, api_key, public_base_url)
     req = _urlreq.Request(
         "https://routinehub.co/api/v1/sign-shortcut",
         data=body,
         headers={
             "Content-Type": f"multipart/form-data; boundary={boundary}",
             "Accept": "application/octet-stream",
-            "User-Agent": "FootyStats-Forebet-Super-Analyse/0.6.0",
+            "User-Agent": "FootyStats-Forebet-ELITE/0.7.0",
         },
         method="POST",
     )
@@ -1548,7 +1590,7 @@ async def hubsign_sign(api_key: str = Form(...), shortcut_name: str = Form("Foot
         content=signed,
         media_type="application/octet-stream",
         headers={
-            "Content-Disposition": 'attachment; filename="FootyStats + Forebet Export V4.shortcut"',
+            "Content-Disposition": 'attachment; filename="FootyStats + Forebet ELITE AUTO.shortcut"',
             "Cache-Control":"no-store",
         },
     )

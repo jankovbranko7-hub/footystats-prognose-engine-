@@ -1,74 +1,38 @@
-# FootyStats + Forebet AUTO V4
+# Forebet AUTO – Produktionshinweise
 
-Status: **separater Teststand**. `main`, der alte V2-Kurzbefehl und der bestehende Render-Produktionsstand werden durch diesen Branch nicht weiter verändert.
+Dieser Branch ist die vollständige ELITE-AUTO-Ausführung. `main`,
+`backup/v0.4.0-five-files` und der alte V2-Kurzbefehl bleiben unverändert.
 
-## Ziel
+## Tageslauf
 
-Der Nutzer macht pro Match nur noch:
+Der Nutzer gibt ausschließlich das Datum ein. Danach verarbeitet der
+Kurzbefehl automatisch alle von FootyStats gelieferten Tagesmatches und legt
+pro Match fünf FootyStats-Dateien plus `ForebetDaten.json` im selben Ordner ab.
 
-1. Datum wählen.
-2. FootyStats-Spiel wählen.
+Es gibt weder eine Spielauswahl noch eine Forebet-Texteingabe.
 
-Danach erzeugt der Kurzbefehl automatisch:
+## Forebet-Zugriff
 
-- MatchDaten
-- LeagueDaten
-- FormDaten
-- TableDaten
-- PlayerDaten
-- ForebetDaten
+Forebet schützt öffentliche Seiten mit Cloudflare. Der Server nutzt deshalb
+den Apify Actor `locos08/forebet-predictions-scraper` und datumsspezifische
+Browser-Fallbacks. `APIFY_TOKEN` wird ausschließlich serverseitig gesetzt.
 
-Es gibt **kein Forebet-Texteingabefeld** mehr.
+## Endpunkte
 
-## Warum ein Scraper-Dienst nötig ist
+- `GET /api/forebet-auto/health`
+- `GET /api/forebet-auto?match_id=...&home=...&away=...&date=...`
+- `GET /api/forebet-auto/export?match_id=...&home=...&away=...&date=...`
 
-Forebet schützt seine Seiten mit Cloudflare. Direkte Requests von einem Render-Server oder einem einfachen HTTP-Client können deshalb mit einer Challenge statt der Vorhersagedaten beantwortet werden. Der Teststand nutzt den Apify Actor `locos08/forebet-predictions-scraper`, der die Forebet-Seiten automatisiert lädt und 1X2, BTTS, Under/Over, Ergebnistipp und Average Goals gemeinsam bereitstellt.
+Der Export-Endpunkt antwortet auch bei einem nicht gefundenen Forebet-Spiel
+mit einer JSON-Datei und `FOREBET_UNAVAILABLE`. So bricht ein einzelner Fehler
+nicht den kompletten Tageslauf ab. Die spätere Analyse bleibt für dieses Match
+gesperrt.
 
-## Einmalige Konfiguration
+## Schutzregeln
 
-Im separaten Render-Testservice:
-
-- Branch: `feat/forebet-auto-v4`
-- Start Command: `uvicorn auto_app:app --host 0.0.0.0 --port $PORT`
-- Environment Variable: `APIFY_TOKEN=<dein Apify API Token>`
-
-Der Token wird nur serverseitig gespeichert und kommt **nicht** in die Match-Dateien oder in den iPhone-Kurzbefehl.
-
-## Auto-API
-
-Health:
-
-`GET /api/forebet-auto/health`
-
-Match:
-
-`GET /api/forebet-auto?match_id=123&home=Home%20Team&away=Away%20Team`
-
-Die API führt eine normalisierte Fuzzy-Zuordnung der Teamnamen durch. Mehrdeutige oder schwache Matches werden abgelehnt statt geraten.
-
-## Ausgabe
-
-Beispielstruktur:
-
-```json
-{
-  "schema": "forebet-auto-v1",
-  "match_id": 123,
-  "home_win": 45.0,
-  "draw": 28.0,
-  "away_win": 27.0,
-  "btts_yes": 58.0,
-  "over_2_5": 61.0,
-  "predicted_score": "2-1",
-  "average_goals": 2.9,
-  "source_url": "https://www.forebet.com/"
-}
-```
-
-## Sicherheit
-
-- Keine Odds werden für die Prognose übernommen.
-- Kein Apify-Token wird in Archive geschrieben.
-- Unsichere Forebet-Teamzuordnungen werden blockiert.
-- Ergebnisse werden nicht zur Pre-Match-Auswahl benutzt.
-- Der Actor-Datensatz wird im Prozess 30 Minuten gecacht, damit nicht für jedes einzelne Match erneut der komplette Forebet-Crawl gestartet wird.
+- normalisierte, mehrdeutigkeitssichere Teamzuordnung;
+- Datumskontrolle und kein stilles Ersetzen durch eine andere Partie;
+- Plausibilitätscheck der 1X2-Summe;
+- Pflichtfelder für BTTS, Over 2,5, Ergebnistipp und Average Goals;
+- keine Quoten und keine Ergebnisdaten in der Pre-Match-Prognose;
+- kein Token in Dateien, Kurzbefehl oder Analysearchiv.
