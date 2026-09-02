@@ -1,0 +1,27 @@
+name: Live Forebet AUTO V4 check
+
+on:
+  push:
+    branches:
+      - ops/live-check
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Health
+        run: |
+          echo '=== HEALTH ==='
+          curl -sS --max-time 120 -w '\nHTTP_STATUS:%{http_code}\n' \
+            'https://footystats-forebet-auto-v4-test.onrender.com/api/forebet-auto/health'
+      - name: Barranquilla FC vs Boca Juniors Cali
+        run: |
+          echo '=== BARRANQUILLA ==='
+          curl -sS --max-time 420 -w '\nHTTP_STATUS:%{http_code}\n' \
+            'https://footystats-forebet-auto-v4-test.onrender.com/api/forebet-auto?match_id=999998&home=Barranquilla%20FC&away=Boca%20Juniors%20Cali&date=2026-09-02&force=true'
+      - name: Bay Olympic vs Birkenhead United
+        run: |
+          echo '=== BAY OLYMPIC ==='
+          curl -sS --max-time 420 -w '\nHTTP_STATUS:%{http_code}\n' \
+            'https://footystats-forebet-auto-v4-test.onrender.com/api/forebet-auto?match_id=999999&home=Bay%20Olympic&away=Birkenhead%20United&date=2026-09-02&force=true'
