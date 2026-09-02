@@ -1,0 +1,63 @@
+name: Live V6 Forebet check
+
+on:
+  push:
+    branches:
+      - feat/forebet-auto-v4
+  workflow_dispatch:
+
+jobs:
+  live-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for Render deployment
+        run: sleep 75
+
+      - name: Check V6 health
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE='https://footystats-forebet-auto-v4-test.onrender.com'
+          for i in {1..8}; do
+            code=$(curl -L -sS --max-time 90 -o /tmp/health.json -w '%{http_code}' "$BASE/api/forebet-auto/health" || true)
+            cat /tmp/health.json || true
+            if [ "$code" = "200" ] && grep -q 'forebet-auto-v6-direct-match-fallback' /tmp/health.json; then
+              exit 0
+            fi
+            sleep 20
+          done
+          echo 'V6 health check failed'
+          exit 1
+
+      - name: Exact Luzern Vaduz live test
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE='https://footystats-forebet-auto-v4-test.onrender.com'
+          URL="$BASE/api/forebet-auto?match_id=8554458&home=Luzern&away=Vaduz&date=2026-09-02&force=true"
+          code=$(curl -L -sS --max-time 300 -o /tmp/result.json -w '%{http_code}' "$URL" || true)
+          echo "HTTP=$code"
+          cat /tmp/result.json
+          test "$code" = "200"
+          python - <<'PY'
+          import json
+          p='/tmp/result.json'
+          d=json.load(open(p))
+          expected={
+              'home_win':53.0,
+              'draw':26.0,
+              'away_win':21.0,
+              'btts_yes':81.0,
+              'over_2_5':68.0,
+              'predicted_score':'3-2',
+              'average_goals':3.38,
+          }
+          for k,v in expected.items():
+              got=d.get(k)
+              if isinstance(v,float):
+                  assert abs(float(got)-v) < 0.011, (k,got,v)
+              else:
+                  assert got == v, (k,got,v)
+          print('LUZERN_VADUZ_EXACT_PASS')
+          print(json.dumps(d, ensure_ascii=False, indent=2))
+          PY
