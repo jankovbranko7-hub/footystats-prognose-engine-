@@ -5,7 +5,7 @@ from fastapi.responses import JSONResponse
 
 from app import app
 from forebet_auto import ForebetAutoError
-from forebet_auto_v6 import build_snapshot, debug_match, health
+from forebet_auto_v7 import build_snapshot, debug_match, health
 from forebet_auto_v6_debug import debug_direct
 from forebet_debug import debug_pages
 
