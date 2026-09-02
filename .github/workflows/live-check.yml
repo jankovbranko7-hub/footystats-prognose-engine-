@@ -10,18 +10,74 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Health
+      - name: Wait for new Render version
         run: |
-          echo '=== HEALTH ==='
-          curl -sS --max-time 120 -w '\nHTTP_STATUS:%{http_code}\n' \
-            'https://footystats-forebet-auto-v4-test.onrender.com/api/forebet-auto/health'
-      - name: Barranquilla FC vs Boca Juniors Cali
+          for i in $(seq 1 40); do
+            body=$(curl -sS --max-time 30 'https://footystats-forebet-auto-v4-test.onrender.com/api/forebet-auto/health' || true)
+            echo "$body"
+            if echo "$body" | grep -q 'forebet-auto-v4-date-pages'; then
+              echo 'NEW_VERSION_LIVE'
+              exit 0
+            fi
+            sleep 10
+          done
+          echo 'Render did not publish forebet-auto-v4-date-pages in time'
+          exit 1
+
+      - name: Barranquilla exact live check
         run: |
-          echo '=== BARRANQUILLA ==='
-          curl -sS --max-time 420 -w '\nHTTP_STATUS:%{http_code}\n' \
-            'https://footystats-forebet-auto-v4-test.onrender.com/api/forebet-auto?match_id=999998&home=Barranquilla%20FC&away=Boca%20Juniors%20Cali&date=2026-09-02&force=true'
-      - name: Bay Olympic vs Birkenhead United
+          code=$(curl -sS --max-time 420 -o barranquilla.json -w '%{http_code}' \
+            'https://footystats-forebet-auto-v4-test.onrender.com/api/forebet-auto?match_id=999998&home=Barranquilla%20FC&away=Boca%20Juniors%20Cali&date=2026-09-02&force=true')
+          cat barranquilla.json
+          echo
+          echo "HTTP_STATUS:$code"
+          test "$code" = "200"
+          python - <<'PY'
+          import json
+          d=json.load(open('barranquilla.json'))
+          expected={
+            'home_win':45.0,
+            'draw':32.0,
+            'away_win':23.0,
+            'btts_yes':40.0,
+            'over_2_5':30.0,
+            'predicted_score':'2-0',
+            'average_goals':1.52,
+          }
+          for k,v in expected.items():
+              a=d.get(k)
+              if isinstance(v,float):
+                  assert a is not None and abs(float(a)-v) < 0.011, (k,a,v)
+              else:
+                  assert a == v, (k,a,v)
+          print('BARRANQUILLA_EXACT_PASS')
+          PY
+
+      - name: Bay Olympic exact live check
         run: |
-          echo '=== BAY OLYMPIC ==='
-          curl -sS --max-time 420 -w '\nHTTP_STATUS:%{http_code}\n' \
-            'https://footystats-forebet-auto-v4-test.onrender.com/api/forebet-auto?match_id=999999&home=Bay%20Olympic&away=Birkenhead%20United&date=2026-09-02&force=true'
+          code=$(curl -sS --max-time 420 -o bay.json -w '%{http_code}' \
+            'https://footystats-forebet-auto-v4-test.onrender.com/api/forebet-auto?match_id=999999&home=Bay%20Olympic&away=Birkenhead%20United&date=2026-09-02&force=true')
+          cat bay.json
+          echo
+          echo "HTTP_STATUS:$code"
+          test "$code" = "200"
+          python - <<'PY'
+          import json
+          d=json.load(open('bay.json'))
+          expected={
+            'home_win':15.0,
+            'draw':11.0,
+            'away_win':74.0,
+            'btts_yes':77.0,
+            'over_2_5':84.0,
+            'predicted_score':'1-3',
+            'average_goals':4.19,
+          }
+          for k,v in expected.items():
+              a=d.get(k)
+              if isinstance(v,float):
+                  assert a is not None and abs(float(a)-v) < 0.011, (k,a,v)
+              else:
+                  assert a == v, (k,a,v)
+          print('BAY_OLYMPIC_EXACT_PASS')
+          PY
