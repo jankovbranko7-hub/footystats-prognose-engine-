@@ -1,15 +1,18 @@
 from __future__ import annotations
 
+import datetime as _dt
 import re
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 # Import v4 first so the v3 core is initialized with the date-page browser adapter.
 import forebet_auto_v4  # noqa: F401
 import forebet_auto_v3 as core
+from forebet_auto import ForebetAutoError
 
 _ORIGINAL_PROBABILITY_SEQUENCE = core._probability_sequence
 _ORIGINAL_SCORE_AND_AVG = core._score_and_avg
 _ORIGINAL_ACTOR_VALUE = core._actor_value
+_ORIGINAL_BROWSER_SNAPSHOT = core._browser_snapshot
 
 _SCORE_ALIASES = {"predictedScore", "predicted_score", "correctScore"}
 
@@ -171,11 +174,38 @@ def _score_and_avg(window: List[str]) -> Tuple[Optional[str], Optional[float]]:
     return _ORIGINAL_SCORE_AND_AVG(window)
 
 
+def _browser_snapshot(home: str, away: str, date: Optional[str], force: bool = False) -> Dict[str, Any]:
+    """Try the requested date page, then today's broader Forebet pages for same-day games.
+
+    Some competitions are omitted from the first DOM batch of Forebet's date pages,
+    while the same fixture is present on the public Today pages. This retry is only
+    allowed when the requested date is actually today, so historical/future matches
+    are never silently substituted with a different date.
+    """
+    try:
+        return _ORIGINAL_BROWSER_SNAPSHOT(home, away, date, force=force)
+    except ForebetAutoError as first_error:
+        iso = core._iso_date(date)
+        today = _dt.datetime.now(_dt.timezone.utc).date().isoformat()
+        if iso != today:
+            raise
+        try:
+            result = _ORIGINAL_BROWSER_SNAPSHOT(home, away, None, force=True)
+            result["matchDate"] = date
+            result["_same_day_today_fallback"] = True
+            return result
+        except ForebetAutoError as second_error:
+            raise ForebetAutoError(
+                f"Datumseite ohne Treffer ({first_error}); Today-Fallback ebenfalls ohne Treffer ({second_error})."
+            ) from second_error
+
+
 # Install the strict repairs into the v3 execution core used by build_snapshot().
 core._actor_value = _actor_value
 core._fixture_windows = _fixture_windows
 core._probability_sequence = _probability_sequence
 core._score_and_avg = _score_and_avg
+core._browser_snapshot = _browser_snapshot
 
 
 def build_snapshot(match_id: int, home: str, away: str, date: Optional[str] = None, force: bool = False) -> Dict[str, Any]:
@@ -188,5 +218,5 @@ def debug_match(home: str, away: str, date: Optional[str] = None, force: bool = 
 
 def health() -> Dict[str, Any]:
     result = dict(core.health())
-    result["adapter"] = "forebet-auto-v5.1-compact-dom"
+    result["adapter"] = "forebet-auto-v5.2-same-day-fallback"
     return result
