@@ -1,4 +1,4 @@
-name: Live V6 Forebet check
+name: Live Forebet adapter check
 
 on:
   push:
@@ -13,7 +13,7 @@ jobs:
       - name: Wait for Render deployment
         run: sleep 75
 
-      - name: Check V6 health
+      - name: Check V7 health
         shell: bash
         run: |
           set -euo pipefail
@@ -21,12 +21,12 @@ jobs:
           for i in {1..8}; do
             code=$(curl -L -sS --max-time 90 -o /tmp/health.json -w '%{http_code}' "$BASE/api/forebet-auto/health" || true)
             cat /tmp/health.json || true
-            if [ "$code" = "200" ] && grep -q 'forebet-auto-v6-direct-match-fallback' /tmp/health.json; then
+            if [ "$code" = "200" ] && grep -q 'forebet-auto-v7-direct-dom' /tmp/health.json; then
               exit 0
             fi
             sleep 20
           done
-          echo 'V6 health check failed'
+          echo 'V7 health check failed'
           exit 1
 
       - name: Dump direct-match DOM diagnostics
