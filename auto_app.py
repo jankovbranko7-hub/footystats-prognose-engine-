@@ -5,12 +5,34 @@ from fastapi.responses import JSONResponse
 
 from app import app
 from forebet_auto import ForebetAutoError
-from forebet_auto_v2 import build_snapshot, health
+from forebet_auto_v2 import build_snapshot, debug_match, health
 
 
 @app.get("/api/forebet-auto/health")
 def forebet_auto_health():
     return health()
+
+
+@app.get("/api/forebet-auto/debug")
+def forebet_auto_debug(
+    home: str = Query(..., min_length=1),
+    away: str = Query(..., min_length=1),
+    date: str | None = Query(default=None),
+    force: bool = Query(default=False),
+):
+    try:
+        return debug_match(home=home, away=away, date=date, force=force)
+    except ForebetAutoError as exc:
+        return JSONResponse(
+            status_code=422,
+            content={
+                "ok": False,
+                "phase": "FOREBET_AUTO_DEBUG_FAILED",
+                "error": str(exc),
+                "home": home,
+                "away": away,
+            },
+        )
 
 
 @app.get("/api/forebet-auto")
