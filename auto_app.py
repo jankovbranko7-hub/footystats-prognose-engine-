@@ -4,7 +4,8 @@ from fastapi import Query
 from fastapi.responses import JSONResponse
 
 from app import app
-from forebet_auto import ForebetAutoError, build_snapshot, health
+from forebet_auto import ForebetAutoError
+from forebet_auto_v2 import build_snapshot, health
 
 
 @app.get("/api/forebet-auto/health")
