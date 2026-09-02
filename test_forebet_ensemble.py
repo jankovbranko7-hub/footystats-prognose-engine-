@@ -7,6 +7,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 import app
+import auto_app
+from shortcut_date_auto import PRODUCT_NAME, build_date_auto_shortcut
 
 
 MATCH_ID = 123456
@@ -84,7 +86,7 @@ def test_six_file_bundle_uses_both_models_and_changes_probabilities():
 
     result = app._analyze_bundle(parsed)
     assert result["ok"] is True
-    assert result["model_version"] == "0.6.0"
+    assert result["model_version"] == "0.7.0"
     assert result["ensemble"]["active"] is True
     assert result["ensemble"]["weights"] == {"footystats": 0.5, "forebet": 0.5}
     assert result["forebet_model"]["odds_used"] is False
@@ -140,21 +142,29 @@ def test_joint_archive_contains_all_six_sources_and_no_odds_or_secrets():
     assert package["server_side_persistence"] is False
 
 
-def test_new_shortcut_is_separate_and_contains_forebet_export_actions():
-    workflow = plistlib.loads(base64.b64decode(app._PREPARED_SHORTCUT_V4_B64))
-    assert workflow["WFWorkflowName"] == "FootyStats + Forebet Export V4"
+def test_new_shortcut_asks_only_for_date_and_exports_every_game():
+    payload = build_date_auto_shortcut(
+        base64.b64decode(app._PREPARED_SHORTCUT_B64),
+        "https://elite.example.test",
+    )
+    workflow = plistlib.loads(payload)
+    assert workflow["WFWorkflowName"] == PRODUCT_NAME
     actions = workflow["WFWorkflowActions"]
-    assert len(actions) == 94
-    assert [item["WFWorkflowActionIdentifier"] for item in actions[-5:]] == [
-        "is.workflow.actions.ask",
-        "is.workflow.actions.gettext",
-        "is.workflow.actions.setitemname",
-        "is.workflow.actions.gettext",
-        "is.workflow.actions.documentpicker.save",
-    ]
-    prompt = actions[-5]["WFWorkflowActionParameters"]["WFAskActionPrompt"]
-    assert "1;X;2;BTTS-Ja;Over-2,5" in prompt
-    assert "_PREPARED_SHORTCUT_B64" in app.__dict__
+    identifiers = [item["WFWorkflowActionIdentifier"] for item in actions]
+    assert identifiers.count("is.workflow.actions.ask") == 1
+    assert "is.workflow.actions.choosefromlist" not in identifiers
+    assert identifiers[-1] == "is.workflow.actions.repeat.each"
+    assert actions[-1]["WFWorkflowActionParameters"]["WFControlFlowMode"] == 2
+    serialized = str(workflow)
+    assert "/api/forebet-auto/export" in serialized
+    assert "Forebet:" not in serialized
+    assert "_ForebetDaten.json" in serialized
+    for variable in ("LeagueSeiten", "FormTeams", "PlayerSeiten"):
+        first = next(
+            item for item in actions
+            if item.get("WFWorkflowActionParameters", {}).get("WFVariableName") == variable
+        )
+        assert first["WFWorkflowActionIdentifier"] == "is.workflow.actions.setvariable"
 
 
 def test_http_health_and_homepage_identify_new_product_and_backup():
@@ -163,13 +173,14 @@ def test_http_health_and_homepage_identify_new_product_and_backup():
     assert health.status_code == 200
     assert health.json() == {
         "ok": True,
-        "version": "0.6.0",
+        "version": "0.7.0",
         "footystats_backup": "0.4.0",
         "forebet_ensemble": True,
+        "date_only_shortcut": True,
     }
     homepage = client.get("/")
     assert homepage.status_code == 200
-    assert "FootyStats + Forebet Super Analyse v0.6.0" in homepage.text
+    assert "FootyStats + Forebet ELITE Analyse v0.7.0" in homepage.text
     assert "alle sechs JSON-Dateien" in homepage.text
 
 
@@ -210,3 +221,28 @@ def test_bundle_and_archive_http_endpoints_complete_the_full_flow():
     package = archive.json()
     assert package["source_coverage"]["missing"] == []
     assert package["analysis"]["ensemble"]["active"] is True
+
+
+def test_forebet_export_error_is_a_file_and_does_not_abort_daily_shortcut(monkeypatch):
+    def fail(**_kwargs):
+        raise auto_app.ForebetAutoError("nicht gefunden")
+
+    monkeypatch.setattr(auto_app, "build_snapshot", fail)
+    client = TestClient(auto_app.app)
+    response = client.get(
+        "/api/forebet-auto/export",
+        params={"match_id": MATCH_ID, "home": "Home FC", "away": "Away FC", "date": "2026-09-02"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is False
+    assert body["phase"] == "FOREBET_UNAVAILABLE"
+    assert body["match_id"] == MATCH_ID
+
+
+def test_forebet_score_and_average_goals_are_real_decision_gates():
+    forebet = app._forebet_snapshot(bundle()[5]["data"], app.mf(bundle()[0]["data"]))
+    over = app._forebet_internal_coherence(forebet, "over_2_5")
+    under = app._forebet_internal_coherence(forebet, "under_2_5")
+    assert over["passed"] is True
+    assert under["passed"] is False

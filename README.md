@@ -1,58 +1,73 @@
-# FootyStats + Forebet Super Analyse v0.6.0
+# FootyStats + Forebet ELITE Analyse v0.7.0
 
-Die Anwendung kombiniert das unveränderte FootyStats-Modell aus v0.4.0 mit
-einem separat validierten Forebet-Snapshot. Der bisherige Fünf-Dateien-Stand
-bleibt im Backup-Branch `backup/v0.4.0-five-files` erhalten.
+V0.7.0 verbindet den unveränderten FootyStats-Kern aus V0.4.0 mit den
+öffentlichen Pre-Match-Prognosen von Forebet. Der stabile Fünf-Dateien-Stand
+bleibt in `main` und `backup/v0.4.0-five-files` erhalten.
 
-## Eingabedateien
+## Einzige Eingabe beim iPhone-Lauf
 
-Der neue V4-Kurzbefehl legt pro Match sechs JSON-Dateien gemeinsam ab:
+Der Kurzbefehl `FootyStats + Forebet ELITE AUTO` fragt nur:
 
-1. `MatchDaten`
-2. `LeagueDaten`
-3. `FormDaten`
-4. `TableDaten`
-5. `PlayerDaten`
-6. `ForebetDaten`
+1. Datum im Format `YYYY-MM-DD`.
 
-Für Forebet fragt der Kurzbefehl genau diese, mit Semikolon getrennten Werte ab:
+Der FootyStats-API-Key wird einmal beim Installieren des Kurzbefehls hinterlegt
+und nicht bei jedem Lauf erneut abgefragt. Eine Spielauswahl und eine manuelle
+Forebet-Eingabe gibt es nicht mehr. Alle von FootyStats für das Datum gelieferten
+Matches werden automatisch durchlaufen.
+
+## Gemeinsamer Matchordner
+
+Für jedes Match wird ein eigener Ordner mit sechs Dateien erzeugt:
+
+1. `[MatchID]_MatchDaten.json`
+2. `[SeasonID]_LeagueDaten.json`
+3. `[MatchID]_FormDaten.json`
+4. `[MatchID]_TableDaten.json`
+5. `[MatchID]_PlayerDaten.json`
+6. `[MatchID]_ForebetDaten.json`
+
+Wenn Forebet ein Match nicht sicher findet, wird trotzdem eine
+`ForebetDaten.json` mit `FOREBET_UNAVAILABLE` gespeichert. Dadurch läuft der
+restliche Tag weiter; die Analyse dieses einzelnen Matches wird anschließend
+korrekt gesperrt statt Daten zu erfinden.
+
+## ELITE-Analyse
+
+- Match-ID, Team-IDs, Wettbewerb, Datum und Pagination werden geprüft.
+- Der FootyStats-Kern berechnet 1X2, BTTS und Over/Under 2,5 aus xG/xGA,
+  Liga-Niveau, Home-/Away-Splits und datenabhängigem Shrinkage.
+- FormDaten, TableDaten und PlayerDaten dienen als aktuelle Gegenargument-,
+  Abdeckungs- und Robustheitsblöcke; sie werden nicht unkalibriert doppelt
+  gewichtet.
+- Forebet liefert 1/X/2, BTTS, Over 2,5, Ergebnistipp und Average Goals.
+- Die Wahrscheinlichkeiten beider unabhängigen Modelle werden transparent mit
+  einem 50/50 logarithmischen Opinion-Pool verbunden.
+- Forebet-Ergebnistipp und Average Goals werden zusätzlich als Kohärenz-Gates
+  genutzt, nicht als erfundene zweite Wahrscheinlichkeit.
+- `SPIELEN` ist nur möglich, wenn die FootyStats-V5.2-Schutzregeln bereits
+  bestanden sind, beide Quellen denselben Top-Markt nennen, die gemeinsame
+  Wahrscheinlichkeit mindestens 65 % beträgt, die Differenz höchstens acht
+  Prozentpunkte beträgt und der Forebet-Kohärenzcheck passt.
+- Quoten werden weder abgerufen noch verarbeitet.
+
+Die 50/50-Gewichte sind bewusst transparent und noch nicht als „optimal“
+behauptet. Belastbar bessere Gewichte dürfen erst aus einem gemeinsamen
+historischen FootyStats-/Forebet-Backtest abgeleitet werden.
+
+## Betrieb
+
+Render startet den separaten Branch mit:
 
 ```text
-1;X;2;BTTS-Ja;Over-2,5;Ergebnistipp;Durchschnittstore;Forebet-URL
+uvicorn auto_app:app --host 0.0.0.0 --port $PORT
 ```
 
-Beispiel:
+Benötigte serverseitige Variable:
 
 ```text
-45;28;27;58;61;2-1;2,9;https://www.forebet.com/...
+APIFY_TOKEN=<Token>
 ```
 
-Die Prozentwerte 1/X/2 müssen zusammen ungefähr 100 ergeben. Quoten werden
-weder abgefragt noch verarbeitet.
-
-## Gemeinsame Berechnung
-
-- FootyStats läuft zuerst vollständig über den v0.4.0-Kern und seine
-  INSUFFICIENT_DATA- sowie V5.2-Schutzregeln.
-- Forebet wird unabhängig auf Match-ID, Wertebereiche, Ergebnistipp und
-  Quellenlink geprüft.
-- Danach werden beide Wahrscheinlichkeitsmodelle mit einem symmetrischen
-  logarithmischen Opinion-Pool (50/50) kombiniert.
-- `SPIELEN` ist nur möglich, wenn bereits FootyStats alle Schutzregeln besteht,
-  beide Quellen denselben Top-Markt nennen, die gemeinsame Wahrscheinlichkeit
-  mindestens 65 % beträgt und die Quellen höchstens 8 Prozentpunkte abweichen.
-- Die 50/50-Gewichte sind transparent, aber noch nicht anhand eines ausreichend
-  großen gemeinsamen Forebet-/FootyStats-Backtests kalibriert.
-
-## Speicherung
-
-Das gemeinsame Archiv enthält die sechs Eingabequellen, beide Einzelmodelle,
-den Vergleich und das kombinierte Ergebnis. Es wird als JSON auf das iPhone
-oder in iCloud heruntergeladen. Render speichert diese Matchdaten nicht
-dauerhaft. API-Schlüssel und Quoten werden aus dem Archiv entfernt.
-
-## Kurzbefehl
-
-`/hubsign-helper` signiert ausschließlich den neuen separaten
-`FootyStats + Forebet Export V4`-Kurzbefehl. Der bestehende V2-Kurzbefehl wird
-nicht überschrieben.
+Der Token wird nicht in Matchdateien oder den iPhone-Kurzbefehl geschrieben.
+Unter `/hubsign-helper` wird ausschließlich der neue ELITE-AUTO-Kurzbefehl
+signiert. Der bestehende V2-Kurzbefehl wird nicht überschrieben.

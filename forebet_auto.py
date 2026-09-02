@@ -14,20 +14,9 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 ACTOR_ID = "locos08~forebet-predictions-scraper"
 APIFY_ENDPOINT = f"https://api.apify.com/v2/acts/{ACTOR_ID}/run-sync-get-dataset-items"
-APIFY_RUN_ENDPOINT = f"https://api.apify.com/v2/acts/{ACTOR_ID}/runs"
-APIFY_LAST_RUN_ENDPOINT = f"https://api.apify.com/v2/acts/{ACTOR_ID}/runs/last?status=SUCCEEDED"
-APIFY_DATASET_ENDPOINT = "https://api.apify.com/v2/datasets/{dataset_id}/items?clean=true&format=json"
 CACHE_SECONDS = 30 * 60
-_CACHE: Dict[str, Any] = {
-    "at": 0.0,
-    "items": None,
-    "source": None,
-    "dataset_id": None,
-    "finished_at": None,
-}
+_CACHE: Dict[str, Any] = {"at": 0.0, "items": None}
 _LOCK = threading.Lock()
-_REFRESH_LOCK = threading.Lock()
-_LAST_REFRESH_TRIGGER_AT = 0.0
 
 
 class ForebetAutoError(RuntimeError):
@@ -65,94 +54,6 @@ def _pct(value: Any, field: str) -> float:
     return number
 
 
-def _request_json(url: str, token: str, *, method: str = "GET", data: bytes | None = None, timeout: float = 20.0) -> Any:
-    request = urllib.request.Request(
-        url,
-        data=data,
-        method=method,
-        headers={
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            "Authorization": f"Bearer {token}",
-        },
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            raw = response.read().decode("utf-8")
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", "replace")[:500]
-        raise ForebetAutoError(f"Apify HTTP {exc.code}: {detail}") from exc
-    except Exception as exc:
-        raise ForebetAutoError(f"Forebet-Automatik konnte Apify nicht erreichen: {exc}") from exc
-    try:
-        return json.loads(raw)
-    except Exception as exc:
-        raise ForebetAutoError("Apify lieferte kein gueltiges JSON.") from exc
-
-
-def _latest_successful_items(token: str) -> Tuple[List[Dict[str, Any]], str, Optional[str]]:
-    run_payload = _request_json(APIFY_LAST_RUN_ENDPOINT, token, timeout=15.0)
-    if not isinstance(run_payload, dict):
-        raise ForebetAutoError("Apify lieferte keine gueltigen Metadaten fuer den letzten erfolgreichen Lauf.")
-    run = run_payload.get("data")
-    if not isinstance(run, dict):
-        raise ForebetAutoError("Apify meldete keinen letzten erfolgreichen Forebet-Lauf.")
-    dataset_id = str(run.get("defaultDatasetId") or "").strip()
-    if not dataset_id:
-        raise ForebetAutoError("Der letzte erfolgreiche Forebet-Lauf hat kein Dataset.")
-
-    items = _request_json(
-        APIFY_DATASET_ENDPOINT.format(dataset_id=dataset_id),
-        token,
-        timeout=25.0,
-    )
-    if not isinstance(items, list):
-        raise ForebetAutoError("Das letzte Forebet-Dataset ist keine Match-Liste.")
-    clean = [item for item in items if isinstance(item, dict)]
-    if not clean:
-        raise ForebetAutoError("Das letzte Forebet-Dataset enthaelt keine Spiele.")
-    return clean, dataset_id, str(run.get("finishedAt") or "") or None
-
-
-def _run_actor_sync(token: str) -> List[Dict[str, Any]]:
-    items = _request_json(
-        APIFY_ENDPOINT + "?clean=true&format=json&timeout=150",
-        token,
-        method="POST",
-        data=b"{}",
-        timeout=165.0,
-    )
-    if not isinstance(items, list):
-        raise ForebetAutoError("Apify lieferte keine Match-Liste.")
-    clean = [item for item in items if isinstance(item, dict)]
-    if not clean:
-        raise ForebetAutoError("Apify lieferte keine Forebet-Spiele.")
-    return clean
-
-
-def _trigger_refresh_background(token: str) -> None:
-    global _LAST_REFRESH_TRIGGER_AT
-    now = time.time()
-    with _REFRESH_LOCK:
-        if now - _LAST_REFRESH_TRIGGER_AT < CACHE_SECONDS:
-            return
-        _LAST_REFRESH_TRIGGER_AT = now
-
-    def worker() -> None:
-        try:
-            _request_json(
-                APIFY_RUN_ENDPOINT,
-                token,
-                method="POST",
-                data=b"{}",
-                timeout=15.0,
-            )
-        except Exception:
-            pass
-
-    threading.Thread(target=worker, daemon=True, name="forebet-apify-refresh").start()
-
-
 def _actor_items(force: bool = False) -> List[Dict[str, Any]]:
     token = os.environ.get("APIFY_TOKEN", "").strip()
     if not token:
@@ -164,25 +65,34 @@ def _actor_items(force: bool = False) -> List[Dict[str, Any]]:
         if cached is not None and not force and now - float(_CACHE.get("at") or 0) < CACHE_SECONDS:
             return list(cached)
 
-        if not force:
-            try:
-                clean, dataset_id, finished_at = _latest_successful_items(token)
-                _CACHE["items"] = clean
-                _CACHE["at"] = now
-                _CACHE["source"] = "latest_successful_dataset"
-                _CACHE["dataset_id"] = dataset_id
-                _CACHE["finished_at"] = finished_at
-                _trigger_refresh_background(token)
-                return list(clean)
-            except ForebetAutoError:
-                pass
+        request = urllib.request.Request(
+            APIFY_ENDPOINT + "?clean=true&format=json&timeout=150",
+            data=b"{}",
+            method="POST",
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "Authorization": f"Bearer {token}",
+            },
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=165) as response:
+                payload = response.read().decode("utf-8")
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", "replace")[:500]
+            raise ForebetAutoError(f"Apify HTTP {exc.code}: {detail}") from exc
+        except Exception as exc:
+            raise ForebetAutoError(f"Forebet-Automatik konnte Apify nicht erreichen: {exc}") from exc
 
-        clean = _run_actor_sync(token)
+        try:
+            items = json.loads(payload)
+        except Exception as exc:
+            raise ForebetAutoError("Apify lieferte kein gueltiges JSON.") from exc
+        if not isinstance(items, list):
+            raise ForebetAutoError("Apify lieferte keine Match-Liste.")
+        clean = [item for item in items if isinstance(item, dict)]
         _CACHE["items"] = clean
         _CACHE["at"] = now
-        _CACHE["source"] = "synchronous_actor_run"
-        _CACHE["dataset_id"] = None
-        _CACHE["finished_at"] = None
         return list(clean)
 
 
@@ -284,8 +194,4 @@ def health() -> Dict[str, Any]:
         "configured": bool(os.environ.get("APIFY_TOKEN", "").strip()),
         "actor": ACTOR_ID,
         "cache_seconds": CACHE_SECONDS,
-        "actor_fetch_mode": "latest_successful_dataset_first",
-        "cache_source": _CACHE.get("source"),
-        "dataset_id": _CACHE.get("dataset_id"),
-        "dataset_finished_at": _CACHE.get("finished_at"),
     }
