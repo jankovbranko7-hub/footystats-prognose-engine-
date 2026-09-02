@@ -14,34 +14,35 @@ from forebet_auto import (
     _similarity,
 )
 
-_REQUIRED_FIELDS = (
-    "probability_1_percent",
-    "probability_X_percent",
-    "probability_2_percent",
-    "probability_over_percent",
-    "probability_btts_yes_percent",
-    "predictedScore",
-    "averageGoals",
-)
+_MISSING = (None, "", [], {})
 
 
 def _date_key(value: Any) -> str:
     digits = re.sub(r"[^0-9]", "", str(value or ""))
     if len(digits) != 8:
         return ""
-    if 1900 <= int(digits[:4]) <= 2200:
+    if digits[:4].isdigit() and 1900 <= int(digits[:4]) <= 2200:
         return digits
-    if 1900 <= int(digits[-4:]) <= 2200:
+    if digits[-4:].isdigit() and 1900 <= int(digits[-4:]) <= 2200:
         return digits[-4:] + digits[2:4] + digits[:2]
     return ""
+
+
+def _deep_merge(target: Dict[str, Any], source: Dict[str, Any]) -> None:
+    for key, value in source.items():
+        if value in _MISSING:
+            continue
+        current = target.get(key)
+        if isinstance(current, dict) and isinstance(value, dict):
+            _deep_merge(current, value)
+        elif current in _MISSING:
+            target[key] = value
 
 
 def _merge_rows(rows: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
     merged: Dict[str, Any] = {}
     for row in rows:
-        for key, value in row.items():
-            if value not in (None, "", [], {}) and merged.get(key) in (None, "", [], {}):
-                merged[key] = value
+        _deep_merge(merged, row)
     return merged
 
 
@@ -72,10 +73,7 @@ def _pick_match(items: Iterable[Dict[str, Any]], home: str, away: str, date: Opt
         and (not wanted_date or not _date_key(row.get("matchDate")) or _date_key(row.get("matchDate")) == wanted_date)
     ]
     if exact:
-        best = max(exact, key=lambda row: sum(row.get(k) not in (None, "", [], {}) for k in _REQUIRED_FIELDS))
-        same = [row for row in exact if _same_fixture(row, best, wanted_date)]
-        merged = _merge_rows(same or [best])
-        return merged
+        return _merge_rows(exact)
 
     ranked: List[Tuple[float, float, float, Dict[str, Any]]] = []
     for row in rows:
@@ -110,67 +108,137 @@ def _pick_match(items: Iterable[Dict[str, Any]], home: str, away: str, date: Opt
     return _merge_rows(same or [best])
 
 
+def _canon_key(value: Any) -> str:
+    return re.sub(r"[^a-z0-9]+", "", str(value or "").lower())
+
+
+def _flatten(value: Any, prefix: str = "") -> List[Tuple[str, Any]]:
+    out: List[Tuple[str, Any]] = []
+    if isinstance(value, dict):
+        for key, child in value.items():
+            path = f"{prefix}.{key}" if prefix else str(key)
+            out.extend(_flatten(child, path))
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            out.extend(_flatten(child, f"{prefix}.{index}"))
+    elif value not in _MISSING:
+        out.append((prefix, value))
+    return out
+
+
+def _first_direct(item: Dict[str, Any], aliases: Iterable[str]) -> Any:
+    by_key = {_canon_key(key): value for key, value in item.items()}
+    for alias in aliases:
+        value = by_key.get(_canon_key(alias))
+        if value not in _MISSING:
+            return value
+    return None
+
+
+def _semantic_value(item: Dict[str, Any], aliases: Iterable[str], kind: str) -> Any:
+    direct = _first_direct(item, aliases)
+    if direct not in _MISSING:
+        return direct
+
+    leaves = [(_canon_key(path), value) for path, value in _flatten(item)]
+
+    def clean(path: str) -> bool:
+        return not any(token in path for token in ("halftime", "probabilityht", "corner", "card"))
+
+    for path, value in leaves:
+        if not clean(path):
+            continue
+        if kind == "home" and "prob" in path and (
+            "home" in path or path.endswith("probability1percent") or path.endswith("probability1") or "1x2home" in path
+        ):
+            return value
+        if kind == "draw" and "prob" in path and (
+            "draw" in path or path.endswith("probabilityxpercent") or path.endswith("probabilityx") or "1x2draw" in path
+        ):
+            return value
+        if kind == "away" and "prob" in path and (
+            "away" in path or path.endswith("probability2percent") or path.endswith("probability2") or "1x2away" in path
+        ):
+            return value
+        if kind == "over" and "prob" in path and "over" in path and not any(x in path for x in ("corner", "card")):
+            return value
+        if kind == "under" and "prob" in path and "under" in path and not any(x in path for x in ("corner", "card")):
+            return value
+        if kind == "btts_yes" and "btts" in path and "yes" in path and ("prob" in path or "percent" in path):
+            return value
+        if kind == "btts_no" and "btts" in path and "no" in path and ("prob" in path or "percent" in path):
+            return value
+        if kind == "score" and any(x in path for x in ("predictedscore", "correctscore")):
+            return value
+        if kind == "avg" and any(x in path for x in ("averagegoals", "avggoals")):
+            return value
+    return None
+
+
 def _canonical_score(value: Any) -> str:
     text = str(value or "").strip()
-    pairs = []
-    for h, a in re.findall(r"(\d{1,2})\s*-\s*(\d{1,2})", text):
+    pairs: List[Tuple[int, int]] = []
+    for h, a in re.findall(r"(\d{1,2})\s*[-:]\s*(\d{1,2})", text):
         hh, aa = int(h), int(a)
         if 0 <= hh <= 15 and 0 <= aa <= 15:
             pairs.append((hh, aa))
     unique = list(dict.fromkeys(pairs))
     if len(unique) == 1:
         return f"{unique[0][0]}-{unique[0][1]}"
-
-    compact = re.sub(r"\s+", "", text)
-    normal = re.fullmatch(r"(\d{1,2})[-:](\d{1,2})", compact)
-    if normal:
-        h, a = int(normal.group(1)), int(normal.group(2))
-        if 0 <= h <= 15 and 0 <= a <= 15:
-            return f"{h}-{a}"
     raise ForebetAutoError("Forebet-Ergebnistipp fehlt oder ist ungueltig.")
 
 
 def _float_value(value: Any, field: str) -> float:
     try:
-        number = float(str(value).strip().replace(",", "."))
+        return float(str(value).strip().replace(",", "."))
     except Exception as exc:
         raise ForebetAutoError(f"Forebet-Feld {field} fehlt oder ist ungueltig.") from exc
-    return number
+
+
+def _resolved(item: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "p1": _semantic_value(item, ["probability_1_percent", "probability1Percent", "homeProbability", "predictionHome"], "home"),
+        "px": _semantic_value(item, ["probability_X_percent", "probability_x_percent", "probabilityXPercent", "drawProbability", "predictionDraw"], "draw"),
+        "p2": _semantic_value(item, ["probability_2_percent", "probability2Percent", "awayProbability", "predictionAway"], "away"),
+        "over": _semantic_value(item, ["probability_over_percent", "probability_over_2_5_percent", "probabilityOverPercent", "over25Percent"], "over"),
+        "under": _semantic_value(item, ["probability_under_percent", "probabilityUnderPercent", "under25Percent"], "under"),
+        "btts_yes": _semantic_value(item, ["probability_btts_yes_percent", "probability_BTTS_yes_percent", "probabilityBttsYesPercent", "btts_yes_percent", "bttsYesPercent"], "btts_yes"),
+        "btts_no": _semantic_value(item, ["probability_btts_no_percent", "probabilityBttsNoPercent", "btts_no_percent", "bttsNoPercent"], "btts_no"),
+        "score": _semantic_value(item, ["predictedScore", "predicted_score", "correctScore"], "score"),
+        "avg": _semantic_value(item, ["averageGoals", "average_goals", "avgGoals"], "avg"),
+    }
 
 
 def build_snapshot(match_id: int, home: str, away: str, date: Optional[str] = None, force: bool = False) -> Dict[str, Any]:
     item = _pick_match(_actor_items(force=force), home, away, date)
+    values = _resolved(item)
 
-    p1 = _pct(item.get("probability_1_percent"), "1")
-    px = _pct(item.get("probability_X_percent"), "X")
-    p2 = _pct(item.get("probability_2_percent"), "2")
+    p1 = _pct(values["p1"], "1")
+    px = _pct(values["px"], "X")
+    p2 = _pct(values["p2"], "2")
     if not 95 <= p1 + px + p2 <= 105:
         raise ForebetAutoError(f"Forebet-1X2-Summe unplausibel: {p1 + px + p2:.1f}%")
 
-    over = _pct(item.get("probability_over_percent"), "Over 2.5")
-    btts = _pct(item.get("probability_btts_yes_percent"), "BTTS Yes")
+    over = _pct(values["over"], "Over 2.5")
+    btts = _pct(values["btts_yes"], "BTTS Yes")
 
-    under_raw = item.get("probability_under_percent")
-    if under_raw not in (None, ""):
-        under = _pct(under_raw, "Under 2.5")
+    if values["under"] not in _MISSING:
+        under = _pct(values["under"], "Under 2.5")
         if not 95 <= under + over <= 105:
             raise ForebetAutoError("Forebet-Over/Under-Summe ist unplausibel.")
 
-    btts_no_raw = item.get("probability_btts_no_percent")
-    if btts_no_raw not in (None, ""):
-        btts_no = _pct(btts_no_raw, "BTTS No")
+    if values["btts_no"] not in _MISSING:
+        btts_no = _pct(values["btts_no"], "BTTS No")
         if not 95 <= btts + btts_no <= 105:
             raise ForebetAutoError("Forebet-BTTS-Summe ist unplausibel.")
 
-    predicted = _canonical_score(item.get("predictedScore"))
-    avg = _float_value(item.get("averageGoals"), "Avg. Goals")
+    predicted = _canonical_score(values["score"])
+    avg = _float_value(values["avg"], "Avg. Goals")
     if not 0 <= avg <= 10:
         raise ForebetAutoError("Forebet Avg. Goals liegt ausserhalb 0-10.")
 
     source_url = (
-        item.get("matchUrl")
-        or item.get("match_url")
-        or item.get("url")
+        _first_direct(item, ["matchUrl", "match_url", "url", "sourceUrl", "source_url"])
         or "https://www.forebet.com/"
     )
 
@@ -199,7 +267,7 @@ def build_snapshot(match_id: int, home: str, away: str, date: Optional[str] = No
 
 def debug_match(home: str, away: str, date: Optional[str] = None, force: bool = False) -> Dict[str, Any]:
     item = _pick_match(_actor_items(force=force), home, away, date)
-    fields = {key: item.get(key) for key in _REQUIRED_FIELDS}
+    values = _resolved(item)
     return {
         "ok": True,
         "requested": {"home": home, "away": away, "date": date},
@@ -209,7 +277,8 @@ def debug_match(home: str, away: str, date: Optional[str] = None, force: bool = 
             "matchDate": item.get("matchDate"),
             "leagueName": item.get("leagueName"),
         },
-        "fields": fields,
+        "resolved": values,
+        "available_keys": sorted(str(k) for k in item.keys()),
     }
 
 
@@ -222,4 +291,5 @@ def health() -> Dict[str, Any]:
         "adapter": "forebet-auto-v9-direct-first",
         "actor_only": True,
         "browser_scraping": False,
+        "schema_tolerant": True,
     }
