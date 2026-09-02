@@ -1,284 +1,178 @@
 from __future__ import annotations
 
-import json
-import os
 import re
 import time
-import unicodedata
-import urllib.error
-import urllib.parse
-import urllib.request
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-import forebet_auto_v3 as core
-from forebet_auto import ForebetAutoError, _pct
+from forebet_auto import (
+    ACTOR_ID,
+    CACHE_SECONDS,
+    ForebetAutoError,
+    _actor_items,
+    _norm,
+    _pct,
+    _similarity,
+)
 
-_CACHE_SECONDS = 30 * 60
-_CACHE: Dict[str, Dict[str, Any]] = {}
-
-
-def _slug(value: Any) -> str:
-    text = unicodedata.normalize("NFKD", str(value or ""))
-    text = "".join(ch for ch in text if not unicodedata.combining(ch)).lower()
-    return re.sub(r"[^a-z0-9]+", "-", text).strip("-")
-
-
-def _split_probs(digits: str, count: int) -> Optional[Tuple[float, ...]]:
-    solutions: List[Tuple[int, ...]] = []
-
-    def walk(pos: int, parts: List[int]) -> None:
-        if len(parts) == count:
-            if pos == len(digits) and sum(parts) == 100:
-                solutions.append(tuple(parts))
-            return
-        remaining = count - len(parts)
-        chars = len(digits) - pos
-        if chars < remaining or chars > remaining * 3:
-            return
-        for width in (1, 2, 3):
-            token = digits[pos : pos + width]
-            if not token or (len(token) > 1 and token.startswith("0")):
-                continue
-            value = int(token)
-            if not 0 <= value <= 100 or sum(parts) + value > 100:
-                continue
-            walk(pos + width, parts + [value])
-
-    walk(0, [])
-    unique = list(dict.fromkeys(solutions))
-    if len(unique) != 1:
-        return None
-    return tuple(float(v) for v in unique[0])
+_REQUIRED_FIELDS = (
+    "probability_1_percent",
+    "probability_X_percent",
+    "probability_2_percent",
+    "probability_over_percent",
+    "probability_btts_yes_percent",
+    "predictedScore",
+    "averageGoals",
+)
 
 
-def _apify_pages(urls: Iterable[str], *, links_only: bool) -> List[Dict[str, Any]]:
-    token = os.environ.get("APIFY_TOKEN", "").strip()
-    if not token:
-        raise ForebetAutoError("APIFY_TOKEN fehlt fuer die automatische Forebet-Abfrage.")
+def _date_key(value: Any) -> str:
+    digits = re.sub(r"[^0-9]", "", str(value or ""))
+    if len(digits) != 8:
+        return ""
+    if 1900 <= int(digits[:4]) <= 2200:
+        return digits
+    if 1900 <= int(digits[-4:]) <= 2200:
+        return digits[-4:] + digits[2:4] + digits[:2]
+    return ""
 
-    clean_urls = list(dict.fromkeys(str(u) for u in urls if str(u).startswith("http")))
-    if not clean_urls:
-        return []
 
-    if links_only:
-        page_function = (
-            "async function pageFunction(context) {"
-            " await new Promise(r => setTimeout(r, 700));"
-            " const links = Array.from(document.querySelectorAll('a[href]')).map(a => "
-            " ({href:a.href || '', text:(a.innerText || a.textContent || '').trim()}));"
-            " return {url:context.request.url,title:document.title,links};"
-            "}"
+def _merge_rows(rows: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
+    merged: Dict[str, Any] = {}
+    for row in rows:
+        for key, value in row.items():
+            if value not in (None, "", [], {}) and merged.get(key) in (None, "", [], {}):
+                merged[key] = value
+    return merged
+
+
+def _same_fixture(a: Dict[str, Any], b: Dict[str, Any], wanted_date: str) -> bool:
+    if _norm(a.get("home")) != _norm(b.get("home")):
+        return False
+    if _norm(a.get("away")) != _norm(b.get("away")):
+        return False
+    ad = _date_key(a.get("matchDate"))
+    bd = _date_key(b.get("matchDate"))
+    if wanted_date:
+        return (not ad or ad == wanted_date) and (not bd or bd == wanted_date)
+    return not (ad and bd and ad != bd)
+
+
+def _pick_match(items: Iterable[Dict[str, Any]], home: str, away: str, date: Optional[str]) -> Dict[str, Any]:
+    rows = [row for row in items if isinstance(row, dict)]
+    if not rows:
+        raise ForebetAutoError("Forebet-Actor lieferte keine Spiele.")
+
+    wanted_date = _date_key(date)
+    home_n, away_n = _norm(home), _norm(away)
+
+    exact = [
+        row for row in rows
+        if _norm(row.get("home")) == home_n
+        and _norm(row.get("away")) == away_n
+        and (not wanted_date or not _date_key(row.get("matchDate")) or _date_key(row.get("matchDate")) == wanted_date)
+    ]
+    if exact:
+        best = max(exact, key=lambda row: sum(row.get(k) not in (None, "", [], {}) for k in _REQUIRED_FIELDS))
+        same = [row for row in exact if _same_fixture(row, best, wanted_date)]
+        merged = _merge_rows(same or [best])
+        return merged
+
+    ranked: List[Tuple[float, float, float, Dict[str, Any]]] = []
+    for row in rows:
+        hs = _similarity(home, row.get("home"))
+        aw = _similarity(away, row.get("away"))
+        row_date = _date_key(row.get("matchDate"))
+        date_bonus = 0.18 if wanted_date and row_date == wanted_date else (-0.15 if wanted_date and row_date else 0.0)
+        score = 0.5 * hs + 0.5 * aw + date_bonus
+        ranked.append((score, hs, aw, row))
+
+    ranked.sort(key=lambda x: (x[0], min(x[1], x[2])), reverse=True)
+    score, hs, aw, best = ranked[0]
+    if min(hs, aw) < 0.78 or score < 0.78:
+        raise ForebetAutoError(
+            "Kein Forebet-Spiel konnte sicher zugeordnet werden. "
+            f"Bester Treffer: {best.get('home')} - {best.get('away')} "
+            f"(Home {hs:.2f}, Away {aw:.2f})."
         )
-    else:
-        page_function = (
-            "async function pageFunction(context) {"
-            " await new Promise(r => setTimeout(r, 900));"
-            " const body = document.body ? (document.body.textContent || document.body.innerText || '') : '';"
-            " return {url:context.request.url,title:document.title,text:body};"
-            "}"
-        )
 
-    payload = {
-        "startUrls": [{"url": u} for u in clean_urls],
-        "pageFunction": page_function,
-        "proxyConfiguration": {"useApifyProxy": True},
-        "maxPagesPerCrawl": len(clean_urls),
-        "maxResultsPerCrawl": len(clean_urls),
-        "linkSelector": "",
-        "injectJQuery": False,
-        "waitUntil": ["domcontentloaded"],
-    }
-    request = urllib.request.Request(
-        core.WEB_ENDPOINT + "?clean=true&format=json&timeout=90",
-        data=json.dumps(payload).encode("utf-8"),
-        method="POST",
-        headers={
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            "Authorization": f"Bearer {token}",
-        },
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=105) as response:
-            raw = response.read().decode("utf-8")
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", "replace")[:500]
-        raise ForebetAutoError(f"Forebet-Direktabruf Apify HTTP {exc.code}: {detail}") from exc
-    except Exception as exc:
-        raise ForebetAutoError(f"Forebet-Direktabruf nicht erreichbar: {exc}") from exc
+    for other_score, _, _, other in ranked[1:]:
+        if _same_fixture(other, best, wanted_date):
+            continue
+        if other_score > score - 0.04:
+            raise ForebetAutoError(
+                "Forebet-Zuordnung ist mehrdeutig: "
+                f"{best.get('home')} - {best.get('away')} / "
+                f"{other.get('home')} - {other.get('away')}."
+            )
+        break
 
-    try:
-        pages = json.loads(raw)
-    except Exception as exc:
-        raise ForebetAutoError("Forebet-Direktabruf lieferte kein gueltiges JSON.") from exc
-    if not isinstance(pages, list):
-        raise ForebetAutoError("Forebet-Direktabruf lieferte keine Seitenliste.")
-    return [p for p in pages if isinstance(p, dict)]
+    same = [row for row in rows if _same_fixture(row, best, wanted_date)]
+    return _merge_rows(same or [best])
 
 
-def _team_urls(home: str) -> Tuple[List[str], List[str]]:
-    raw = _slug(home)
-    stripped = _slug(core._norm(home))
-    bases = list(dict.fromkeys(x for x in (raw, stripped) if x))
-    primary: List[str] = []
-    fallback: List[str] = []
-    for base in bases:
-        if re.match(r"^(fc|sc|fk|afc|ac|cf|sv)-", base):
-            primary.append(f"https://www.forebet.com/en/teams/{base}")
-        else:
-            primary.extend([
-                f"https://www.forebet.com/en/teams/{base}",
-                f"https://www.forebet.com/en/teams/fc-{base}",
-            ])
-            fallback.extend([
-                f"https://www.forebet.com/en/teams/sc-{base}",
-                f"https://www.forebet.com/en/teams/fk-{base}",
-                f"https://www.forebet.com/en/teams/afc-{base}",
-                f"https://www.forebet.com/en/teams/ac-{base}",
-            ])
-    return list(dict.fromkeys(primary))[:4], list(dict.fromkeys(fallback))[:8]
-
-
-def _candidate_links_from_pages(pages: Iterable[Dict[str, Any]], home: str, away: str) -> List[str]:
-    home_n, away_n = core._norm(home), core._norm(away)
-    found: List[str] = []
-    for page in pages:
-        for link in page.get("links") or []:
-            if not isinstance(link, dict):
-                continue
-            href = str(link.get("href") or "").strip()
-            text = str(link.get("text") or "").strip()
-            if "/football/matches/" not in href:
-                continue
-            if href.startswith("/"):
-                href = urllib.parse.urljoin("https://www.forebet.com", href)
-            hay = core._norm(f"{href} {text}")
-            if home_n and away_n and home_n in hay and away_n in hay:
-                found.append(href)
-    return list(dict.fromkeys(found))
-
-
-def _find_match_links(home: str, away: str) -> List[str]:
-    primary, fallback = _team_urls(home)
-    links = _candidate_links_from_pages(_apify_pages(primary, links_only=True), home, away)
-    if links:
-        return links[:3]
-    if fallback:
-        links = _candidate_links_from_pages(_apify_pages(fallback, links_only=True), home, away)
-    return links[:3]
-
-
-def _date_matches(text: str, date: Optional[str]) -> bool:
-    key = core._date_key(date)
-    if not key:
-        return True
-    y, m, d = key[:4], key[4:6], key[6:8]
-    variants = (
-        f"{y}-{m}-{d}", f"{d}/{m}/{y}", f"{d}.{m}.{y}",
-        f"{m}/{d}/{y}", f"{m}.{d}.{y}",
-    )
-    return any(v in text for v in variants)
-
-
-def _first_valid_triple(compact: str) -> Optional[Tuple[Tuple[float, float, float], re.Match[str]]]:
-    for match in re.finditer(r"(\d{3,9})([12X])(\d)-(\d)(\d[.,]\d{2})", compact, re.I):
-        triple = _split_probs(match.group(1), 3)
-        if triple is not None:
-            return triple, match
-    return None
-
-
-def _first_valid_pair(compact: str, labels: str) -> Optional[Tuple[Tuple[float, float], re.Match[str]]]:
-    pattern = rf"(\d{{2,6}})({labels})(\d[.,]\d{{2}})?"
-    for match in re.finditer(pattern, compact, re.I):
-        pair = _split_probs(match.group(1), 2)
-        if pair is not None:
-            return pair, match
-    return None
-
-
-def _first_valid_btts(compact: str) -> Optional[Tuple[Tuple[float, float], re.Match[str]]]:
-    for match in re.finditer(r"(\d{2,6})(Yes|No)(\d)-(\d)(\d[.,]\d{2})", compact, re.I):
-        pair = _split_probs(match.group(1), 2)
-        if pair is not None:
-            return pair, match
-    return None
-
-
-def _parse_direct_page(page: Dict[str, Any], home: str, away: str, date: Optional[str]) -> Optional[Dict[str, Any]]:
-    text = str(page.get("text") or "")
-    title = str(page.get("title") or "")
-    identity = core._norm(f"{title} {text[:16000]}")
-    if core._norm(home) not in identity or core._norm(away) not in identity:
-        return None
-    if not _date_matches(f"{title} {text}", date):
-        return None
+def _canonical_score(value: Any) -> str:
+    text = str(value or "").strip()
+    pairs = []
+    for h, a in re.findall(r"(\d{1,2})\s*-\s*(\d{1,2})", text):
+        hh, aa = int(h), int(a)
+        if 0 <= hh <= 15 and 0 <= aa <= 15:
+            pairs.append((hh, aa))
+    unique = list(dict.fromkeys(pairs))
+    if len(unique) == 1:
+        return f"{unique[0][0]}-{unique[0][1]}"
 
     compact = re.sub(r"\s+", "", text)
-
-    one = _first_valid_triple(compact)
-    ou = _first_valid_pair(compact, "Over|Under")
-    btts = _first_valid_btts(compact)
-    if one is None or ou is None or btts is None:
-        return None
-
-    triple, one_match = one
-    ou_pair, _ = ou
-    btts_pair, _ = btts
-
-    score = f"{int(one_match.group(3))}-{int(one_match.group(4))}"
-    avg = float(one_match.group(5).replace(",", "."))
-    if not 0 <= avg <= 10:
-        return None
-
-    return {
-        "home_win": triple[0],
-        "draw": triple[1],
-        "away_win": triple[2],
-        "over_2_5": ou_pair[1],
-        "btts_yes": btts_pair[1],
-        "predicted_score": score,
-        "average_goals": avg,
-        "source_url": str(page.get("url") or ""),
-    }
+    normal = re.fullmatch(r"(\d{1,2})[-:](\d{1,2})", compact)
+    if normal:
+        h, a = int(normal.group(1)), int(normal.group(2))
+        if 0 <= h <= 15 and 0 <= a <= 15:
+            return f"{h}-{a}"
+    raise ForebetAutoError("Forebet-Ergebnistipp fehlt oder ist ungueltig.")
 
 
-def _direct_snapshot(home: str, away: str, date: Optional[str], force: bool = False) -> Dict[str, Any]:
-    key = f"{core._norm(home)}|{core._norm(away)}|{core._iso_date(date)}"
-    now = time.time()
-    cached = _CACHE.get(key)
-    if cached and not force and now - float(cached.get("at") or 0) < _CACHE_SECONDS:
-        value = cached.get("value")
-        if isinstance(value, dict):
-            return dict(value)
-
-    links = _find_match_links(home, away)
-    if not links:
-        raise ForebetAutoError("Forebet fand keinen sicheren direkten Match-Link.")
-
-    pages = _apify_pages(links[:2], links_only=False)
-    for page in pages:
-        parsed = _parse_direct_page(page, home, away, date)
-        if parsed:
-            _CACHE[key] = {"at": now, "value": parsed}
-            return dict(parsed)
-
-    raise ForebetAutoError("Forebet-Match-Seite gefunden, aber die kompakten Prognosewerte konnten nicht sicher extrahiert werden.")
+def _float_value(value: Any, field: str) -> float:
+    try:
+        number = float(str(value).strip().replace(",", "."))
+    except Exception as exc:
+        raise ForebetAutoError(f"Forebet-Feld {field} fehlt oder ist ungueltig.") from exc
+    return number
 
 
 def build_snapshot(match_id: int, home: str, away: str, date: Optional[str] = None, force: bool = False) -> Dict[str, Any]:
-    snap = _direct_snapshot(home, away, date, force=force)
-    p1 = _pct(snap.get("home_win"), "1")
-    px = _pct(snap.get("draw"), "X")
-    p2 = _pct(snap.get("away_win"), "2")
+    item = _pick_match(_actor_items(force=force), home, away, date)
+
+    p1 = _pct(item.get("probability_1_percent"), "1")
+    px = _pct(item.get("probability_X_percent"), "X")
+    p2 = _pct(item.get("probability_2_percent"), "2")
     if not 95 <= p1 + px + p2 <= 105:
-        raise ForebetAutoError("Forebet-1X2-Summe ist unplausibel.")
-    btts = _pct(snap.get("btts_yes"), "BTTS Yes")
-    over = _pct(snap.get("over_2_5"), "Over 2.5")
-    predicted = str(snap.get("predicted_score") or "")
-    if not re.fullmatch(r"\d{1,2}-\d{1,2}", predicted):
-        raise ForebetAutoError("Forebet-Ergebnistipp ist ungueltig.")
-    avg = float(snap.get("average_goals"))
+        raise ForebetAutoError(f"Forebet-1X2-Summe unplausibel: {p1 + px + p2:.1f}%")
+
+    over = _pct(item.get("probability_over_percent"), "Over 2.5")
+    btts = _pct(item.get("probability_btts_yes_percent"), "BTTS Yes")
+
+    under_raw = item.get("probability_under_percent")
+    if under_raw not in (None, ""):
+        under = _pct(under_raw, "Under 2.5")
+        if not 95 <= under + over <= 105:
+            raise ForebetAutoError("Forebet-Over/Under-Summe ist unplausibel.")
+
+    btts_no_raw = item.get("probability_btts_no_percent")
+    if btts_no_raw not in (None, ""):
+        btts_no = _pct(btts_no_raw, "BTTS No")
+        if not 95 <= btts + btts_no <= 105:
+            raise ForebetAutoError("Forebet-BTTS-Summe ist unplausibel.")
+
+    predicted = _canonical_score(item.get("predictedScore"))
+    avg = _float_value(item.get("averageGoals"), "Avg. Goals")
+    if not 0 <= avg <= 10:
+        raise ForebetAutoError("Forebet Avg. Goals liegt ausserhalb 0-10.")
+
+    source_url = (
+        item.get("matchUrl")
+        or item.get("match_url")
+        or item.get("url")
+        or "https://www.forebet.com/"
+    )
 
     return {
         "schema": "forebet-auto-v1",
@@ -290,31 +184,42 @@ def build_snapshot(match_id: int, home: str, away: str, date: Optional[str] = No
         "over_2_5": round(over, 3),
         "predicted_score": predicted,
         "average_goals": round(avg, 3),
-        "source_url": snap.get("source_url"),
-        "source": "Forebet public direct match page via Apify",
+        "source_url": source_url,
+        "source": "Forebet public prediction via Apify 6-in-1 actor",
         "captured_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "matched_forebet": {
-            "home": home,
-            "away": away,
-            "match_date": date,
+            "home": item.get("home"),
+            "away": item.get("away"),
+            "match_date": item.get("matchDate"),
+            "match_time": item.get("matchTime"),
+            "league": item.get("leagueName"),
         },
     }
 
 
 def debug_match(home: str, away: str, date: Optional[str] = None, force: bool = False) -> Dict[str, Any]:
-    result = _direct_snapshot(home, away, date, force=force)
-    return {"ok": True, "home": home, "away": away, "date": date, **result}
+    item = _pick_match(_actor_items(force=force), home, away, date)
+    fields = {key: item.get(key) for key in _REQUIRED_FIELDS}
+    return {
+        "ok": True,
+        "requested": {"home": home, "away": away, "date": date},
+        "matched": {
+            "home": item.get("home"),
+            "away": item.get("away"),
+            "matchDate": item.get("matchDate"),
+            "leagueName": item.get("leagueName"),
+        },
+        "fields": fields,
+    }
 
 
 def health() -> Dict[str, Any]:
     return {
         "ok": True,
-        "configured": bool(os.environ.get("APIFY_TOKEN", "").strip()),
-        "actor": "apify~web-scraper",
-        "cache_seconds": _CACHE_SECONDS,
+        "configured": True,
+        "actor": ACTOR_ID,
+        "cache_seconds": CACHE_SECONDS,
         "adapter": "forebet-auto-v9-direct-first",
-        "direct_first": True,
-        "single_page_parser": True,
-        "tab_clicks": False,
-        "global_compact_parser": True,
+        "actor_only": True,
+        "browser_scraping": False,
     }
