@@ -24,7 +24,6 @@ def _slug(value: Any) -> str:
 
 
 def _split_probs(digits: str, count: int) -> Optional[Tuple[float, ...]]:
-    """Uniquely split Forebet compact probabilities such as 532621 -> 53/26/21."""
     solutions: List[Tuple[int, ...]] = []
 
     def walk(pos: int, parts: List[int]) -> None:
@@ -181,17 +180,35 @@ def _date_matches(text: str, date: Optional[str]) -> bool:
     return any(v in text for v in variants)
 
 
-def _section(compact: str, marker: str, limit: int = 2600) -> Optional[str]:
-    pos = compact.lower().find(marker.lower())
-    if pos < 0:
-        return None
-    return compact[pos + len(marker) : pos + len(marker) + limit]
+def _first_valid_triple(compact: str) -> Optional[Tuple[Tuple[float, float, float], re.Match[str]]]:
+    for match in re.finditer(r"(\d{3,9})([12X])(\d)-(\d)(\d[.,]\d{2})", compact, re.I):
+        triple = _split_probs(match.group(1), 3)
+        if triple is not None:
+            return triple, match
+    return None
+
+
+def _first_valid_pair(compact: str, labels: str) -> Optional[Tuple[Tuple[float, float], re.Match[str]]]:
+    pattern = rf"(\d{{2,6}})({labels})(\d[.,]\d{{2}})?"
+    for match in re.finditer(pattern, compact, re.I):
+        pair = _split_probs(match.group(1), 2)
+        if pair is not None:
+            return pair, match
+    return None
+
+
+def _first_valid_btts(compact: str) -> Optional[Tuple[Tuple[float, float], re.Match[str]]]:
+    for match in re.finditer(r"(\d{2,6})(Yes|No)(\d)-(\d)(\d[.,]\d{2})", compact, re.I):
+        pair = _split_probs(match.group(1), 2)
+        if pair is not None:
+            return pair, match
+    return None
 
 
 def _parse_direct_page(page: Dict[str, Any], home: str, away: str, date: Optional[str]) -> Optional[Dict[str, Any]]:
     text = str(page.get("text") or "")
     title = str(page.get("title") or "")
-    identity = core._norm(f"{title} {text[:12000]}")
+    identity = core._norm(f"{title} {text[:16000]}")
     if core._norm(home) not in identity or core._norm(away) not in identity:
         return None
     if not _date_matches(f"{title} {text}", date):
@@ -199,23 +216,15 @@ def _parse_direct_page(page: Dict[str, Any], home: str, away: str, date: Optiona
 
     compact = re.sub(r"\s+", "", text)
 
-    one_sec = _section(compact, "1X2PredCorrectscoreAvg.goals")
-    ou_sec = _section(compact, "Under/Over2.5PredCorrectscoreAvg.goals")
-    btts_sec = _section(compact, "NoYesPredCorrectscoreAvg.goals")
-    if not one_sec or not ou_sec or not btts_sec:
+    one = _first_valid_triple(compact)
+    ou = _first_valid_pair(compact, "Over|Under")
+    btts = _first_valid_btts(compact)
+    if one is None or ou is None or btts is None:
         return None
 
-    one_match = re.search(r"(\d{3,9})([12X])(\d)-(\d)(\d[.,]\d{2})", one_sec, re.I)
-    ou_match = re.search(r"(\d{2,6})(Over|Under)(\d[.,]\d{2})", ou_sec, re.I)
-    btts_match = re.search(r"(\d{2,6})(Yes|No)(\d)-(\d)(\d[.,]\d{2})", btts_sec, re.I)
-    if not one_match or not ou_match or not btts_match:
-        return None
-
-    triple = _split_probs(one_match.group(1), 3)
-    ou_pair = _split_probs(ou_match.group(1), 2)
-    btts_pair = _split_probs(btts_match.group(1), 2)
-    if triple is None or ou_pair is None or btts_pair is None:
-        return None
+    triple, one_match = one
+    ou_pair, _ = ou
+    btts_pair, _ = btts
 
     score = f"{int(one_match.group(3))}-{int(one_match.group(4))}"
     avg = float(one_match.group(5).replace(",", "."))
@@ -254,7 +263,7 @@ def _direct_snapshot(home: str, away: str, date: Optional[str], force: bool = Fa
             _CACHE[key] = {"at": now, "value": parsed}
             return dict(parsed)
 
-    raise ForebetAutoError("Forebet-Match-Seite gefunden, aber 1X2/Over/BTTS konnten nicht vollstaendig extrahiert werden.")
+    raise ForebetAutoError("Forebet-Match-Seite gefunden, aber die kompakten Prognosewerte konnten nicht sicher extrahiert werden.")
 
 
 def build_snapshot(match_id: int, home: str, away: str, date: Optional[str] = None, force: bool = False) -> Dict[str, Any]:
@@ -307,4 +316,5 @@ def health() -> Dict[str, Any]:
         "direct_first": True,
         "single_page_parser": True,
         "tab_clicks": False,
+        "global_compact_parser": True,
     }
