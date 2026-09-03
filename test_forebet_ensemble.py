@@ -86,7 +86,7 @@ def test_six_file_bundle_uses_both_models_and_changes_probabilities():
 
     result = app._analyze_bundle(parsed)
     assert result["ok"] is True
-    assert result["model_version"] == "0.9.0"
+    assert result["model_version"] == "0.9.1"
     assert result["ensemble"]["active"] is True
     assert result["ensemble"]["weights"] == {"footystats": 0.5, "forebet": 0.5}
     assert result["forebet_model"]["odds_used"] is False
@@ -157,7 +157,7 @@ def test_new_shortcut_keeps_v2_match_selection_and_saves_one_joint_analysis():
     assert identifiers[-1] == "is.workflow.actions.documentpicker.save"
     serialized = str(workflow)
     assert "/api/forebet-auto/export" in serialized
-    assert "/api/selected-analysis" in serialized
+    assert "/api/selected-analysis-file" in serialized
     assert "Forebet:" not in serialized
     assert identifiers.count("is.workflow.actions.documentpicker.save") == 1
     assert identifiers.count("is.workflow.actions.conditional") == 0
@@ -187,17 +187,18 @@ def test_http_health_and_homepage_identify_new_product_and_backup():
     assert health.status_code == 200
     assert health.json() == {
         "ok": True,
-        "version": "0.9.0",
+        "version": "0.9.1",
         "footystats_backup": "0.4.0",
         "forebet_ensemble": True,
         "v2_match_selection": True,
         "single_joint_archive": True,
+        "ios_direct_archive": True,
         "hubsign_format": "AEA1",
         "shortcut_delivery": "pre_signed",
     }
     homepage = client.get("/")
     assert homepage.status_code == 200
-    assert "FootyStats + Forebet ELITE Analyse v0.9.0" in homepage.text
+    assert "FootyStats + Forebet ELITE Analyse v0.9.1" in homepage.text
     assert "alle sechs JSON-Dateien" in homepage.text
 
 
@@ -322,6 +323,34 @@ def test_selected_analysis_archives_forebet_failure_instead_of_selecting_another
     assert body["archive"]["analysis"]["phase"] == "FOREBET_VALIDATION_FAILED"
 
 
+@pytest.mark.parametrize("stringify", [False, True])
+def test_ios_direct_archive_accepts_dictionary_or_json_text_fields(stringify):
+    payload = _payload_json()
+    if stringify:
+        payload = {key: json.dumps(value) for key, value in payload.items()}
+    client = TestClient(app.app)
+    response = client.post("/api/selected-analysis-file", json=payload)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["archive_schema"] == "footystats-forebet-ios-archive-v2"
+    assert body["source_coverage"]["missing"] == []
+    assert set(body["sources"]) == {
+        "match", "league", "form", "table", "player", "forebet",
+    }
+    assert body["analysis"]["ensemble"]["active"] is True
+
+
+def test_ios_direct_archive_returns_saveable_diagnostic_instead_of_empty_output():
+    client = TestClient(app.app)
+    response = client.post("/api/selected-analysis-file", json={"matchData": "not-json"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["archive_schema"] == "footystats-forebet-ios-diagnostic-v1"
+    assert body["analysis"]["phase"] == "IOS_PAYLOAD_DECODE_FAILED"
+
+
 def test_forebet_export_error_is_a_file_and_does_not_abort_daily_shortcut(monkeypatch):
     def fail(**_kwargs):
         raise auto_app.ForebetAutoError("nicht gefunden")
@@ -357,7 +386,7 @@ def test_pre_signed_shortcut_download_is_apple_aea1():
         assert response.content.startswith(b"AEA1")
         assert len(response.content) > 20_000
         assert response.headers["content-type"] == "application/octet-stream"
-        assert "FootyStats + Forebet ELITE V2.shortcut" in response.headers["content-disposition"]
+        assert "FootyStats + Forebet ELITE V2.1.shortcut" in response.headers["content-disposition"]
 
 
 def test_pre_signed_shortcut_refuses_corrupt_embedded_payload(monkeypatch):

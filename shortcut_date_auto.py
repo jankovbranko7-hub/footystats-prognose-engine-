@@ -6,7 +6,7 @@ import uuid
 from typing import Any, Dict
 
 
-PRODUCT_NAME = "FootyStats + Forebet ELITE V2"
+PRODUCT_NAME = "FootyStats + Forebet ELITE V2.1"
 DATE_ASK_UUID = "BD34DEEF-AD61-42EE-A348-AA244E6DEEFE"
 DATE_ASK_OUTPUT_NAME = "Nach Eingabe fragen"
 
@@ -139,7 +139,6 @@ def _json_variable_item(key: str, variable: str) -> Dict[str, Any]:
 
 def _analysis_actions(base_url: str) -> list[Dict[str, Any]]:
     download = _uuid()
-    archive = _uuid()
     rename = _uuid()
     path_text = _uuid()
     save = _uuid()
@@ -149,7 +148,7 @@ def _analysis_actions(base_url: str) -> list[Dict[str, Any]]:
             "WFWorkflowActionIdentifier": "is.workflow.actions.downloadurl",
             "WFWorkflowActionParameters": {
                 "UUID": download,
-                "WFURL": _token_string(base_url.rstrip("/") + "/api/selected-analysis", {}),
+                "WFURL": _token_string(base_url.rstrip("/") + "/api/selected-analysis-file", {}),
                 "WFHTTPMethod": "POST",
                 "WFHTTPBodyType": "JSON",
                 "WFJSONValues": {
@@ -168,14 +167,6 @@ def _analysis_actions(base_url: str) -> list[Dict[str, Any]]:
             },
         },
         {
-            "WFWorkflowActionIdentifier": "is.workflow.actions.getvalueforkey",
-            "WFWorkflowActionParameters": {
-                "UUID": archive,
-                "WFInput": _output_attachment(download, "Inhalt der URL"),
-                "WFDictionaryKey": "archive",
-            },
-        },
-        {
             "WFWorkflowActionIdentifier": "is.workflow.actions.setitemname",
             "WFWorkflowActionParameters": {
                 "UUID": rename,
@@ -183,7 +174,7 @@ def _analysis_actions(base_url: str) -> list[Dict[str, Any]]:
                     "\ufffc_FootyStats_Forebet_Analyse.json",
                     {"{0, 1}": {"VariableName": "MatchID", "Type": "Variable"}},
                 ),
-                "WFInput": _output_attachment(archive, "Wörterbuchwert"),
+                "WFInput": _output_attachment(download, "Inhalt der URL"),
                 "WFDontIncludeFileExtension": False,
             },
         },
@@ -309,7 +300,7 @@ def build_date_auto_shortcut(base_shortcut: bytes, base_url: str) -> bytes:
     serialized = str(verified)
     if "api/forebet-auto/export" not in serialized:
         raise ValueError("Der automatische Forebet-Export fehlt.")
-    if "api/selected-analysis" not in serialized:
+    if "api/selected-analysis-file" not in serialized:
         raise ValueError("Die gemeinsame Render-Analyse fehlt.")
     if identifiers.count("is.workflow.actions.documentpicker.save") != 1:
         raise ValueError("Der Kurzbefehl darf nur ein gemeinsames Archiv speichern.")

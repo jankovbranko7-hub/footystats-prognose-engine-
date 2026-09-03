@@ -1,12 +1,12 @@
-# FootyStats + Forebet ELITE Analyse v0.9.0
+# FootyStats + Forebet ELITE Analyse v0.9.1
 
-V0.9.0 verbindet den unveränderten FootyStats-Kern aus V0.4.0 mit den
+V0.9.1 verbindet den unveränderten FootyStats-Kern aus V0.4.0 mit den
 öffentlichen Pre-Match-Prognosen von Forebet. Der stabile Fünf-Dateien-Stand
 bleibt in `main` und `backup/v0.4.0-five-files` erhalten.
 
 ## Ablauf wie bei V2
 
-Der Kurzbefehl `FootyStats + Forebet ELITE V2` arbeitet so:
+Der Kurzbefehl `FootyStats + Forebet ELITE V2.1` arbeitet so:
 
 1. Datum im Format `YYYY-MM-DD`.
 2. Gewünschtes Spiel aus der V2-Liste selbst auswählen.
@@ -26,7 +26,9 @@ Es entsteht genau eine Datei:
 `[MatchID]/[MatchID]_FootyStats_Forebet_Analyse.json`
 
 Diese Datei enthält die fünf FootyStats-Datenblöcke, den öffentlichen
-Forebet-Snapshot und die vollständige gemeinsame Analyse. Auch `BEOBACHTEN`,
+Forebet-Snapshot und die vollständige gemeinsame Analyse. Render liefert das
+Archiv direkt als speicherbare Antwort; iOS muss kein verschachteltes Feld mehr
+herauslösen. Auch `BEOBACHTEN`,
 `AUSLASSEN` oder ein dokumentierter Forebet-Fehler bleiben in der Datei sichtbar;
 Render wählt niemals selbstständig eine andere Partie.
 

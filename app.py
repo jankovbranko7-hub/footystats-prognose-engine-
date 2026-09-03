@@ -467,7 +467,7 @@ from fastapi import FastAPI, File, UploadFile, HTTPException, Form, Request
 from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel
 
-app = FastAPI(title="FootyStats + Forebet ELITE Analyse", version="0.9.0")
+app = FastAPI(title="FootyStats + Forebet ELITE Analyse", version="0.9.1")
 
 class Payload(BaseModel):
     matchData: Dict[str, Any]
@@ -684,7 +684,7 @@ def _attach_forebet_ensemble(result: Dict[str, Any], forebet: Dict[str, Any]) ->
         "decision_rule": "SPIELEN nur bei bestandenem FootyStats-V5.2-Protokoll, gleichem Top-Markt, mindestens 65 % gemeinsam, höchstens 8 Prozentpunkten Differenz und passendem Forebet-Ergebnistipp/Ø-Tore-Kohärenzcheck.",
     }
     result["method"] = {**dict(result.get("method") or {}), "forebet_ensemble": True, "opinion_pool": "equal-weight log pool", "odds_used": False}
-    result["model_version"] = "0.9.0"
+    result["model_version"] = "0.9.1"
     result["notes"] = list(result.get("notes") or []) + [
         "Forebet beeinflusst alle sechs Marktwerte über einen symmetrischen logarithmischen Opinion-Pool.",
         "Die Gewichte sind transparent gleich verteilt und noch nicht backtest-kalibriert.",
@@ -1241,7 +1241,7 @@ def _analyze_bundle(parsed_files: List[Dict[str, Any]]) -> Dict[str, Any]:
     try:
         forebet = _forebet_snapshot(pair["forebet_data"], mf(pair["match_data"]))
     except ValueError as exc:
-        return {"ok":False,"model_version":"0.9.0","phase":"FOREBET_VALIDATION_FAILED","decision":"ANALYSE NICHT MÖGLICH","error":str(exc),"pairing":pair.get("pairing"),"input_sources":pair.get("source_files") or {}}
+        return {"ok":False,"model_version":"0.9.1","phase":"FOREBET_VALIDATION_FAILED","decision":"ANALYSE NICHT MÖGLICH","error":str(exc),"pairing":pair.get("pairing"),"input_sources":pair.get("source_files") or {}}
     result = _attach_forebet_ensemble(result, forebet)
     result["pairing"] = {
         **pair["pairing"],
@@ -1273,7 +1273,7 @@ pre{white-space:pre-wrap;word-break:break-word;font-size:.75rem}.sep{border-top:
 <body>
 <div class="w">
   <div class="c">
-    <h2>FootyStats + Forebet ELITE Analyse v0.9.0</h2>
+    <h2>FootyStats + Forebet ELITE Analyse v0.9.1</h2>
     <div class="s">FootyStats-V5.5-Kern + Forebet-Konsensmodell · keine Odds · INSUFFICIENT_DATA-Sperre und V5.2-Guardrails aktiv</div>
     <h3>Match-Ordner auswählen</h3>
     <p class="s">Empfohlen: MatchDaten, LeagueDaten, FormDaten, TableDaten, PlayerDaten und ForebetDaten desselben Matches auswählen.</p>
@@ -1389,7 +1389,7 @@ document.getElementById('go').onclick=async function(){
 @app.get("/",response_class=HTMLResponse)
 def index():return INDEX_HTML
 @app.get("/api/health")
-def health():return {"ok":True,"version":"0.9.0","footystats_backup":"0.4.0","forebet_ensemble":True,"v2_match_selection":True,"single_joint_archive":True,"hubsign_format":"AEA1","shortcut_delivery":"pre_signed"}
+def health():return {"ok":True,"version":"0.9.1","footystats_backup":"0.4.0","forebet_ensemble":True,"v2_match_selection":True,"single_joint_archive":True,"ios_direct_archive":True,"hubsign_format":"AEA1","shortcut_delivery":"pre_signed"}
 @app.post("/api/predict")
 def predict_json(payload:Payload):
     report = supplemental_report(payload.matchData, payload.leagueData, payload.formData, payload.tableData, payload.playerData)
@@ -1460,11 +1460,82 @@ def selected_analysis(payload: Payload):
     }
 
 
+def _ios_diagnostic_archive(phase: str, error: str, received_types: Dict[str, str]) -> Dict[str, Any]:
+    return {
+        "archive_schema": "footystats-forebet-ios-diagnostic-v1",
+        "created_at": _archive_now(),
+        "storage": "iphone_or_icloud_only",
+        "server_side_persistence": False,
+        "analysis": {
+            "ok": False,
+            "decision": "ANALYSE NICHT MÖGLICH",
+            "phase": phase,
+            "error": error,
+            "received_types": received_types,
+        },
+        "source_coverage": {
+            "expected": list(_ARCHIVE_SOURCE_KINDS),
+            "available": [],
+            "missing": list(_ARCHIVE_SOURCE_KINDS),
+        },
+    }
+
+
+def _ios_dictionary(value: Any, field: str) -> Dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        decoded = json.loads(value)
+        if isinstance(decoded, dict):
+            return decoded
+    raise ValueError(f"{field} wurde vom iPhone nicht als JSON-Wörterbuch übertragen.")
+
+
+@app.post("/api/selected-analysis-file")
+async def selected_analysis_file(request: Request):
+    """Tolerant iOS transport: always return a directly saveable JSON object."""
+    try:
+        body = await request.json()
+    except Exception as exc:
+        print(json.dumps({"event": "ios_selected_analysis", "phase": "INVALID_JSON"}), flush=True)
+        return _ios_diagnostic_archive("IOS_REQUEST_INVALID_JSON", str(exc), {})
+    if not isinstance(body, dict):
+        return _ios_diagnostic_archive(
+            "IOS_REQUEST_INVALID_BODY",
+            "Der Request-Body ist kein Wörterbuch.",
+            {"body": type(body).__name__},
+        )
+
+    fields = ("matchData", "leagueData", "formData", "tableData", "playerData", "forebetData")
+    received_types = {field: type(body.get(field)).__name__ for field in fields}
+    print(json.dumps({"event": "ios_selected_analysis", "received_types": received_types}), flush=True)
+    try:
+        payload = Payload(**{field: _ios_dictionary(body.get(field), field) for field in fields})
+    except Exception as exc:
+        return _ios_diagnostic_archive("IOS_PAYLOAD_DECODE_FAILED", str(exc), received_types)
+
+    response = selected_analysis(payload)
+    package = response.get("archive")
+    if isinstance(package, dict):
+        print(json.dumps({
+            "event": "ios_selected_analysis",
+            "phase": "ARCHIVE_READY",
+            "decision": response.get("decision"),
+            "match_id": (package.get("match") or {}).get("match_id"),
+        }), flush=True)
+        return package
+    return _ios_diagnostic_archive(
+        response.get("phase") or "ANALYSIS_FAILED",
+        response.get("error") or "Render konnte kein gemeinsames Archiv erzeugen.",
+        received_types,
+    )
+
+
 @app.post("/api/predict-files")
 async def predict_files(match_file:UploadFile=File(...),league_file:UploadFile=File(...)):
     raise HTTPException(
         status_code=422,
-        detail="Die v0.9.0-ELITE-Analyse akzeptiert keinen unvollständigen Zwei-Dateien-Weg. Bitte /api/predict-bundle mit fünf FootyStats-Dateien und einer ForebetDaten-Datei verwenden.",
+        detail="Die v0.9.1-ELITE-Analyse akzeptiert keinen unvollständigen Zwei-Dateien-Weg. Bitte /api/predict-bundle mit fünf FootyStats-Dateien und einer ForebetDaten-Datei verwenden.",
     )
 @app.post("/api/predict-bundle")
 async def predict_bundle(files: List[UploadFile] = File(...)):
@@ -1533,7 +1604,7 @@ button{width:100%;padding:14px;margin-top:20px;border:0;border-radius:11px;backg
 </style>
 </head>
 <body><div class="w"><div class="c">
-<h1>FootyStats + Forebet ELITE V2</h1>
+<h1>FootyStats + Forebet ELITE V2.1</h1>
 <p class="s">Ablauf wie bei V2: Datum eingeben, ein Spiel selbst auswählen und genau dieses Spiel analysieren. Render verbindet dafür fünf FootyStats-Quellen mit Forebet und liefert eine gemeinsame Analyse-Datei. V0.4.0 bleibt unverändert.</p>
 <p class="s">Diese Datei wurde bereits mit HubSign signiert. Vor jedem Download prüft der Server den Apple-Dateikopf <code>AEA1</code>; es wird kein API-Key benötigt.</p>
 <button id="go">Geprüften Kurzbefehl herunterladen</button>
@@ -1555,7 +1626,7 @@ document.getElementById('go').onclick=async()=>{
       st.className='s bad';st.textContent='Signaturprüfung fehlgeschlagen. Es wurde keine Datei heruntergeladen.';return;
     }
     const u=URL.createObjectURL(b);
-    const a=document.createElement('a'); a.href=u; a.download='FootyStats + Forebet ELITE V2.shortcut';
+    const a=document.createElement('a'); a.href=u; a.download='FootyStats + Forebet ELITE V2.1.shortcut';
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(()=>URL.revokeObjectURL(u),5000);
     st.className='s ok';st.textContent='Fertig. AEA1-Signatur geprüft; die gültige .shortcut-Datei wurde heruntergeladen.';
@@ -1575,7 +1646,7 @@ def _signed_shortcut_response() -> Response:
         content=signed,
         media_type="application/octet-stream",
         headers={
-            "Content-Disposition": 'attachment; filename="FootyStats + Forebet ELITE V2.shortcut"',
+            "Content-Disposition": 'attachment; filename="FootyStats + Forebet ELITE V2.1.shortcut"',
             "Cache-Control":"no-store",
         },
     )
@@ -1586,5 +1657,5 @@ def shortcut_download():
 
 @app.post("/api/hubsign-sign")
 async def hubsign_sign():
-    # Compatibility for helper pages that were opened before v0.9.0 deployed.
+    # Compatibility for helper pages that were opened before v0.9.1 deployed.
     return _signed_shortcut_response()

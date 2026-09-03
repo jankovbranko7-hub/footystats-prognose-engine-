@@ -8,7 +8,7 @@ import app
 from shortcut_date_auto import PRODUCT_NAME, build_date_auto_shortcut
 
 
-OUTPUT_PATH = Path(__file__).with_name("FootyStats_Forebet_ELITE_V2_unsigned.shortcut")
+OUTPUT_PATH = Path(__file__).with_name("FootyStats_Forebet_ELITE_V2_1_unsigned.shortcut")
 DEFAULT_BASE_URL = "https://footystats-forebet-auto-v4-test.onrender.com"
 
 
