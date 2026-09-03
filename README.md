@@ -1,6 +1,6 @@
-# FootyStats + Forebet ELITE Analyse v0.9.1
+# FootyStats + Forebet ELITE Analyse v0.9.2
 
-V0.9.1 verbindet den unveränderten FootyStats-Kern aus V0.4.0 mit den
+V0.9.2 verbindet den unveränderten FootyStats-Kern aus V0.4.0 mit den
 öffentlichen Pre-Match-Prognosen von Forebet. Der stabile Fünf-Dateien-Stand
 bleibt in `main` und `backup/v0.4.0-five-files` erhalten.
 

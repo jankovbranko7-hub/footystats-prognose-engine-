@@ -78,6 +78,22 @@ def bundle(forebet_raw="45;28;27;60;62;2-1;2,8;https://www.forebet.com/en/test")
     ]
 
 
+def test_match_identity_prefers_fixture_fields_over_nested_ids():
+    match_data = {
+        "data": {
+            "nested_event": {"id": 8206520},
+            "homeID": HOME_ID,
+            "awayID": AWAY_ID,
+            "id": MATCH_ID,
+            "home_name": "Home FC",
+            "away_name": "Away FC",
+            "competition_id": 77,
+        }
+    }
+
+    assert app.mf(match_data)["match_id"] == MATCH_ID
+
+
 def test_six_file_bundle_uses_both_models_and_changes_probabilities():
     parsed = bundle()
     pair = app.select_pair(parsed)
@@ -86,7 +102,7 @@ def test_six_file_bundle_uses_both_models_and_changes_probabilities():
 
     result = app._analyze_bundle(parsed)
     assert result["ok"] is True
-    assert result["model_version"] == "0.9.1"
+    assert result["model_version"] == "0.9.2"
     assert result["ensemble"]["active"] is True
     assert result["ensemble"]["weights"] == {"footystats": 0.5, "forebet": 0.5}
     assert result["forebet_model"]["odds_used"] is False
@@ -187,18 +203,19 @@ def test_http_health_and_homepage_identify_new_product_and_backup():
     assert health.status_code == 200
     assert health.json() == {
         "ok": True,
-        "version": "0.9.1",
+        "version": "0.9.2",
         "footystats_backup": "0.4.0",
         "forebet_ensemble": True,
         "v2_match_selection": True,
         "single_joint_archive": True,
         "ios_direct_archive": True,
+        "server_side_forebet_repair": True,
         "hubsign_format": "AEA1",
         "shortcut_delivery": "pre_signed",
     }
     homepage = client.get("/")
     assert homepage.status_code == 200
-    assert "FootyStats + Forebet ELITE Analyse v0.9.1" in homepage.text
+    assert "FootyStats + Forebet ELITE Analyse v0.9.2" in homepage.text
     assert "alle sechs JSON-Dateien" in homepage.text
 
 
@@ -339,6 +356,39 @@ def test_ios_direct_archive_accepts_dictionary_or_json_text_fields(stringify):
         "match", "league", "form", "table", "player", "forebet",
     }
     assert body["analysis"]["ensemble"]["active"] is True
+
+
+def test_ios_repairs_empty_team_forebet_response_from_match_data(monkeypatch):
+    payload = _payload_json()
+    payload["matchData"]["data"].pop("date")
+    payload["matchData"]["data"]["date_unix"] = 1788379200
+    payload["forebetData"] = {
+        "detail": [
+            {"loc": ["query", "home"], "input": ""},
+            {"loc": ["query", "away"], "input": ""},
+        ]
+    }
+    received = {}
+
+    def repaired_snapshot(**kwargs):
+        received.update(kwargs)
+        return bundle()[-1]["data"]
+
+    monkeypatch.setattr("forebet_auto_v5.build_snapshot", repaired_snapshot)
+    client = TestClient(app.app)
+    response = client.post("/api/selected-analysis-file", json=payload)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert received == {
+        "match_id": MATCH_ID,
+        "home": "Home FC",
+        "away": "Away FC",
+        "date": "2026-09-02",
+    }
+    assert body["analysis"]["ok"] is True
+    assert body["analysis"]["ensemble"]["active"] is True
+    assert body["sources"]["forebet"]["content"]["ok"] is True
 
 
 def test_ios_direct_archive_returns_saveable_diagnostic_instead_of_empty_output():

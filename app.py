@@ -80,7 +80,15 @@ def mf(data):
     }
     out={}
     for k,a in spec.items():
-        out[k]=first(m,a) if k in {'home_name','away_name','season','status','date'} else firstnum(m,a)
+        # Match identity belongs to the match object itself. Prefer its direct
+        # fields before recursively scanning nested cards, teams or incidents,
+        # which can contain unrelated ``id`` values ahead of the fixture ID.
+        direct={nkey(key):value for key,value in m.items()} if isinstance(m,dict) else {}
+        direct_value=next((direct[nkey(alias)] for alias in a if nkey(alias) in direct and direct[nkey(alias)] not in (None,'',[],{})),None)
+        if k in {'home_name','away_name','season','status','date'}:
+            out[k]=direct_value if direct_value is not None else first(m,a)
+        else:
+            out[k]=num(direct_value) if direct_value is not None else firstnum(m,a)
     for k in ['match_id','home_id','away_id','competition_id']:
         if out.get(k) is not None: out[k]=int(out[k])
     return out
@@ -467,7 +475,7 @@ from fastapi import FastAPI, File, UploadFile, HTTPException, Form, Request
 from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel
 
-app = FastAPI(title="FootyStats + Forebet ELITE Analyse", version="0.9.1")
+app = FastAPI(title="FootyStats + Forebet ELITE Analyse", version="0.9.2")
 
 class Payload(BaseModel):
     matchData: Dict[str, Any]
@@ -684,7 +692,7 @@ def _attach_forebet_ensemble(result: Dict[str, Any], forebet: Dict[str, Any]) ->
         "decision_rule": "SPIELEN nur bei bestandenem FootyStats-V5.2-Protokoll, gleichem Top-Markt, mindestens 65 % gemeinsam, höchstens 8 Prozentpunkten Differenz und passendem Forebet-Ergebnistipp/Ø-Tore-Kohärenzcheck.",
     }
     result["method"] = {**dict(result.get("method") or {}), "forebet_ensemble": True, "opinion_pool": "equal-weight log pool", "odds_used": False}
-    result["model_version"] = "0.9.1"
+    result["model_version"] = "0.9.2"
     result["notes"] = list(result.get("notes") or []) + [
         "Forebet beeinflusst alle sechs Marktwerte über einen symmetrischen logarithmischen Opinion-Pool.",
         "Die Gewichte sind transparent gleich verteilt und noch nicht backtest-kalibriert.",
@@ -1241,7 +1249,7 @@ def _analyze_bundle(parsed_files: List[Dict[str, Any]]) -> Dict[str, Any]:
     try:
         forebet = _forebet_snapshot(pair["forebet_data"], mf(pair["match_data"]))
     except ValueError as exc:
-        return {"ok":False,"model_version":"0.9.1","phase":"FOREBET_VALIDATION_FAILED","decision":"ANALYSE NICHT MÖGLICH","error":str(exc),"pairing":pair.get("pairing"),"input_sources":pair.get("source_files") or {}}
+        return {"ok":False,"model_version":"0.9.2","phase":"FOREBET_VALIDATION_FAILED","decision":"ANALYSE NICHT MÖGLICH","error":str(exc),"pairing":pair.get("pairing"),"input_sources":pair.get("source_files") or {}}
     result = _attach_forebet_ensemble(result, forebet)
     result["pairing"] = {
         **pair["pairing"],
@@ -1273,7 +1281,7 @@ pre{white-space:pre-wrap;word-break:break-word;font-size:.75rem}.sep{border-top:
 <body>
 <div class="w">
   <div class="c">
-    <h2>FootyStats + Forebet ELITE Analyse v0.9.1</h2>
+    <h2>FootyStats + Forebet ELITE Analyse v0.9.2</h2>
     <div class="s">FootyStats-V5.5-Kern + Forebet-Konsensmodell · keine Odds · INSUFFICIENT_DATA-Sperre und V5.2-Guardrails aktiv</div>
     <h3>Match-Ordner auswählen</h3>
     <p class="s">Empfohlen: MatchDaten, LeagueDaten, FormDaten, TableDaten, PlayerDaten und ForebetDaten desselben Matches auswählen.</p>
@@ -1389,7 +1397,7 @@ document.getElementById('go').onclick=async function(){
 @app.get("/",response_class=HTMLResponse)
 def index():return INDEX_HTML
 @app.get("/api/health")
-def health():return {"ok":True,"version":"0.9.1","footystats_backup":"0.4.0","forebet_ensemble":True,"v2_match_selection":True,"single_joint_archive":True,"ios_direct_archive":True,"hubsign_format":"AEA1","shortcut_delivery":"pre_signed"}
+def health():return {"ok":True,"version":"0.9.2","footystats_backup":"0.4.0","forebet_ensemble":True,"v2_match_selection":True,"single_joint_archive":True,"ios_direct_archive":True,"server_side_forebet_repair":True,"hubsign_format":"AEA1","shortcut_delivery":"pre_signed"}
 @app.post("/api/predict")
 def predict_json(payload:Payload):
     report = supplemental_report(payload.matchData, payload.leagueData, payload.formData, payload.tableData, payload.playerData)
@@ -1491,6 +1499,71 @@ def _ios_dictionary(value: Any, field: str) -> Dict[str, Any]:
     raise ValueError(f"{field} wurde vom iPhone nicht als JSON-Wörterbuch übertragen.")
 
 
+def _forebet_match_date(match_data: Dict[str, Any]) -> Optional[str]:
+    """Read the fixture date from FootyStats, including its Unix timestamp form."""
+    match = match_obj(match_data) or {}
+    raw_date = first(match, ["date", "match_date", "date_iso"])
+    if raw_date not in (None, ""):
+        text_date = str(raw_date).strip()
+        if re.match(r"^\d{4}-\d{2}-\d{2}", text_date):
+            return text_date[:10]
+
+    timestamp = firstnum(match, ["date_unix", "dateUnix", "unix_timestamp", "timestamp"])
+    if timestamp is None:
+        return None
+    if timestamp > 10_000_000_000:
+        timestamp /= 1000
+    try:
+        return datetime.fromtimestamp(timestamp, timezone.utc).date().isoformat()
+    except (OverflowError, OSError, ValueError):
+        return None
+
+
+def _repair_forebet_from_match_data(
+    match_data: Dict[str, Any],
+    forebet_data: Dict[str, Any],
+) -> tuple[Dict[str, Any], bool]:
+    """Replace an invalid iPhone Forebet response using trusted MatchDaten identity."""
+    match = mf(match_data)
+    try:
+        _forebet_snapshot(forebet_data, match)
+        return forebet_data, False
+    except ValueError as original_error:
+        match_id = int(match.get("match_id") or 0)
+        home = str(match.get("home_name") or "").strip()
+        away = str(match.get("away_name") or "").strip()
+        match_date = _forebet_match_date(match_data)
+        if not match_id or not home or not away:
+            raise ValueError(
+                "Forebet konnte nicht repariert werden: Match-ID oder Teamnamen fehlen in MatchDaten."
+            ) from original_error
+
+        from forebet_auto import ForebetAutoError
+        from forebet_auto_v5 import build_snapshot
+
+        try:
+            repaired = build_snapshot(
+                match_id=match_id,
+                home=home,
+                away=away,
+                date=match_date,
+            )
+        except ForebetAutoError as exc:
+            return {
+                "ok": False,
+                "schema": "forebet-auto-error-v1",
+                "phase": "FOREBET_SERVER_REPAIR_FAILED",
+                "error": str(exc),
+                "match_id": match_id,
+                "home": home,
+                "away": away,
+                "match_date": match_date,
+                "source_url": "https://www.forebet.com/",
+                "odds_used": False,
+            }, True
+        return {"ok": True, **repaired}, True
+
+
 @app.post("/api/selected-analysis-file")
 async def selected_analysis_file(request: Request):
     """Tolerant iOS transport: always return a directly saveable JSON object."""
@@ -1510,9 +1583,29 @@ async def selected_analysis_file(request: Request):
     received_types = {field: type(body.get(field)).__name__ for field in fields}
     print(json.dumps({"event": "ios_selected_analysis", "received_types": received_types}), flush=True)
     try:
-        payload = Payload(**{field: _ios_dictionary(body.get(field), field) for field in fields})
+        decoded = {field: _ios_dictionary(body.get(field), field) for field in fields}
     except Exception as exc:
         return _ios_diagnostic_archive("IOS_PAYLOAD_DECODE_FAILED", str(exc), received_types)
+
+    try:
+        decoded["forebetData"], repaired = _repair_forebet_from_match_data(
+            decoded["matchData"], decoded["forebetData"]
+        )
+    except Exception as exc:
+        return _ios_diagnostic_archive("FOREBET_SERVER_REPAIR_INVALID_MATCH", str(exc), received_types)
+    if repaired:
+        match = mf(decoded["matchData"])
+        print(json.dumps({
+            "event": "ios_selected_analysis",
+            "phase": "FOREBET_SERVER_REPAIR",
+            "match_id": match.get("match_id"),
+            "home": match.get("home_name"),
+            "away": match.get("away_name"),
+            "date": _forebet_match_date(decoded["matchData"]),
+            "repair_ok": decoded["forebetData"].get("ok") is not False,
+        }), flush=True)
+
+    payload = Payload(**decoded)
 
     response = selected_analysis(payload)
     package = response.get("archive")
@@ -1535,7 +1628,7 @@ async def selected_analysis_file(request: Request):
 async def predict_files(match_file:UploadFile=File(...),league_file:UploadFile=File(...)):
     raise HTTPException(
         status_code=422,
-        detail="Die v0.9.1-ELITE-Analyse akzeptiert keinen unvollständigen Zwei-Dateien-Weg. Bitte /api/predict-bundle mit fünf FootyStats-Dateien und einer ForebetDaten-Datei verwenden.",
+        detail="Die v0.9.2-ELITE-Analyse akzeptiert keinen unvollständigen Zwei-Dateien-Weg. Bitte /api/predict-bundle mit fünf FootyStats-Dateien und einer ForebetDaten-Datei verwenden.",
     )
 @app.post("/api/predict-bundle")
 async def predict_bundle(files: List[UploadFile] = File(...)):
@@ -1657,5 +1750,5 @@ def shortcut_download():
 
 @app.post("/api/hubsign-sign")
 async def hubsign_sign():
-    # Compatibility for helper pages that were opened before v0.9.1 deployed.
+    # Compatibility for helper pages that were opened before v0.9.2 deployed.
     return _signed_shortcut_response()
