@@ -467,7 +467,7 @@ from fastapi import FastAPI, File, UploadFile, HTTPException, Form, Request
 from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel
 
-app = FastAPI(title="FootyStats + Forebet ELITE Analyse", version="0.7.2")
+app = FastAPI(title="FootyStats + Forebet ELITE Analyse", version="0.8.0")
 
 class Payload(BaseModel):
     matchData: Dict[str, Any]
@@ -684,7 +684,7 @@ def _attach_forebet_ensemble(result: Dict[str, Any], forebet: Dict[str, Any]) ->
         "decision_rule": "SPIELEN nur bei bestandenem FootyStats-V5.2-Protokoll, gleichem Top-Markt, mindestens 65 % gemeinsam, höchstens 8 Prozentpunkten Differenz und passendem Forebet-Ergebnistipp/Ø-Tore-Kohärenzcheck.",
     }
     result["method"] = {**dict(result.get("method") or {}), "forebet_ensemble": True, "opinion_pool": "equal-weight log pool", "odds_used": False}
-    result["model_version"] = "0.7.2"
+    result["model_version"] = "0.8.0"
     result["notes"] = list(result.get("notes") or []) + [
         "Forebet beeinflusst alle sechs Marktwerte über einen symmetrischen logarithmischen Opinion-Pool.",
         "Die Gewichte sind transparent gleich verteilt und noch nicht backtest-kalibriert.",
@@ -1241,7 +1241,7 @@ def _analyze_bundle(parsed_files: List[Dict[str, Any]]) -> Dict[str, Any]:
     try:
         forebet = _forebet_snapshot(pair["forebet_data"], mf(pair["match_data"]))
     except ValueError as exc:
-        return {"ok":False,"model_version":"0.7.2","phase":"FOREBET_VALIDATION_FAILED","decision":"ANALYSE NICHT MÖGLICH","error":str(exc),"pairing":pair.get("pairing"),"input_sources":pair.get("source_files") or {}}
+        return {"ok":False,"model_version":"0.8.0","phase":"FOREBET_VALIDATION_FAILED","decision":"ANALYSE NICHT MÖGLICH","error":str(exc),"pairing":pair.get("pairing"),"input_sources":pair.get("source_files") or {}}
     result = _attach_forebet_ensemble(result, forebet)
     result["pairing"] = {
         **pair["pairing"],
@@ -1273,7 +1273,7 @@ pre{white-space:pre-wrap;word-break:break-word;font-size:.75rem}.sep{border-top:
 <body>
 <div class="w">
   <div class="c">
-    <h2>FootyStats + Forebet ELITE Analyse v0.7.2</h2>
+    <h2>FootyStats + Forebet ELITE Analyse v0.8.0</h2>
     <div class="s">FootyStats-V5.5-Kern + Forebet-Konsensmodell · keine Odds · INSUFFICIENT_DATA-Sperre und V5.2-Guardrails aktiv</div>
     <h3>Match-Ordner auswählen</h3>
     <p class="s">Empfohlen: MatchDaten, LeagueDaten, FormDaten, TableDaten, PlayerDaten und ForebetDaten desselben Matches auswählen.</p>
@@ -1389,7 +1389,7 @@ document.getElementById('go').onclick=async function(){
 @app.get("/",response_class=HTMLResponse)
 def index():return INDEX_HTML
 @app.get("/api/health")
-def health():return {"ok":True,"version":"0.7.2","footystats_backup":"0.4.0","forebet_ensemble":True,"date_only_shortcut":True,"hubsign_format":"AEA1","shortcut_delivery":"pre_signed"}
+def health():return {"ok":True,"version":"0.8.0","footystats_backup":"0.4.0","forebet_ensemble":True,"date_only_shortcut":True,"elite_only_single_archive":True,"hubsign_format":"AEA1","shortcut_delivery":"pre_signed"}
 @app.post("/api/predict")
 def predict_json(payload:Payload):
     report = supplemental_report(payload.matchData, payload.leagueData, payload.formData, payload.tableData, payload.playerData)
@@ -1399,11 +1399,50 @@ def predict_json(payload:Payload):
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     return _attach_forebet_ensemble(result, forebet)
+
+
+def _payload_as_bundle(payload: Payload) -> List[Dict[str, Any]]:
+    match_fields = mf(payload.matchData)
+    match_id = int(match_fields.get("match_id") or 0)
+    competition_id = int(match_fields.get("competition_id") or 0)
+    return [
+        {"name": f"{match_id}_MatchDaten.json", "data": payload.matchData},
+        {"name": f"{competition_id}_LeagueDaten.json", "data": payload.leagueData},
+        {"name": f"{match_id}_FormDaten.json", "data": payload.formData or {}},
+        {"name": f"{match_id}_TableDaten.json", "data": payload.tableData or {}},
+        {"name": f"{match_id}_PlayerDaten.json", "data": payload.playerData or {}},
+        {"name": f"{match_id}_ForebetDaten.json", "data": payload.forebetData},
+    ]
+
+
+@app.post("/api/elite-candidate")
+def elite_candidate(payload: Payload):
+    """Analyze one fixture and expose an archive only after every SPIELEN gate passed."""
+    parsed = _payload_as_bundle(payload)
+    result = _analyze_bundle(parsed)
+    pair = result.pop("_archive_pair", None)
+    decision = result.get("decision") or "ANALYSE NICHT MÖGLICH"
+    match = mf(payload.matchData)
+    response: Dict[str, Any] = {
+        "ok": bool(result.get("ok")),
+        "save": False,
+        "decision": decision,
+        "match_id": match.get("match_id"),
+        "home_name": match.get("home_name"),
+        "away_name": match.get("away_name"),
+        "phase": result.get("phase"),
+    }
+    if result.get("ok") and decision == "SPIELEN" and pair:
+        response["save"] = True
+        response["archive"] = _archive_package(parsed, pair, result)
+    return response
+
+
 @app.post("/api/predict-files")
 async def predict_files(match_file:UploadFile=File(...),league_file:UploadFile=File(...)):
     raise HTTPException(
         status_code=422,
-        detail="Die v0.7.2-ELITE-Analyse akzeptiert keinen unvollständigen Zwei-Dateien-Weg. Bitte /api/predict-bundle mit fünf FootyStats-Dateien und einer ForebetDaten-Datei verwenden.",
+        detail="Die v0.8.0-ELITE-Analyse akzeptiert keinen unvollständigen Zwei-Dateien-Weg. Bitte /api/predict-bundle mit fünf FootyStats-Dateien und einer ForebetDaten-Datei verwenden.",
     )
 @app.post("/api/predict-bundle")
 async def predict_bundle(files: List[UploadFile] = File(...)):
@@ -1472,8 +1511,8 @@ button{width:100%;padding:14px;margin-top:20px;border:0;border-radius:11px;backg
 </style>
 </head>
 <body><div class="w"><div class="c">
-<h1>FootyStats + Forebet ELITE AUTO signieren</h1>
-<p class="s">Der neue Kurzbefehl fragt beim Lauf nur nach dem Datum und exportiert danach automatisch alle Tagesmatches mit fünf FootyStats-Dateien plus ForebetDaten. V0.4.0 und dein bestehender V2-Kurzbefehl bleiben unverändert.</p>
+<h1>FootyStats + Forebet ELITE PICKS</h1>
+<p class="s">Der Kurzbefehl fragt beim Lauf nur nach dem Datum. Er prüft alle Tagesmatches, speichert aber ausschließlich Partien mit der Entscheidung SPIELEN. Pro qualifiziertem Spiel entsteht genau eine gemeinsame Datei mit fünf FootyStats-Quellen, Forebet und Analyse. V0.4.0 bleibt unverändert.</p>
 <p class="s">Diese Datei wurde bereits mit HubSign signiert. Vor jedem Download prüft der Server den Apple-Dateikopf <code>AEA1</code>; es wird kein API-Key benötigt.</p>
 <button id="go">Geprüften Kurzbefehl herunterladen</button>
 <p id="status" class="s"></p>
@@ -1494,7 +1533,7 @@ document.getElementById('go').onclick=async()=>{
       st.className='s bad';st.textContent='Signaturprüfung fehlgeschlagen. Es wurde keine Datei heruntergeladen.';return;
     }
     const u=URL.createObjectURL(b);
-    const a=document.createElement('a'); a.href=u; a.download='FootyStats + Forebet ELITE AUTO.shortcut';
+    const a=document.createElement('a'); a.href=u; a.download='FootyStats + Forebet ELITE PICKS.shortcut';
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(()=>URL.revokeObjectURL(u),5000);
     st.className='s ok';st.textContent='Fertig. AEA1-Signatur geprüft; die gültige .shortcut-Datei wurde heruntergeladen.';
@@ -1514,7 +1553,7 @@ def _signed_shortcut_response() -> Response:
         content=signed,
         media_type="application/octet-stream",
         headers={
-            "Content-Disposition": 'attachment; filename="FootyStats + Forebet ELITE AUTO.shortcut"',
+            "Content-Disposition": 'attachment; filename="FootyStats + Forebet ELITE PICKS.shortcut"',
             "Cache-Control":"no-store",
         },
     )
@@ -1525,5 +1564,5 @@ def shortcut_download():
 
 @app.post("/api/hubsign-sign")
 async def hubsign_sign():
-    # Compatibility for helper pages that were opened before v0.7.2 deployed.
+    # Compatibility for helper pages that were opened before v0.8.0 deployed.
     return _signed_shortcut_response()

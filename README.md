@@ -1,35 +1,34 @@
-# FootyStats + Forebet ELITE Analyse v0.7.2
+# FootyStats + Forebet ELITE Analyse v0.8.0
 
-V0.7.2 verbindet den unveränderten FootyStats-Kern aus V0.4.0 mit den
+V0.8.0 verbindet den unveränderten FootyStats-Kern aus V0.4.0 mit den
 öffentlichen Pre-Match-Prognosen von Forebet. Der stabile Fünf-Dateien-Stand
 bleibt in `main` und `backup/v0.4.0-five-files` erhalten.
 
 ## Einzige Eingabe beim iPhone-Lauf
 
-Der Kurzbefehl `FootyStats + Forebet ELITE AUTO` fragt nur:
+Der Kurzbefehl `FootyStats + Forebet ELITE PICKS` fragt nur:
 
 1. Datum im Format `YYYY-MM-DD`.
 
 Der FootyStats-API-Key wird einmal beim Installieren des Kurzbefehls hinterlegt
 und nicht bei jedem Lauf erneut abgefragt. Eine Spielauswahl und eine manuelle
 Forebet-Eingabe gibt es nicht mehr. Alle von FootyStats für das Datum gelieferten
-Matches werden automatisch durchlaufen.
+Matches werden automatisch durchlaufen und analysiert.
 
-## Gemeinsamer Matchordner
+## Nur qualifizierte Spiele, nur eine Datei
 
-Für jedes Match wird ein eigener Ordner mit sechs Dateien erzeugt:
+Die fünf FootyStats-Quellen und Forebet werden intern für jedes Tagesmatch
+zusammengeführt. Gespeichert wird aber ausschließlich, wenn das gemeinsame
+ELITE-Modell am Ende `SPIELEN` entscheidet.
 
-1. `[MatchID]_MatchDaten.json`
-2. `[SeasonID]_LeagueDaten.json`
-3. `[MatchID]_FormDaten.json`
-4. `[MatchID]_TableDaten.json`
-5. `[MatchID]_PlayerDaten.json`
-6. `[MatchID]_ForebetDaten.json`
+Pro qualifiziertem Spiel entsteht genau eine Datei:
 
-Wenn Forebet ein Match nicht sicher findet, wird trotzdem eine
-`ForebetDaten.json` mit `FOREBET_UNAVAILABLE` gespeichert. Dadurch läuft der
-restliche Tag weiter; die Analyse dieses einzelnen Matches wird anschließend
-korrekt gesperrt statt Daten zu erfinden.
+`FootyStats_ELITE/YYYY-MM-DD/[MatchID]_ELITE_Analyse.json`
+
+Diese Datei enthält die fünf FootyStats-Datenblöcke, den öffentlichen
+Forebet-Snapshot und die vollständige gemeinsame Analyse. Bei `BEOBACHTEN`,
+`AUSLASSEN`, fehlenden Daten oder unsicherer Forebet-Zuordnung wird keine Datei
+erzeugt und kein Tipp erzwungen. Der Tageslauf geht mit dem nächsten Spiel weiter.
 
 ## ELITE-Analyse
 
@@ -69,7 +68,7 @@ APIFY_TOKEN=<Token>
 ```
 
 Der Token wird nicht in Matchdateien oder den iPhone-Kurzbefehl geschrieben.
-Unter `/hubsign-helper` wird ausschließlich der vorab signierte ELITE-AUTO-
+Unter `/hubsign-helper` wird ausschließlich der vorab signierte ELITE-PICKS-
 Kurzbefehl ausgeliefert. Vor jedem Download wird der Apple-`AEA1`-
 Signaturcontainer zwingend geprüft. Dadurch ist der Download nicht von einem
 HubSign-Aufruf aus Render abhängig. Der bestehende V2-Kurzbefehl wird nicht

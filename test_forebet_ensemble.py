@@ -86,7 +86,7 @@ def test_six_file_bundle_uses_both_models_and_changes_probabilities():
 
     result = app._analyze_bundle(parsed)
     assert result["ok"] is True
-    assert result["model_version"] == "0.7.2"
+    assert result["model_version"] == "0.8.0"
     assert result["ensemble"]["active"] is True
     assert result["ensemble"]["weights"] == {"footystats": 0.5, "forebet": 0.5}
     assert result["forebet_model"]["odds_used"] is False
@@ -142,7 +142,7 @@ def test_joint_archive_contains_all_six_sources_and_no_odds_or_secrets():
     assert package["server_side_persistence"] is False
 
 
-def test_new_shortcut_asks_only_for_date_and_exports_every_game():
+def test_new_shortcut_asks_only_for_date_and_saves_one_archive_only_for_elite_games():
     payload = build_date_auto_shortcut(
         base64.b64decode(app._PREPARED_SHORTCUT_B64),
         "https://elite.example.test",
@@ -157,8 +157,22 @@ def test_new_shortcut_asks_only_for_date_and_exports_every_game():
     assert actions[-1]["WFWorkflowActionParameters"]["WFControlFlowMode"] == 2
     serialized = str(workflow)
     assert "/api/forebet-auto/export" in serialized
+    assert "/api/elite-candidate" in serialized
     assert "Forebet:" not in serialized
-    assert "_ForebetDaten.json" in serialized
+    assert identifiers.count("is.workflow.actions.documentpicker.save") == 1
+    assert identifiers.count("is.workflow.actions.conditional") == 2
+    assert identifiers.count("is.workflow.actions.file.createfolder") == 1
+    assert "_ELITE_Analyse.json" in serialized
+    for old_name in (
+        "_MatchDaten.json", "_LeagueDaten.json", "_FormDaten.json",
+        "_TableDaten.json", "_PlayerDaten.json", "_ForebetDaten.json",
+    ):
+        assert old_name not in serialized
+    for variable in (
+        "LeagueDatenFinal", "MatchDaten", "FormDatenFinal",
+        "TableDatenFinal", "PlayerDatenFinal", "ForebetDaten",
+    ):
+        assert variable in serialized
     for variable in ("LeagueSeiten", "FormTeams", "PlayerSeiten"):
         first = next(
             item for item in actions
@@ -173,16 +187,17 @@ def test_http_health_and_homepage_identify_new_product_and_backup():
     assert health.status_code == 200
     assert health.json() == {
         "ok": True,
-        "version": "0.7.2",
+        "version": "0.8.0",
         "footystats_backup": "0.4.0",
         "forebet_ensemble": True,
         "date_only_shortcut": True,
+        "elite_only_single_archive": True,
         "hubsign_format": "AEA1",
         "shortcut_delivery": "pre_signed",
     }
     homepage = client.get("/")
     assert homepage.status_code == 200
-    assert "FootyStats + Forebet ELITE Analyse v0.7.2" in homepage.text
+    assert "FootyStats + Forebet ELITE Analyse v0.8.0" in homepage.text
     assert "alle sechs JSON-Dateien" in homepage.text
 
 
@@ -225,6 +240,54 @@ def test_bundle_and_archive_http_endpoints_complete_the_full_flow():
     assert package["analysis"]["ensemble"]["active"] is True
 
 
+def _payload_json():
+    files = {app._source_kind(item["name"]): item["data"] for item in bundle()}
+    return {
+        "matchData": files["match"],
+        "leagueData": files["league"],
+        "formData": files["form"],
+        "tableData": files["table"],
+        "playerData": files["player"],
+        "forebetData": files["forebet"],
+    }
+
+
+def test_elite_candidate_does_not_return_archive_for_non_playing_match():
+    client = TestClient(app.app)
+    response = client.post("/api/elite-candidate", json=_payload_json())
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["decision"] == "AUSLASSEN"
+    assert body["save"] is False
+    assert "archive" not in body
+
+
+def test_elite_candidate_returns_exactly_one_joint_archive_for_playing_match(monkeypatch):
+    pair = app.select_pair(bundle())
+
+    def playing(_parsed):
+        return {"ok": True, "decision": "SPIELEN", "_archive_pair": pair}
+
+    monkeypatch.setattr(app, "_analyze_bundle", playing)
+    monkeypatch.setattr(app, "_archive_package", lambda parsed, selected, result: {
+        "all_six_sources": len(parsed) == 6,
+        "decision": result["decision"],
+        "pair_ok": selected["ok"],
+    })
+    client = TestClient(app.app)
+    response = client.post("/api/elite-candidate", json=_payload_json())
+
+    assert response.status_code == 200
+    assert response.json()["save"] is True
+    assert response.json()["archive"] == {
+        "all_six_sources": True,
+        "decision": "SPIELEN",
+        "pair_ok": True,
+    }
+
+
 def test_forebet_export_error_is_a_file_and_does_not_abort_daily_shortcut(monkeypatch):
     def fail(**_kwargs):
         raise auto_app.ForebetAutoError("nicht gefunden")
@@ -260,7 +323,7 @@ def test_pre_signed_shortcut_download_is_apple_aea1():
         assert response.content.startswith(b"AEA1")
         assert len(response.content) > 20_000
         assert response.headers["content-type"] == "application/octet-stream"
-        assert "FootyStats + Forebet ELITE AUTO.shortcut" in response.headers["content-disposition"]
+        assert "FootyStats + Forebet ELITE PICKS.shortcut" in response.headers["content-disposition"]
 
 
 def test_pre_signed_shortcut_refuses_corrupt_embedded_payload(monkeypatch):
