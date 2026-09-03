@@ -1,12 +1,19 @@
 from __future__ import annotations
 
 import datetime as _dt
+import json
+import os
 import re
+import threading
+import time
+import urllib.error
+import urllib.request
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 # Import v4 first so the v3 core is initialized with the date-page browser adapter.
 import forebet_auto_v4  # noqa: F401
 import forebet_auto_v3 as core
+import forebet_auto as base
 from forebet_auto import ForebetAutoError
 
 _ORIGINAL_PROBABILITY_SEQUENCE = core._probability_sequence
@@ -15,6 +22,165 @@ _ORIGINAL_ACTOR_VALUE = core._actor_value
 _ORIGINAL_BROWSER_SNAPSHOT = core._browser_snapshot
 
 _SCORE_ALIASES = {"predictedScore", "predicted_score", "correctScore"}
+
+# iOS Shortcuts aborts long-running "Get Contents of URL" actions before the
+# old Apify sync limits (150-255 seconds). Keep each external Forebet attempt
+# short enough that the API can return a structured error instead of an iOS
+# transport timeout. A second server-side repair of the same failed fixture is
+# suppressed briefly so one Shortcut run never pays the slow path twice.
+_FAST_APIFY_API_TIMEOUT = 10
+_FAST_APIFY_SOCKET_TIMEOUT = 12
+_FAILURE_CACHE_SECONDS = 60
+_FAILURE_CACHE: Dict[str, Dict[str, Any]] = {}
+_FAILURE_LOCK = threading.Lock()
+
+
+def _failure_key(home: str, away: str, date: Optional[str]) -> str:
+    return f"{core._norm(home)}|{core._norm(away)}|{core._iso_date(date) or str(date or '')}"
+
+
+def _cached_failure(home: str, away: str, date: Optional[str], force: bool) -> Optional[str]:
+    if force:
+        return None
+    key = _failure_key(home, away, date)
+    now = time.time()
+    with _FAILURE_LOCK:
+        item = _FAILURE_CACHE.get(key)
+        if not item:
+            return None
+        if now - float(item.get("at") or 0) >= _FAILURE_CACHE_SECONDS:
+            _FAILURE_CACHE.pop(key, None)
+            return None
+        return str(item.get("error") or "Forebet-Automatik ist vorübergehend nicht verfügbar.")
+
+
+def _remember_failure(home: str, away: str, date: Optional[str], error: Exception) -> None:
+    key = _failure_key(home, away, date)
+    with _FAILURE_LOCK:
+        _FAILURE_CACHE[key] = {"at": time.time(), "error": str(error)}
+
+
+def _clear_failure(home: str, away: str, date: Optional[str]) -> None:
+    key = _failure_key(home, away, date)
+    with _FAILURE_LOCK:
+        _FAILURE_CACHE.pop(key, None)
+
+
+def _fast_actor_items(force: bool = False) -> List[Dict[str, Any]]:
+    """Actor fetch with a hard iOS-safe upper bound while preserving v1 cache."""
+    token = os.environ.get("APIFY_TOKEN", "").strip()
+    if not token:
+        raise ForebetAutoError("APIFY_TOKEN fehlt. Fuer automatische Forebet-Abfragen muss der Token einmalig in Render gesetzt werden.")
+
+    now = time.time()
+    with base._LOCK:
+        cached = base._CACHE.get("items")
+        if cached is not None and not force and now - float(base._CACHE.get("at") or 0) < base.CACHE_SECONDS:
+            return list(cached)
+
+        request = urllib.request.Request(
+            base.APIFY_ENDPOINT + f"?clean=true&format=json&timeout={_FAST_APIFY_API_TIMEOUT}",
+            data=b"{}",
+            method="POST",
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "Authorization": f"Bearer {token}",
+            },
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=_FAST_APIFY_SOCKET_TIMEOUT) as response:
+                payload = response.read().decode("utf-8")
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", "replace")[:500]
+            raise ForebetAutoError(f"Apify HTTP {exc.code}: {detail}") from exc
+        except Exception as exc:
+            raise ForebetAutoError(f"Forebet-Automatik Timeout/Netzwerkfehler: {exc}") from exc
+
+        try:
+            items = json.loads(payload)
+        except Exception as exc:
+            raise ForebetAutoError("Apify lieferte kein gueltiges JSON.") from exc
+        if not isinstance(items, list):
+            raise ForebetAutoError("Apify lieferte keine Match-Liste.")
+        clean = [item for item in items if isinstance(item, dict)]
+        base._CACHE["items"] = clean
+        base._CACHE["at"] = now
+        return list(clean)
+
+
+def _fast_browser_pages(date: Optional[str], force: bool = False) -> List[Dict[str, Any]]:
+    """Browser fallback with the same iOS-safe external request budget."""
+    token = os.environ.get("APIFY_TOKEN", "").strip()
+    if not token:
+        raise ForebetAutoError("APIFY_TOKEN fehlt fuer den Forebet-Browser-Fallback.")
+
+    urls = core._page_urls(date)
+    cache_key = core._iso_date(date) or "today"
+    now = time.time()
+    with core._BROWSER_LOCK:
+        cached = core._BROWSER_CACHE.get(cache_key)
+        if (
+            cached
+            and not force
+            and now - float(cached.get("at") or 0) < core._BROWSER_CACHE_SECONDS
+            and isinstance(cached.get("pages"), list)
+        ):
+            return list(cached["pages"])
+
+        page_function = (
+            "async function pageFunction(context) {"
+            " await new Promise(r => setTimeout(r, 1200));"
+            " const body = document.body ? document.body.innerText : '';"
+            " return {url: context.request.url, title: document.title, text: body};"
+            "}"
+        )
+        payload = {
+            "startUrls": [{"url": url} for url in urls.values()],
+            "pageFunction": page_function,
+            "proxyConfiguration": {"useApifyProxy": True},
+            "maxPagesPerCrawl": len(urls),
+            "maxResultsPerCrawl": len(urls),
+            "linkSelector": "",
+            "injectJQuery": False,
+            "waitUntil": ["domcontentloaded"],
+        }
+        request = urllib.request.Request(
+            core.WEB_ENDPOINT + f"?clean=true&format=json&timeout={_FAST_APIFY_API_TIMEOUT}",
+            data=json.dumps(payload).encode("utf-8"),
+            method="POST",
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "Authorization": f"Bearer {token}",
+            },
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=_FAST_APIFY_SOCKET_TIMEOUT) as response:
+                raw = response.read().decode("utf-8")
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", "replace")[:500]
+            raise ForebetAutoError(f"Forebet-Browser-Fallback Apify HTTP {exc.code}: {detail}") from exc
+        except Exception as exc:
+            raise ForebetAutoError(f"Forebet-Browser-Fallback Timeout/Netzwerkfehler: {exc}") from exc
+
+        try:
+            pages = json.loads(raw)
+        except Exception as exc:
+            raise ForebetAutoError("Forebet-Browser-Fallback lieferte kein gueltiges JSON.") from exc
+        if not isinstance(pages, list):
+            raise ForebetAutoError("Forebet-Browser-Fallback lieferte keine Seitenliste.")
+        clean = [p for p in pages if isinstance(p, dict) and isinstance(p.get("text"), str)]
+        if not clean:
+            raise ForebetAutoError("Forebet-Browser-Fallback lieferte keinen Seitentext.")
+        core._BROWSER_CACHE[cache_key] = {"at": now, "pages": clean}
+        return list(clean)
+
+
+# v5 is the execution core used by Render. Bound only its external Apify waits;
+# the strict matching and probability validation remain unchanged.
+core._actor_items = _fast_actor_items
+core._browser_pages = _fast_browser_pages
 
 
 def _split_compact_probabilities(digits: str, count: int) -> Optional[Tuple[float, ...]]:
@@ -209,7 +375,16 @@ core._browser_snapshot = _browser_snapshot
 
 
 def build_snapshot(match_id: int, home: str, away: str, date: Optional[str] = None, force: bool = False) -> Dict[str, Any]:
-    return core.build_snapshot(match_id=match_id, home=home, away=away, date=date, force=force)
+    cached_error = _cached_failure(home, away, date, force)
+    if cached_error is not None:
+        raise ForebetAutoError(cached_error)
+    try:
+        result = core.build_snapshot(match_id=match_id, home=home, away=away, date=date, force=force)
+    except ForebetAutoError as exc:
+        _remember_failure(home, away, date, exc)
+        raise
+    _clear_failure(home, away, date)
+    return result
 
 
 def debug_match(home: str, away: str, date: Optional[str] = None, force: bool = False) -> Dict[str, Any]:
@@ -218,5 +393,8 @@ def debug_match(home: str, away: str, date: Optional[str] = None, force: bool = 
 
 def health() -> Dict[str, Any]:
     result = dict(core.health())
-    result["adapter"] = "forebet-auto-v5.2-same-day-fallback"
+    result["adapter"] = "forebet-auto-v5.3-ios-bounded"
+    result["apify_api_timeout_seconds"] = _FAST_APIFY_API_TIMEOUT
+    result["apify_socket_timeout_seconds"] = _FAST_APIFY_SOCKET_TIMEOUT
+    result["failure_cache_seconds"] = _FAILURE_CACHE_SECONDS
     return result
