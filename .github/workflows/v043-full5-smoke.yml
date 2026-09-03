@@ -1,0 +1,40 @@
+name: V0.4.3 FULL-5 smoke
+
+on:
+  push:
+    branches:
+      - feat/v0.4.3-full5
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+      - name: Syntax, entrypoint and FULL-5 model invariants
+        run: |
+          python -m py_compile app_v040.py v041_engine.py v042_engine.py v043_engine.py app.py
+          python - <<'PY'
+          import math
+          import app
+          import v043_engine as e
+          assert app.app.version == '0.4.3'
+          assert e.FEATURE_COUNT == 40
+          assert len(e.FULL5_FEATURES) == len(e.FULL5_MEAN) == len(e.FULL5_SCALE) == len(e.FULL5_COEF) == 40
+          assert all(math.isfinite(x) for x in e.FULL5_MEAN + e.FULL5_SCALE + e.FULL5_COEF)
+          assert all(x > 0 for x in e.FULL5_SCALE)
+          row={name:mean for name,mean in zip(e.FULL5_FEATURES,e.FULL5_MEAN)}
+          lam=e._predict_lambda(row)
+          assert 0.05 <= lam <= 3.95
+          health = next(route.endpoint for route in app.app.router.routes if getattr(route,'path',None)=='/api/health')()
+          assert health['version']=='0.4.3'
+          assert health['engine']=='five-source-full5-regularized-dixon-coles'
+          assert health['rho']==-0.25
+          assert health['full5_features']==40
+          assert health['candidate'] is True
+          assert health['production'] is False
+          print('V0.4.3 FULL-5 smoke OK', health, 'lambda@mean=', lam)
+          PY
