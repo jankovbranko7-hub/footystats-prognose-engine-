@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import concurrent.futures as _futures
+
 from fastapi import Query
 from fastapi.responses import JSONResponse
 
+import app as _app_module
 from app import app
 from forebet_auto import ForebetAutoError
 import forebet_auto_v5 as _forebet_v5
@@ -17,9 +20,55 @@ from forebet_auto_v5 import build_snapshot, debug_match, health
 from forebet_debug import debug_pages
 
 
+# Hard wall-clock budget for the complete server-side Forebet repair. Per-call
+# network timeouts alone are not enough because actor/browser/fallback can run
+# sequentially. The final iOS POST must always return a saveable JSON archive.
+_IOS_REPAIR_TOTAL_TIMEOUT_SECONDS = 8
+_REPAIR_EXECUTOR = _futures.ThreadPoolExecutor(
+    max_workers=2,
+    thread_name_prefix="forebet-ios-repair",
+)
+_ORIGINAL_REPAIR = _app_module._repair_forebet_from_match_data
+
+
+def _bounded_repair_forebet_from_match_data(match_data, forebet_data):
+    future = _REPAIR_EXECUTOR.submit(_ORIGINAL_REPAIR, match_data, forebet_data)
+    try:
+        return future.result(timeout=_IOS_REPAIR_TOTAL_TIMEOUT_SECONDS)
+    except _futures.TimeoutError:
+        match = _app_module.mf(match_data)
+        match_id = int(match.get("match_id") or 0)
+        home = str(match.get("home_name") or "").strip()
+        away = str(match.get("away_name") or "").strip()
+        match_date = _app_module._forebet_match_date(match_data)
+        return {
+            "ok": False,
+            "schema": "forebet-auto-error-v1",
+            "phase": "FOREBET_SERVER_REPAIR_TIMEOUT",
+            "error": (
+                "Forebet-Reparatur überschritt das iOS-Laufzeitbudget von "
+                f"{_IOS_REPAIR_TOTAL_TIMEOUT_SECONDS} Sekunden. "
+                "Die FootyStats-Analyse wird trotzdem als gemeinsame Datei gespeichert."
+            ),
+            "match_id": match_id,
+            "home": home,
+            "away": away,
+            "match_date": match_date,
+            "source_url": "https://www.forebet.com/",
+            "odds_used": False,
+        }, True
+
+
+# selected_analysis_file() resolves this global at request time, so replacing it
+# here bounds the existing endpoint without changing the signed AEA1 Shortcut.
+_app_module._repair_forebet_from_match_data = _bounded_repair_forebet_from_match_data
+
+
 @app.get("/api/forebet-auto/health")
 def forebet_auto_health():
-    return health()
+    result = dict(health())
+    result["ios_repair_total_timeout_seconds"] = _IOS_REPAIR_TOTAL_TIMEOUT_SECONDS
+    return result
 
 
 @app.get("/api/forebet-auto/debug-pages")
