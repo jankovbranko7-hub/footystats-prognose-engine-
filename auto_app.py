@@ -9,6 +9,7 @@ import app as _app_module
 from app import app
 from forebet_auto import ForebetAutoError
 import forebet_auto_v5 as _forebet_v5
+from forebet_iphone_html import register_routes as _register_iphone_html_routes
 
 # The iPhone final POST must finish before Shortcuts aborts the request. The
 # Forebet repair can perform up to three sequential external attempts (actor,
@@ -18,6 +19,11 @@ _forebet_v5._FAST_APIFY_SOCKET_TIMEOUT = 6
 
 from forebet_auto_v5 import build_snapshot, debug_match, health
 from forebet_debug import debug_pages
+
+# The normal ELITE V2.1 path fetches Forebet HTML on the iPhone and sends it to
+# Render only for deterministic parsing. Apify remains a bounded fallback for
+# diagnostics/repair, not the primary iPhone acquisition path.
+_register_iphone_html_routes(app)
 
 
 # Hard wall-clock budget for the complete server-side Forebet repair. Per-call
@@ -68,6 +74,8 @@ _app_module._repair_forebet_from_match_data = _bounded_repair_forebet_from_match
 def forebet_auto_health():
     result = dict(health())
     result["ios_repair_total_timeout_seconds"] = _IOS_REPAIR_TOTAL_TIMEOUT_SECONDS
+    result["primary_acquisition"] = "iphone-html"
+    result["server_forebet_fetch_required"] = False
     return result
 
 
@@ -144,7 +152,7 @@ def forebet_auto_export(
     date: str | None = Query(default=None),
     force: bool = Query(default=False),
 ):
-    """Always return JSON; final analysis can repair identity from MatchDaten."""
+    """Legacy bounded server fetch; retained only as fallback/diagnostic path."""
     home = (home or "").strip()
     away = (away or "").strip()
     if not home or not away:
