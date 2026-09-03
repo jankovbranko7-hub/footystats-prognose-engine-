@@ -30,15 +30,14 @@ def main() -> None:
         method="POST",
         headers={
             "Content-Type": "application/json",
-            "Accept": "application/octet-stream,*/*",
+            "User-Agent": "cherri/1.0",
             "Origin": "https://routinehub.co",
             "Referer": "https://routinehub.co/",
-            "User-Agent": "FootyStats-Forebet-ELITE-Builder/2.1",
         },
     )
 
     try:
-        with urllib.request.urlopen(request, timeout=90) as response:
+        with urllib.request.urlopen(request, timeout=30) as response:
             signed = response.read()
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", "replace")[:1000]
