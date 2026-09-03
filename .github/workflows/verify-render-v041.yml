@@ -1,0 +1,27 @@
+name: Verify Render V0.4.1
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  verify-render:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify production health
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL="https://footystats-prognose-engine.onrender.com/api/health"
+          for i in $(seq 1 36); do
+            BODY="$(curl -fsS --max-time 20 "$URL" 2>/dev/null || true)"
+            echo "attempt=$i body=$BODY"
+            if echo "$BODY" | python -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok") is True and d.get("version")=="0.4.1" and d.get("engine")=="five-source-hybrid"'; then
+              echo "Render production is V0.4.1"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Render did not report V0.4.1"
+          exit 1
