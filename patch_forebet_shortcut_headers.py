@@ -47,9 +47,18 @@ def main() -> None:
         if action.get("WFWorkflowActionIdentifier") == "is.workflow.actions.setvariable"
         and action.get("WFWorkflowActionParameters", {}).get("WFVariableName") == "ForebetDaten"
     )
-    start = max(0, store_index - 20)
+    # The Forebet block starts at the MatchDaten -> data read inserted by the
+    # ELITE builder. Restricting the scan to this block avoids touching the last
+    # FootyStats GET that happens to sit nearby in the workflow.
+    start_index = max(
+        i for i, action in enumerate(actions[:store_index])
+        if action.get("WFWorkflowActionIdentifier") == "is.workflow.actions.getvalueforkey"
+        and action.get("WFWorkflowActionParameters", {}).get("WFDictionaryKey") == "data"
+        and "MatchDaten" in str(action.get("WFWorkflowActionParameters", {}).get("WFInput"))
+    )
+
     patched = 0
-    for action in actions[start:store_index]:
+    for action in actions[start_index:store_index]:
         if action.get("WFWorkflowActionIdentifier") != "is.workflow.actions.downloadurl":
             continue
         params = action.setdefault("WFWorkflowActionParameters", {})
