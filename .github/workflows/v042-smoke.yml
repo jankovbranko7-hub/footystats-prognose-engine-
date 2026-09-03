@@ -14,17 +14,21 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install -r requirements.txt
-      - name: Syntax and import
+      - name: Syntax, production entrypoint and probability coherence
         run: |
-          python -m py_compile app_v040.py v041_engine.py v042_engine.py app_v042.py
+          python -m py_compile app_v040.py v041_engine.py v042_engine.py app_v042.py app.py
           python - <<'PY'
-          import app_v042
-          assert app_v042.app.version == '0.4.2'
+          import app
+          assert app.app.version == '0.4.2'
           from v042_engine import dixon_coles, RHO
           p=dixon_coles(1.6,1.2)
           assert abs(p['home_win']+p['draw']+p['away_win']-1.0) < 1e-9
           assert abs(p['btts_yes']+p['btts_no']-1.0) < 1e-9
           assert abs(p['over_2_5']+p['under_2_5']-1.0) < 1e-9
           assert RHO == -0.25
-          print('V0.4.2 smoke OK', p)
+          health = next(route.endpoint for route in app.app.router.routes if getattr(route,'path',None)=='/api/health')()
+          assert health['version']=='0.4.2'
+          assert health['engine']=='five-source-hybrid-dixon-coles'
+          assert health['production'] is True
+          print('V0.4.2 production smoke OK', health)
           PY
