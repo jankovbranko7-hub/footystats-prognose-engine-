@@ -1,0 +1,83 @@
+name: Build signed ELITE shortcut
+
+on:
+  push:
+    branches:
+      - feat/forebet-auto-v4
+    paths:
+      - build_shortcut_elite_auto.py
+      - sign_elite_shortcut.py
+      - shortcut_date_auto.py
+      - .github/workflows/build-sign-elite-shortcut.yml
+
+permissions:
+  contents: write
+
+jobs:
+  build-sign:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install runtime dependencies
+        run: pip install -r requirements.txt
+
+      - name: Build corrected unsigned shortcut
+        env:
+          FOREBET_AUTO_BASE_URL: https://footystats-forebet-auto-v4-test.onrender.com
+        run: python build_shortcut_elite_auto.py
+
+      - name: Sign with HubSign and verify AEA1
+        run: python sign_elite_shortcut.py
+
+      - name: Verify corrected Forebet identity source
+        run: |
+          python - <<'PY'
+          import plistlib
+          from pathlib import Path
+
+          path = Path('FootyStats_Forebet_ELITE_V2_1_unsigned.shortcut')
+          workflow = plistlib.loads(path.read_bytes())
+          actions = workflow['WFWorkflowActions']
+          data_reads = [
+              a for a in actions
+              if a.get('WFWorkflowActionIdentifier') == 'is.workflow.actions.getvalueforkey'
+              and a.get('WFWorkflowActionParameters', {}).get('WFDictionaryKey') == 'data'
+              and 'MatchDaten' in str(a.get('WFWorkflowActionParameters', {}).get('WFInput'))
+          ]
+          home_reads = [
+              a for a in actions
+              if a.get('WFWorkflowActionIdentifier') == 'is.workflow.actions.getvalueforkey'
+              and a.get('WFWorkflowActionParameters', {}).get('WFDictionaryKey') == 'home_name'
+          ]
+          away_reads = [
+              a for a in actions
+              if a.get('WFWorkflowActionIdentifier') == 'is.workflow.actions.getvalueforkey'
+              and a.get('WFWorkflowActionParameters', {}).get('WFDictionaryKey') == 'away_name'
+          ]
+          if not data_reads or not home_reads or not away_reads:
+              raise SystemExit('Corrected MatchDaten Forebet identity chain missing')
+          signed = Path('FootyStats_Forebet_ELITE_V2_1.shortcut').read_bytes()
+          if not signed.startswith(b'AEA1'):
+              raise SystemExit('Signed shortcut is not AEA1')
+          print('identity_source=MatchDaten.data')
+          print('signed_magic=AEA1')
+          PY
+
+      - name: Commit refreshed signed payload
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add elite_signed_shortcut.py
+          if git diff --cached --quiet; then
+            echo "Signed payload unchanged"
+          else
+            git commit -m "build: refresh corrected AEA1 ELITE V2.1 shortcut"
+            git push
+          fi
