@@ -6,7 +6,7 @@ import uuid
 from typing import Any, Dict
 
 
-PRODUCT_NAME = "FootyStats + Forebet ELITE PICKS"
+PRODUCT_NAME = "FootyStats + Forebet ELITE V2"
 DATE_ASK_UUID = "BD34DEEF-AD61-42EE-A348-AA244E6DEEFE"
 DATE_ASK_OUTPUT_NAME = "Nach Eingabe fragen"
 
@@ -139,8 +139,6 @@ def _json_variable_item(key: str, variable: str) -> Dict[str, Any]:
 
 def _analysis_actions(base_url: str) -> list[Dict[str, Any]]:
     download = _uuid()
-    decision = _uuid()
-    conditional = _uuid()
     archive = _uuid()
     rename = _uuid()
     path_text = _uuid()
@@ -151,7 +149,7 @@ def _analysis_actions(base_url: str) -> list[Dict[str, Any]]:
             "WFWorkflowActionIdentifier": "is.workflow.actions.downloadurl",
             "WFWorkflowActionParameters": {
                 "UUID": download,
-                "WFURL": _token_string(base_url.rstrip("/") + "/api/elite-candidate", {}),
+                "WFURL": _token_string(base_url.rstrip("/") + "/api/selected-analysis", {}),
                 "WFHTTPMethod": "POST",
                 "WFHTTPBodyType": "JSON",
                 "WFJSONValues": {
@@ -172,24 +170,6 @@ def _analysis_actions(base_url: str) -> list[Dict[str, Any]]:
         {
             "WFWorkflowActionIdentifier": "is.workflow.actions.getvalueforkey",
             "WFWorkflowActionParameters": {
-                "UUID": decision,
-                "WFInput": _output_attachment(download, "Inhalt der URL"),
-                "WFDictionaryKey": "decision",
-            },
-        },
-        {
-            "WFWorkflowActionIdentifier": "is.workflow.actions.conditional",
-            "WFWorkflowActionParameters": {
-                "GroupingIdentifier": conditional,
-                "WFControlFlowMode": 0,
-                "WFCondition": 4,
-                "WFConditionalActionString": "SPIELEN",
-                "WFInput": _output_attachment(decision, "Wörterbuchwert"),
-            },
-        },
-        {
-            "WFWorkflowActionIdentifier": "is.workflow.actions.getvalueforkey",
-            "WFWorkflowActionParameters": {
                 "UUID": archive,
                 "WFInput": _output_attachment(download, "Inhalt der URL"),
                 "WFDictionaryKey": "archive",
@@ -200,7 +180,7 @@ def _analysis_actions(base_url: str) -> list[Dict[str, Any]]:
             "WFWorkflowActionParameters": {
                 "UUID": rename,
                 "WFName": _token_string(
-                    "\ufffc_ELITE_Analyse.json",
+                    "\ufffc_FootyStats_Forebet_Analyse.json",
                     {"{0, 1}": {"VariableName": "MatchID", "Type": "Variable"}},
                 ),
                 "WFInput": _output_attachment(archive, "Wörterbuchwert"),
@@ -212,14 +192,10 @@ def _analysis_actions(base_url: str) -> list[Dict[str, Any]]:
             "WFWorkflowActionParameters": {
                 "UUID": path_text,
                 "WFTextActionText": _token_string(
-                    "FootyStats_ELITE/\ufffc/\ufffc_ELITE_Analyse.json",
+                    "\ufffc/\ufffc_FootyStats_Forebet_Analyse.json",
                     {
-                        "{16, 1}": {
-                            "OutputUUID": DATE_ASK_UUID,
-                            "Type": "ActionOutput",
-                            "OutputName": DATE_ASK_OUTPUT_NAME,
-                        },
-                        "{18, 1}": {"VariableName": "MatchID", "Type": "Variable"},
+                        "{0, 1}": {"VariableName": "MatchID", "Type": "Variable"},
+                        "{2, 1}": {"VariableName": "MatchID", "Type": "Variable"},
                     },
                 ),
             },
@@ -237,42 +213,15 @@ def _analysis_actions(base_url: str) -> list[Dict[str, Any]]:
                 ),
             },
         },
-        {
-            "WFWorkflowActionIdentifier": "is.workflow.actions.conditional",
-            "WFWorkflowActionParameters": {
-                "UUID": _uuid(),
-                "GroupingIdentifier": conditional,
-                "WFControlFlowMode": 2,
-            },
-        },
     ]
 
 
-def _result_folder_action() -> Dict[str, Any]:
-    return {
-        "WFWorkflowActionIdentifier": "is.workflow.actions.file.createfolder",
-        "WFWorkflowActionParameters": {
-            "UUID": _uuid(),
-            "WFFilePath": _token_string(
-                "FootyStats_ELITE/\ufffc",
-                {
-                    "{16, 1}": {
-                        "OutputUUID": DATE_ASK_UUID,
-                        "Type": "ActionOutput",
-                        "OutputName": DATE_ASK_OUTPUT_NAME,
-                    },
-                },
-            ),
-        },
-    }
-
-
 def build_date_auto_shortcut(base_shortcut: bytes, base_url: str) -> bytes:
-    """Convert the stable V2 export into a date-only ELITE selection workflow.
+    """Extend the stable V2 selection flow with Forebet and joint analysis.
 
-    The FootyStats API key remains an installation question. During a run the only
-    user input is the date. Every fixture is checked, but only SPIELEN candidates
-    are saved, with all six sources and the analysis in one JSON archive.
+    The FootyStats API key remains an installation question. During a run the user
+    enters the date and selects one fixture exactly as in V2. Only that fixture is
+    fetched and saved as one joint six-source analysis archive.
     """
     if not base_url.startswith("https://"):
         raise ValueError("Die öffentliche AUTO-URL muss HTTPS verwenden.")
@@ -302,13 +251,9 @@ def build_date_auto_shortcut(base_shortcut: bytes, base_url: str) -> bytes:
     if selected_set_index <= games_set_index:
         raise ValueError("Der Einzelspielblock des V2-Kurzbefehls ist nicht eindeutig.")
 
-    prefix = copy.deepcopy(source_actions[: games_set_index + 1])
+    prefix = copy.deepcopy(source_actions[: selected_set_index + 1])
     body = copy.deepcopy(source_actions[selected_set_index + 1 :])
 
-    # A daily outer loop must start these collectors anew for every match. The
-    # original single-match shortcut used Append because it ran only once.
-    reset_on_first_append = {"LeagueSeiten", "FormTeams", "PlayerSeiten"}
-    reset_done: set[str] = set()
     data_variables = {
         "LeagueDaten": "LeagueDatenFinal",
         "MatchDaten": "MatchDaten",
@@ -323,7 +268,7 @@ def build_date_auto_shortcut(base_shortcut: bytes, base_url: str) -> bytes:
         parameters = action.setdefault("WFWorkflowActionParameters", {})
         if identifier == "is.workflow.actions.showresult":
             continue
-        if identifier in {"is.workflow.actions.documentpicker.save", "is.workflow.actions.file.createfolder"}:
+        if identifier == "is.workflow.actions.documentpicker.save":
             continue
         if identifier == "is.workflow.actions.gettext" and any(
             f"{marker}.json" in str(parameters) for marker in data_variables
@@ -345,71 +290,31 @@ def build_date_auto_shortcut(base_shortcut: bytes, base_url: str) -> bytes:
             })
             captured_data.add(marker)
             continue
-        if identifier == "is.workflow.actions.appendvariable":
-            variable = parameters.get("WFVariableName")
-            if variable in reset_on_first_append and variable not in reset_done:
-                action["WFWorkflowActionIdentifier"] = "is.workflow.actions.setvariable"
-                reset_done.add(variable)
         cleaned_body.append(action)
-    if reset_done != reset_on_first_append:
-        raise ValueError("Nicht alle Seitensammler konnten für den Tageslauf zurückgesetzt werden.")
     if captured_data != set(data_variables):
         missing = sorted(set(data_variables) - captured_data)
         raise ValueError(f"Nicht alle fünf FootyStats-Datenblöcke wurden erfasst: {missing}")
 
-    grouping = _uuid()
-    repeat_start = {
-        "WFWorkflowActionIdentifier": "is.workflow.actions.repeat.each",
-        "WFWorkflowActionParameters": {
-            "WFInput": _variable_attachment("SpieleDaten"),
-            "GroupingIdentifier": grouping,
-            "WFControlFlowMode": 0,
-        },
-    }
-    set_match = {
-        "WFWorkflowActionIdentifier": "is.workflow.actions.setvariable",
-        "WFWorkflowActionParameters": {
-            "UUID": _uuid(),
-            "WFInput": _variable_attachment("Repeat Item"),
-            "WFVariableName": "        GefundenesSpiel",
-        },
-    }
-    repeat_end = {
-        "WFWorkflowActionIdentifier": "is.workflow.actions.repeat.each",
-        "WFWorkflowActionParameters": {
-            "UUID": _uuid(),
-            "GroupingIdentifier": grouping,
-            "WFControlFlowMode": 2,
-        },
-    }
-
-    actions = (
-        prefix
-        + [_result_folder_action(), repeat_start, set_match]
-        + cleaned_body
-        + _forebet_actions(base_url)
-        + _analysis_actions(base_url)
-        + [repeat_end]
-    )
+    actions = prefix + cleaned_body + _forebet_actions(base_url) + _analysis_actions(base_url)
     workflow["WFWorkflowActions"] = actions
     workflow["WFWorkflowName"] = PRODUCT_NAME
     payload = plistlib.dumps(workflow, fmt=plistlib.FMT_BINARY, sort_keys=False)
 
     verified = plistlib.loads(payload)
     identifiers = [action.get("WFWorkflowActionIdentifier") for action in verified["WFWorkflowActions"]]
-    if "is.workflow.actions.choosefromlist" in identifiers:
-        raise ValueError("Die Spielauswahl wurde nicht vollständig entfernt.")
+    if identifiers.count("is.workflow.actions.choosefromlist") != 1:
+        raise ValueError("Die originale V2-Spielauswahl fehlt.")
     if sum(identifier == "is.workflow.actions.ask" for identifier in identifiers) != 1:
         raise ValueError("Der Kurzbefehl darf während des Laufs nur nach dem Datum fragen.")
     serialized = str(verified)
     if "api/forebet-auto/export" not in serialized:
         raise ValueError("Der automatische Forebet-Export fehlt.")
-    if "api/elite-candidate" not in serialized:
-        raise ValueError("Die automatische ELITE-Auswahl fehlt.")
+    if "api/selected-analysis" not in serialized:
+        raise ValueError("Die gemeinsame Render-Analyse fehlt.")
     if identifiers.count("is.workflow.actions.documentpicker.save") != 1:
-        raise ValueError("Der Kurzbefehl darf pro qualifiziertem Spiel nur ein gemeinsames Archiv speichern.")
-    if identifiers.count("is.workflow.actions.conditional") != 2:
-        raise ValueError("Die SPIELEN-Speichersperre fehlt.")
+        raise ValueError("Der Kurzbefehl darf nur ein gemeinsames Archiv speichern.")
+    if "is.workflow.actions.conditional" in identifiers:
+        raise ValueError("Der fehlerhafte automatische Auswahlfilter ist noch vorhanden.")
     if any(f"_{marker}.json" in serialized for marker in data_variables):
         raise ValueError("Ein alter Einzeldatei-Export ist noch vorhanden.")
     if any("Forebet:" in str(action) for action in verified["WFWorkflowActions"]):

@@ -8,7 +8,7 @@ import app
 from shortcut_date_auto import PRODUCT_NAME, build_date_auto_shortcut
 
 
-OUTPUT_PATH = Path(__file__).with_name("FootyStats_Forebet_ELITE_PICKS_unsigned.shortcut")
+OUTPUT_PATH = Path(__file__).with_name("FootyStats_Forebet_ELITE_V2_unsigned.shortcut")
 DEFAULT_BASE_URL = "https://footystats-forebet-auto-v4-test.onrender.com"
 
 
@@ -19,10 +19,9 @@ def main() -> None:
     OUTPUT_PATH.write_bytes(payload)
     print(OUTPUT_PATH)
     print(f"product={PRODUCT_NAME}")
-    print("runtime_questions=date_only")
-    print("all_matches_checked=true")
-    print("saved_decision=SPIELEN_only")
-    print("files_per_saved_match=1")
+    print("runtime_flow=date_then_v2_match_selection")
+    print("matches_processed=selected_match_only")
+    print("files_per_selected_match=1")
     print("forebet_manual_input=false")
 
 

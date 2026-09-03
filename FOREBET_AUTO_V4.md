@@ -5,14 +5,12 @@ Dieser Branch ist die vollständige ELITE-AUTO-Ausführung. `main`,
 
 ## Tageslauf
 
-Der Nutzer gibt ausschließlich das Datum ein. Danach verarbeitet der
-Kurzbefehl automatisch alle von FootyStats gelieferten Tagesmatches. Die sechs
-Quellen werden intern an `/api/elite-candidate` gesendet. Nur bei der endgültigen
-Entscheidung `SPIELEN` wird ein gemeinsames Archiv mit fünf FootyStats-Quellen,
-Forebet und Analyse gespeichert. Dadurch entstehen null oder eine Datei pro
-qualifiziertem Match statt sechs Dateien für jede Tagespartie.
+Der Nutzer gibt das Datum ein und wählt danach wie in V2 selbst ein Spiel aus.
+Nur dieses Spiel wird verarbeitet. Die fünf FootyStats-Quellen und Forebet werden
+intern an `/api/selected-analysis` gesendet und von Render gemeinsam analysiert.
+Danach wird genau eine gemeinsame Datei gespeichert.
 
-Es gibt weder eine Spielauswahl noch eine Forebet-Texteingabe.
+Es gibt keine automatische Spielentscheidung und keine Forebet-Texteingabe.
 
 ## Forebet-Zugriff
 
@@ -26,11 +24,12 @@ Browser-Fallbacks. `APIFY_TOKEN` wird ausschließlich serverseitig gesetzt.
 - `GET /api/forebet-auto?match_id=...&home=...&away=...&date=...`
 - `GET /api/forebet-auto/export?match_id=...&home=...&away=...&date=...`
 - `POST /api/elite-candidate`
+- `POST /api/selected-analysis`
 
 Der Export-Endpunkt antwortet auch bei einem nicht gefundenen Forebet-Spiel
 mit `FOREBET_UNAVAILABLE`. So bricht ein einzelner Fehler nicht den kompletten
-Tageslauf ab. Die spätere Analyse bleibt für dieses Match gesperrt und es wird
-keine Ergebnisdatei gespeichert.
+Lauf ab. Die Analyse bleibt für dieses Match korrekt gesperrt; der Fehler und
+alle sechs gelieferten Quellen werden trotzdem gemeinsam dokumentiert.
 
 ## Schutzregeln
 

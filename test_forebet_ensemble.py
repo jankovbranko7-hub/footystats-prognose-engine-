@@ -86,7 +86,7 @@ def test_six_file_bundle_uses_both_models_and_changes_probabilities():
 
     result = app._analyze_bundle(parsed)
     assert result["ok"] is True
-    assert result["model_version"] == "0.8.0"
+    assert result["model_version"] == "0.9.0"
     assert result["ensemble"]["active"] is True
     assert result["ensemble"]["weights"] == {"footystats": 0.5, "forebet": 0.5}
     assert result["forebet_model"]["odds_used"] is False
@@ -142,7 +142,7 @@ def test_joint_archive_contains_all_six_sources_and_no_odds_or_secrets():
     assert package["server_side_persistence"] is False
 
 
-def test_new_shortcut_asks_only_for_date_and_saves_one_archive_only_for_elite_games():
+def test_new_shortcut_keeps_v2_match_selection_and_saves_one_joint_analysis():
     payload = build_date_auto_shortcut(
         base64.b64decode(app._PREPARED_SHORTCUT_B64),
         "https://elite.example.test",
@@ -152,17 +152,17 @@ def test_new_shortcut_asks_only_for_date_and_saves_one_archive_only_for_elite_ga
     actions = workflow["WFWorkflowActions"]
     identifiers = [item["WFWorkflowActionIdentifier"] for item in actions]
     assert identifiers.count("is.workflow.actions.ask") == 1
-    assert "is.workflow.actions.choosefromlist" not in identifiers
-    assert identifiers[-1] == "is.workflow.actions.repeat.each"
-    assert actions[-1]["WFWorkflowActionParameters"]["WFControlFlowMode"] == 2
+    assert identifiers.count("is.workflow.actions.choosefromlist") == 1
+    assert identifiers.count("is.workflow.actions.repeat.each") == 2
+    assert identifiers[-1] == "is.workflow.actions.documentpicker.save"
     serialized = str(workflow)
     assert "/api/forebet-auto/export" in serialized
-    assert "/api/elite-candidate" in serialized
+    assert "/api/selected-analysis" in serialized
     assert "Forebet:" not in serialized
     assert identifiers.count("is.workflow.actions.documentpicker.save") == 1
-    assert identifiers.count("is.workflow.actions.conditional") == 2
+    assert identifiers.count("is.workflow.actions.conditional") == 0
     assert identifiers.count("is.workflow.actions.file.createfolder") == 1
-    assert "_ELITE_Analyse.json" in serialized
+    assert "_FootyStats_Forebet_Analyse.json" in serialized
     for old_name in (
         "_MatchDaten.json", "_LeagueDaten.json", "_FormDaten.json",
         "_TableDaten.json", "_PlayerDaten.json", "_ForebetDaten.json",
@@ -178,7 +178,7 @@ def test_new_shortcut_asks_only_for_date_and_saves_one_archive_only_for_elite_ga
             item for item in actions
             if item.get("WFWorkflowActionParameters", {}).get("WFVariableName") == variable
         )
-        assert first["WFWorkflowActionIdentifier"] == "is.workflow.actions.setvariable"
+        assert first["WFWorkflowActionIdentifier"] == "is.workflow.actions.appendvariable"
 
 
 def test_http_health_and_homepage_identify_new_product_and_backup():
@@ -187,17 +187,17 @@ def test_http_health_and_homepage_identify_new_product_and_backup():
     assert health.status_code == 200
     assert health.json() == {
         "ok": True,
-        "version": "0.8.0",
+        "version": "0.9.0",
         "footystats_backup": "0.4.0",
         "forebet_ensemble": True,
-        "date_only_shortcut": True,
-        "elite_only_single_archive": True,
+        "v2_match_selection": True,
+        "single_joint_archive": True,
         "hubsign_format": "AEA1",
         "shortcut_delivery": "pre_signed",
     }
     homepage = client.get("/")
     assert homepage.status_code == 200
-    assert "FootyStats + Forebet ELITE Analyse v0.8.0" in homepage.text
+    assert "FootyStats + Forebet ELITE Analyse v0.9.0" in homepage.text
     assert "alle sechs JSON-Dateien" in homepage.text
 
 
@@ -288,6 +288,40 @@ def test_elite_candidate_returns_exactly_one_joint_archive_for_playing_match(mon
     }
 
 
+def test_selected_analysis_returns_joint_archive_for_user_choice_even_when_not_playing():
+    client = TestClient(app.app)
+    response = client.post("/api/selected-analysis", json=_payload_json())
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["decision"] == "AUSLASSEN"
+    assert body["archive"]["source_coverage"]["missing"] == []
+    assert set(body["archive"]["sources"]) == {
+        "match", "league", "form", "table", "player", "forebet",
+    }
+    assert body["archive"]["analysis"]["ensemble"]["active"] is True
+
+
+def test_selected_analysis_archives_forebet_failure_instead_of_selecting_another_game():
+    payload = _payload_json()
+    payload["forebetData"] = {
+        "ok": False,
+        "match_id": MATCH_ID,
+        "phase": "FOREBET_UNAVAILABLE",
+        "error": "nicht sicher gefunden",
+    }
+    client = TestClient(app.app)
+    response = client.post("/api/selected-analysis", json=payload)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is False
+    assert body["decision"] == "ANALYSE NICHT MÖGLICH"
+    assert body["archive"]["source_coverage"]["missing"] == []
+    assert body["archive"]["analysis"]["phase"] == "FOREBET_VALIDATION_FAILED"
+
+
 def test_forebet_export_error_is_a_file_and_does_not_abort_daily_shortcut(monkeypatch):
     def fail(**_kwargs):
         raise auto_app.ForebetAutoError("nicht gefunden")
@@ -323,7 +357,7 @@ def test_pre_signed_shortcut_download_is_apple_aea1():
         assert response.content.startswith(b"AEA1")
         assert len(response.content) > 20_000
         assert response.headers["content-type"] == "application/octet-stream"
-        assert "FootyStats + Forebet ELITE PICKS.shortcut" in response.headers["content-disposition"]
+        assert "FootyStats + Forebet ELITE V2.shortcut" in response.headers["content-disposition"]
 
 
 def test_pre_signed_shortcut_refuses_corrupt_embedded_payload(monkeypatch):
