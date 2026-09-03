@@ -1,8 +1,8 @@
-"""V0.4.2 candidate: V0.4.1 hybrid lambda engine + Dixon-Coles scoregrid.
+"""V0.4.2 production: V0.4.1 hybrid lambda engine + Dixon-Coles scoregrid.
 
-This module intentionally changes only the score-distribution layer. The
-five-source V0.4.1 lambda construction, evidence blocks and decision gates stay
-unchanged so the backtest isolates the effect of Dixon-Coles.
+This release changes only the score-distribution layer. The five-source V0.4.1
+lambda construction, evidence blocks and decision gates stay unchanged so the
+137-match validation isolates the effect of Dixon-Coles.
 """
 from __future__ import annotations
 
@@ -16,12 +16,7 @@ RHO = -0.25
 
 
 def dixon_coles(hl: float, al: float, cap: int = 10) -> Dict[str, float]:
-    """Dixon-Coles low-score correction on an independent Poisson scoregrid.
-
-    rho is frozen at -0.25 for this candidate because every competition-grouped
-    training fold in the 137-match model battle selected the lower search bound.
-    The returned distribution is renormalized after the four-cell correction.
-    """
+    """Dixon-Coles low-score correction on an independent Poisson scoregrid."""
     hl = float(hl); al = float(al)
     if not (math.isfinite(hl) and math.isfinite(al)) or hl <= 0 or al <= 0:
         raise ValueError("Dixon-Coles benötigt positive endliche Lambdas.")
@@ -102,7 +97,7 @@ def apply_patch(legacy: Any) -> Any:
             "score_distribution": "Dixon-Coles",
             "dixon_coles_rho": RHO,
             "dixon_coles_low_score_correction": True,
-            "candidate_status": "parallel_backtest_candidate",
+            "release_status": "production",
         })
         out["method"] = method
         model = (((out.get("expected_goals") or {}).get("league_relative_model")) or {})
@@ -112,7 +107,7 @@ def apply_patch(legacy: Any) -> Any:
             model["method"] = "V0.4.2 hybrid lambdas + Dixon-Coles scoregrid"
         out.setdefault("notes", [])
         out["notes"] = [n for n in out["notes"] if "V0.4.1" not in str(n)] + [
-            "V0.4.2 Dixon-Coles Kandidat aktiv; Lambda-Core und Five-Source Gates entsprechen V0.4.1.",
+            "V0.4.2 Dixon-Coles Produktion aktiv; Lambda-Core und Five-Source Gates entsprechen V0.4.1.",
             f"Dixon-Coles rho={RHO:.2f}; Low-Score-Zellen 0:0, 0:1, 1:0, 1:1 werden korrigiert.",
         ]
         return out
@@ -132,12 +127,12 @@ def apply_patch(legacy: Any) -> Any:
     legacy.elite_protocol_report = protocol_v042
     legacy._attach_supplemental = attach_v042
     legacy.app.version = VERSION
-    legacy.app.title = "FootyStats Prognose Engine V0.4.2 Dixon-Coles Candidate"
-    legacy.INDEX_HTML = legacy.INDEX_HTML.replace("FootyStats Prognose Engine v0.4.1", "FootyStats Prognose Engine v0.4.2 DC")
-    legacy.INDEX_HTML = legacy.INDEX_HTML.replace("V0.4.1 Hybrid-Core", "V0.4.2 Dixon-Coles Candidate")
+    legacy.app.title = "FootyStats Prognose Engine V0.4.2 Dixon-Coles"
+    legacy.INDEX_HTML = legacy.INDEX_HTML.replace("FootyStats Prognose Engine v0.4.1", "FootyStats Prognose Engine v0.4.2 Dixon-Coles")
+    legacy.INDEX_HTML = legacy.INDEX_HTML.replace("V0.4.1 Hybrid-Core", "V0.4.2 Dixon-Coles")
 
     legacy.app.router.routes = [route for route in legacy.app.router.routes if getattr(route, "path", None) != "/api/health"]
     def health() -> Dict[str, Any]:
-        return {"ok": True, "version": VERSION, "engine": "five-source-hybrid-dixon-coles", "rho": RHO, "production": False, "baseline": "v0.4.1"}
+        return {"ok": True, "version": VERSION, "engine": "five-source-hybrid-dixon-coles", "rho": RHO, "production": True, "backup": "v0.4.1"}
     legacy.app.add_api_route("/api/health", health, methods=["GET"])
-    return legacy.app
+    return app
