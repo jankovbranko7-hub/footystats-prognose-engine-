@@ -1,0 +1,5 @@
+V0.4.3 FULL-5 production deployment candidate.
+V0.4.2 hybrid lambda retained as baseline.
+Selective FULL-5 strengthening enabled.
+Dixon-Coles rho=-0.25 retained.
+Elite-Lambda correction disabled.
