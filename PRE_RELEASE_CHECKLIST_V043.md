@@ -1,0 +1,6 @@
+- V0.4.2 hybrid lambda retained
+- FULL-5 selective layer enabled
+- Dixon-Coles rho -0.25 retained
+- Elite-Lambda correction disabled
+- FULL-5 alpha locked to 3.0
+- GitHub smoke must pass before main promotion
