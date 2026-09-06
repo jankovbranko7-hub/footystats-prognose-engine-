@@ -5,6 +5,7 @@ on:
     branches:
       - feat/v0.4.3-full5
       - feat/v0.4.3-pairing-ui-final
+      - feat/v0.4.3-observe-fazit
       - main
 
 jobs:
@@ -18,7 +19,7 @@ jobs:
       - run: pip install -r requirements.txt
       - name: Syntax, entrypoint and FULL-5 production invariants
         run: |
-          python -m py_compile app_v040.py v041_engine.py v042_engine.py v043_engine.py v043_release.py v043_pairing_ui.py app.py
+          python -m py_compile app_v040.py v041_engine.py v042_engine.py v043_engine.py v043_release.py v043_pairing_ui.py v043_observe_fazit_ui.py app.py
           python - <<'PY'
           import math
           import app
@@ -42,6 +43,10 @@ jobs:
           assert 'FULL-5-Status' in legacy.INDEX_HTML
           assert 'FULL-5: AKTIV ✅' in legacy.INDEX_HTML
           assert 'FULL-5: FALLBACK AUF V0.4.2 ⚠️' in legacy.INDEX_HTML
+          assert 'Warum BEOBACHTEN?' in legacy.INDEX_HTML
+          assert 'decision_reasons' in legacy.INDEX_HTML
+          assert 'confirming_blocks' in legacy.INDEX_HTML
+          assert 'counter_blocks' in legacy.INDEX_HTML
           health = next(route.endpoint for route in app.app.router.routes if getattr(route,'path',None)=='/api/health')()
           assert health['version']=='0.4.3'
           assert health['engine']=='five-source-full5-regularized-dixon-coles'
@@ -51,5 +56,5 @@ jobs:
           assert health['production'] is True
           assert health['candidate'] is False
           assert health['elite_lambda_correction'] is False
-          print('V0.4.3 FULL-5 production + pairing UI smoke OK', health, 'lambda@mean=', lam)
+          print('V0.4.3 FULL-5 production + pairing + BEOBACHTEN rationale UI smoke OK', health, 'lambda@mean=', lam)
           PY
