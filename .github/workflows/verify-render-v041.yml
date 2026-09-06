@@ -9,7 +9,7 @@ jobs:
   verify-render:
     runs-on: ubuntu-latest
     steps:
-      - name: Verify production health and visible FULL-5 status
+      - name: Verify production health, pairing and visible FULL-5 status
         shell: bash
         run: |
           set -euo pipefail
@@ -20,13 +20,15 @@ jobs:
             PAGE="$(curl -fsS --max-time 20 "$PAGE_URL" 2>/dev/null || true)"
             echo "attempt=$i health=$BODY"
             if echo "$BODY" | python -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok") is True and d.get("version")=="0.4.3" and d.get("engine")=="five-source-full5-regularized-dixon-coles" and d.get("rho")==-0.25 and d.get("full5_features")==40 and d.get("alpha")==3.0 and d.get("production") is True and d.get("candidate") is False and d.get("elite_lambda_correction") is False' \
+              && grep -Fq 'Spielpaarung' <<<"$PAGE" \
+              && grep -Fq 'Match-ID:' <<<"$PAGE" \
               && grep -Fq 'FULL-5-Status' <<<"$PAGE" \
               && grep -Fq 'FULL-5: AKTIV ✅' <<<"$PAGE" \
               && grep -Fq 'FULL-5: FALLBACK AUF V0.4.2 ⚠️' <<<"$PAGE"; then
-              echo "Render V0.4.3 FULL-5 production + visible status UI verified"
+              echo "Render V0.4.3 FULL-5 production + pairing + status UI verified"
               exit 0
             fi
             sleep 10
           done
-          echo "Render did not expose the expected V0.4.3 FULL-5 status UI"
+          echo "Render did not expose the expected V0.4.3 pairing/FULL-5 UI"
           exit 1
