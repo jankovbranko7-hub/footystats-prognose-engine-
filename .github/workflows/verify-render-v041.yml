@@ -9,19 +9,24 @@ jobs:
   verify-render:
     runs-on: ubuntu-latest
     steps:
-      - name: Verify production health
+      - name: Verify production health and visible FULL-5 status
         shell: bash
         run: |
           set -euo pipefail
-          URL="https://footystats-prognose-engine.onrender.com/api/health"
+          HEALTH_URL="https://footystats-prognose-engine.onrender.com/api/health"
+          PAGE_URL="https://footystats-prognose-engine.onrender.com/"
           for i in $(seq 1 36); do
-            BODY="$(curl -fsS --max-time 20 "$URL" 2>/dev/null || true)"
-            echo "attempt=$i body=$BODY"
-            if echo "$BODY" | python -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok") is True and d.get("version")=="0.4.3" and d.get("engine")=="five-source-full5-regularized-dixon-coles" and d.get("rho")==-0.25 and d.get("full5_features")==40 and d.get("alpha")==3.0 and d.get("production") is True and d.get("candidate") is False and d.get("elite_lambda_correction") is False'; then
-              echo "Render production is V0.4.3 FULL-5"
+            BODY="$(curl -fsS --max-time 20 "$HEALTH_URL" 2>/dev/null || true)"
+            PAGE="$(curl -fsS --max-time 20 "$PAGE_URL" 2>/dev/null || true)"
+            echo "attempt=$i health=$BODY"
+            if echo "$BODY" | python -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok") is True and d.get("version")=="0.4.3" and d.get("engine")=="five-source-full5-regularized-dixon-coles" and d.get("rho")==-0.25 and d.get("full5_features")==40 and d.get("alpha")==3.0 and d.get("production") is True and d.get("candidate") is False and d.get("elite_lambda_correction") is False' \
+              && grep -Fq 'FULL-5-Status' <<<"$PAGE" \
+              && grep -Fq 'FULL-5: AKTIV ✅' <<<"$PAGE" \
+              && grep -Fq 'FULL-5: FALLBACK AUF V0.4.2 ⚠️' <<<"$PAGE"; then
+              echo "Render V0.4.3 FULL-5 production + visible status UI verified"
               exit 0
             fi
             sleep 10
           done
-          echo "Render did not report V0.4.3 FULL-5"
+          echo "Render did not expose the expected V0.4.3 FULL-5 status UI"
           exit 1
