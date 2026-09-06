@@ -30,8 +30,35 @@ if not (
     raise RuntimeError("V0.4.3 FULL-5 production parameter lengths are inconsistent.")
 
 
+def _install_full5_status_ui(legacy: Any) -> None:
+    """Expose FULL-5 application/fallback state directly in the visible report."""
+    html = legacy.INDEX_HTML
+    js_anchor = "    const diag=data.diagnostics||{},goal=data.expected_goals||{},protocol=diag.elite_protocol||{},gates=protocol.gates||{},rvu=diag.result_vs_underlying_detail||{};"
+    if js_anchor not in html:
+        raise RuntimeError("FULL-5 UI JS anchor not found.")
+    js_extra = js_anchor + "\n" + """    const full5=(((goal||{}).hybrid_model||{}).full5)||{};
+    const full5Applied=full5.applied===true;
+    const full5Missing=[...(full5.missing_home||[]),...(full5.missing_away||[])];
+    const full5MissingUnique=[...new Set(full5Missing)];
+    const full5Status=full5Applied?'FULL-5: AKTIV ✅':'FULL-5: FALLBACK AUF V0.4.2 ⚠️';
+    const full5Detail=full5Applied
+      ? 'Alle fünf FootyStats-Dateien wurden für die verstärkte FULL-5-Berechnung genutzt.'
+      : (full5MissingUnique.length
+          ? 'Fehlende FULL-5-Werte: '+full5MissingUnique.join(', ')
+          : (full5.reason||'FULL-5 konnte für dieses Match nicht angewendet werden.'));
+"""
+    html = html.replace(js_anchor, js_extra, 1)
+
+    card_anchor = "      '</p></div>'+\n      '<div class=\"c\"><h3>Kurzentscheidung</h3><div class=\"g\">'+"
+    if card_anchor not in html:
+        raise RuntimeError("FULL-5 UI card anchor not found.")
+    card = "      '</p></div>'+\n      '<div class=\"c\"><h3>FULL-5-Status</h3><div class=\"'+(full5Applied?'ok':'bad')+'\"><div class=\"b\">'+escapeHtml(full5Status)+'</div></div><p class=\"s\">'+escapeHtml(full5Detail)+'</p><div class=\"s\">V0.4.2 Hybrid-Basis · FULL-5 · Dixon-Coles</div></div>'+\n      '<div class=\"c\"><h3>Kurzentscheidung</h3><div class=\"g\">'+"
+    legacy.INDEX_HTML = html.replace(card_anchor, card, 1)
+
+
 def apply_patch(legacy: Any) -> Any:
     app = engine.apply_patch(legacy)
+    _install_full5_status_ui(legacy)
 
     predict_candidate = legacy.predict
 
