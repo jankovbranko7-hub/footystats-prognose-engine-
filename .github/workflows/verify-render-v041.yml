@@ -9,7 +9,7 @@ jobs:
   verify-render:
     runs-on: ubuntu-latest
     steps:
-      - name: Verify production health, pairing and visible FULL-5 status
+      - name: Verify production health, pairing, FULL-5 status and BEOBACHTEN rationale
         shell: bash
         run: |
           set -euo pipefail
@@ -24,11 +24,13 @@ jobs:
               && grep -Fq 'Match-ID:' <<<"$PAGE" \
               && grep -Fq 'FULL-5-Status' <<<"$PAGE" \
               && grep -Fq 'FULL-5: AKTIV ✅' <<<"$PAGE" \
-              && grep -Fq 'FULL-5: FALLBACK AUF V0.4.2 ⚠️' <<<"$PAGE"; then
-              echo "Render V0.4.3 FULL-5 production + pairing + status UI verified"
+              && grep -Fq 'FULL-5: FALLBACK AUF V0.4.2 ⚠️' <<<"$PAGE" \
+              && grep -Fq 'Warum BEOBACHTEN?' <<<"$PAGE" \
+              && grep -Fq 'decision_reasons' <<<"$PAGE"; then
+              echo "Render V0.4.3 production + pairing + FULL-5 + BEOBACHTEN rationale UI verified"
               exit 0
             fi
             sleep 10
           done
-          echo "Render did not expose the expected V0.4.3 pairing/FULL-5 UI"
+          echo "Render did not expose the expected V0.4.3 report UI"
           exit 1
