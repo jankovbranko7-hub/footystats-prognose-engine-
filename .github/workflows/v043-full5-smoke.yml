@@ -21,6 +21,7 @@ jobs:
           python - <<'PY'
           import math
           import app
+          import app_v040 as legacy
           import v043_engine as e
           import v043_release as r
           assert app.app.version == '0.4.3'
@@ -33,6 +34,9 @@ jobs:
           row={name:mean for name,mean in zip(e.FULL5_FEATURES,e.FULL5_MEAN)}
           lam=e._predict_lambda(row)
           assert 0.05 <= lam <= 3.95
+          assert 'FULL-5-Status' in legacy.INDEX_HTML
+          assert 'FULL-5: AKTIV ✅' in legacy.INDEX_HTML
+          assert 'FULL-5: FALLBACK AUF V0.4.2 ⚠️' in legacy.INDEX_HTML
           health = next(route.endpoint for route in app.app.router.routes if getattr(route,'path',None)=='/api/health')()
           assert health['version']=='0.4.3'
           assert health['engine']=='five-source-full5-regularized-dixon-coles'
