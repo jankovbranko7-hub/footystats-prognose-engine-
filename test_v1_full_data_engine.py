@@ -84,7 +84,8 @@ class GateV1Tests(unittest.TestCase):
 
 class FullDataExtractionTests(unittest.TestCase):
     def test_overall_table_is_used(self):
-        d={"data":{"all_matches_table_away":[{"id":10,"position":1}],"all_matches_table_overall":[{"id":10,"position":7},{"id":20,"position":1}]}}
+        overall=[{"id":10,"position":7}]+[{"id":20+i,"position":i+1} for i in range(6)]
+        d={"data":{"all_matches_table_away":[{"id":10,"position":1}],"all_matches_table_overall":overall}}
         rows=v1._table_rows(d)
         self.assertEqual(rows[0]["position"],7)
         self.assertAlmostEqual(v1._table_summary(rows,10)["position_strength"],0.0)
