@@ -189,14 +189,11 @@ def _install_exact_decision_ui(legacy: Any) -> None:
         '<div class="s">Core-Wahrscheinlichkeit</div>',
         1,
     )
-    html = html.replace(
-        '<div class="s">Entscheidung</div><div class="b">'+"escapeHtml(data.decision)"+'</div>',
-        '<div class="s">Core-Gate</div><div class="b">'+"escapeHtml(v1CoreAssessment.decision||'—')"+'</div></div>'+ 
-        '<div class="m"><div class="s">V1 finale Wahl</div><div class="b">'+"escapeHtml(v1Selected.label||strongest.label||'—')"+'</div></div>'+ 
-        '<div class="m"><div class="s">V1 Wahrscheinlichkeit</div><div class="b">'+"escapeHtml((v1Selected.probability_pct!=null?v1Selected.probability_pct:strongest.probability_pct))"+'%</div></div>'+ 
-        '<div class="m"><div class="s">V1 Entscheidung</div><div class="b">'+"escapeHtml(finalDecision||v1Selected.decision||data.decision||'—')"+'</div>',
-        1,
-    )
+    old_decision_card = """'<div class="m"><div class="s">Entscheidung</div><div class="b">'+escapeHtml(data.decision)+'</div></div>'+"""
+    new_decision_cards = """'<div class="m"><div class="s">Core-Gate</div><div class="b">'+escapeHtml(v1CoreAssessment.decision||'—')+'</div></div>'+\n      '<div class="m"><div class="s">V1 finale Wahl</div><div class="b">'+escapeHtml(v1Selected.label||strongest.label||'—')+'</div></div>'+\n      '<div class="m"><div class="s">V1 Wahrscheinlichkeit</div><div class="b">'+escapeHtml((v1Selected.probability_pct!=null?v1Selected.probability_pct:strongest.probability_pct))+'%</div></div>'+\n      '<div class="m"><div class="s">V1 Entscheidung</div><div class="b">'+escapeHtml(finalDecision||v1Selected.decision||data.decision||'—')+'</div></div>'+"""
+    if old_decision_card not in html:
+        raise RuntimeError("V1 short-decision card anchor not found.")
+    html = html.replace(old_decision_card, new_decision_cards, 1)
 
     card_anchor = "      observeCard+\n"
     if card_anchor not in html:
