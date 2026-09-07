@@ -26,11 +26,15 @@ jobs:
               && grep -Fq 'FULL-5: AKTIV ✅' <<<"$PAGE" \
               && grep -Fq 'FULL-5: FALLBACK AUF V0.4.2 ⚠️' <<<"$PAGE" \
               && grep -Fq 'Warum BEOBACHTEN?' <<<"$PAGE" \
+              && grep -Fq 'Warum SPIELEN?' <<<"$PAGE" \
+              && grep -Fq 'Warum AUSLASSEN?' <<<"$PAGE" \
+              && grep -Fq 'Entscheidender Grund' <<<"$PAGE" \
+              && grep -Fq 'Gate-Bild:' <<<"$PAGE" \
               && grep -Fq 'V1 Multi-Market & Specialists' <<<"$PAGE" \
               && grep -Fq 'Alle sechs Märkte' <<<"$PAGE" \
               && grep -Fq 'Core-Topmarkt' <<<"$PAGE" \
               && grep -Fq 'V1 robuste Wahl' <<<"$PAGE"; then
-              echo "Render V1 production + full specialists + frozen V0.4.3 core verified"
+              echo "Render V1 production + exact decision reasons + full specialists + frozen V0.4.3 core verified"
               exit 0
             fi
             sleep 10
