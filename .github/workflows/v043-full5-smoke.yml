@@ -1,4 +1,4 @@
-name: V0.4.3 FULL-5 smoke
+name: V1 + Frozen V0.4.3 FULL-5 smoke
 
 on:
   push:
@@ -17,16 +17,16 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install -r requirements.txt
-      - name: Syntax, entrypoint and FULL-5 production invariants
+      - name: Syntax, entrypoint, frozen FULL-5 and V1 production invariants
         run: |
-          python -m py_compile app_v040.py v041_engine.py v042_engine.py v043_engine.py v043_release.py v043_pairing_ui.py v043_observe_fazit_ui.py app.py
+          python -m py_compile app_v040.py v041_engine.py v042_engine.py v043_engine.py v043_release.py v043_pairing_ui.py v043_observe_fazit_ui.py v1_engine.py v1_full_engine.py app.py
           python - <<'PY'
           import math
           import app
           import app_v040 as legacy
           import v043_engine as e
           import v043_release as r
-          assert app.app.version == '0.4.3'
+          assert app.app.version == '1.0.0'
           assert e.FEATURE_COUNT == 40
           assert len(e.FULL5_FEATURES) == len(e.FULL5_MEAN) == len(e.FULL5_SCALE) == len(e.FULL5_COEF) == 40
           assert all(math.isfinite(x) for x in e.FULL5_MEAN + e.FULL5_SCALE + e.FULL5_COEF)
@@ -44,17 +44,26 @@ jobs:
           assert 'FULL-5: AKTIV ✅' in legacy.INDEX_HTML
           assert 'FULL-5: FALLBACK AUF V0.4.2 ⚠️' in legacy.INDEX_HTML
           assert 'Warum BEOBACHTEN?' in legacy.INDEX_HTML
+          assert 'V1 Multi-Market & Specialists' in legacy.INDEX_HTML
+          assert 'Alle sechs Märkte' in legacy.INDEX_HTML
+          assert 'Core-Topmarkt' in legacy.INDEX_HTML
           assert 'decision_reasons' in legacy.INDEX_HTML
           assert 'confirming_blocks' in legacy.INDEX_HTML
           assert 'counter_blocks' in legacy.INDEX_HTML
           health = next(route.endpoint for route in app.app.router.routes if getattr(route,'path',None)=='/api/health')()
-          assert health['version']=='0.4.3'
-          assert health['engine']=='five-source-full5-regularized-dixon-coles'
+          assert health['version']=='1.0.0'
+          assert health['engine']=='v1-v043-full5-full-multimarket-specialists'
+          assert health['baseline']=='0.4.3 FULL-5'
+          assert health['v043_probability_core_locked'] is True
           assert health['rho']==-0.25
           assert health['full5_features']==40
           assert health['alpha']==3.0
+          assert health['gate_v1'] is True
+          assert len(health['all_six_markets'])==6
+          assert all(health['specialists'].values())
+          assert health['probabilities_modified_by_v1'] is False
+          assert health['new_lambda_core'] is False
+          assert health['five_source_only'] is True
           assert health['production'] is True
-          assert health['candidate'] is False
-          assert health['elite_lambda_correction'] is False
-          print('V0.4.3 FULL-5 production + pairing + BEOBACHTEN rationale UI smoke OK', health, 'lambda@mean=', lam)
+          print('V1 production + frozen V0.4.3 FULL-5 smoke OK', health, 'lambda@mean=', lam)
           PY
