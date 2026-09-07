@@ -1,0 +1,37 @@
+name: V1 Standalone Check
+
+on:
+  push:
+    branches: ["feat/gate-v1-full-data"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  test-v1:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Syntax check
+        run: python -m py_compile app_v1.py v1_standalone_engine.py v1_score_core.py v1_runtime_contract.py
+      - name: V1 unit tests
+        run: python -m unittest -v test_v1_full_data_engine.py
+      - name: Prove no V0.4.x runtime imports
+        run: |
+          python - <<'PY'
+          import ast, pathlib
+          forbidden={"app_v040","v041_engine","v042_engine","v043_engine"}
+          for path in ["app_v1.py","v1_standalone_engine.py","v1_score_core.py"]:
+              tree=ast.parse(pathlib.Path(path).read_text())
+              found=set()
+              for node in ast.walk(tree):
+                  if isinstance(node,ast.Import): found.update(x.name for x in node.names)
+                  elif isinstance(node,ast.ImportFrom) and node.module: found.add(node.module)
+              bad=forbidden & found
+              assert not bad, f"{path}: forbidden runtime imports {bad}"
+          print("V1 standalone import lock: OK")
+          PY
