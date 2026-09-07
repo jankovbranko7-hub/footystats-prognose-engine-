@@ -17,6 +17,9 @@ probability core and applies production fixes found during final audits:
 4. H2H sample size recognizes the real MatchDaten fields
    ``previous_matches_ids`` and ``previous_matches_results.totalMatches``.
    H2H remains diagnostic-only and has no gate or probability weight.
+5. The short decision card separates the frozen Core top market from the final
+   V1 robust selection so a final V1 decision can never appear to belong to a
+   different raw Core market.
 
 No lambda, FULL-5 coefficient, Dixon-Coles parameter or market probability is
 changed here.
@@ -107,7 +110,7 @@ def _h2h_sample_production(h2h: Dict[str, Any]) -> Optional[int]:
 
 
 def _install_exact_decision_ui(legacy: Any) -> None:
-    """Show the exact final rationale for SPIELEN and AUSLASSEN in Render."""
+    """Show exact rationale and a non-ambiguous Core-vs-V1 short decision."""
     html = legacy.INDEX_HTML
 
     js_anchor = "    const v1Double=((v1Specs.double_counting_guard||{}).status)||'—';\n"
@@ -115,6 +118,11 @@ def _install_exact_decision_ui(legacy: Any) -> None:
         raise RuntimeError("V1 exact-decision JS anchor not found.")
 
     js_extra = r"""    const v1SelectedAssessment=v1Markets.find(function(m){return m&&m.key===v1Selected.key;})||{};
+    const v1CoreAssessment=v1Markets.find(function(m){
+      if(!m)return false;
+      if(strongest.key&&m.key===strongest.key)return true;
+      return !!(strongest.label&&m.label===strongest.label);
+    })||{};
     const exactDecisionVisible=(finalDecision==='SPIELEN'||finalDecision==='AUSLASSEN');
     const exactDecisionTitle=finalDecision==='SPIELEN'?'Warum SPIELEN?':'Warum AUSLASSEN?';
     const exactDecisionLabel=v1Selected.label||strongest.label||'Der ausgewählte Markt';
@@ -173,6 +181,19 @@ def _install_exact_decision_ui(legacy: Any) -> None:
       : '';
 """
     html = html.replace(js_anchor, js_anchor + js_extra, 1)
+
+    # The legacy short card mixed a raw Core top market with the final V1
+    # decision. Make the ownership of each value explicit and show both tracks.
+    html = html.replace(
+        '<div class="s">Wahrscheinlichkeit</div>',
+        '<div class="s">Core-Wahrscheinlichkeit</div>',
+        1,
+    )
+    old_decision_card = """'<div class="m"><div class="s">Entscheidung</div><div class="b">'+escapeHtml(data.decision)+'</div></div>'+"""
+    new_decision_cards = """'<div class="m"><div class="s">Core-Gate</div><div class="b">'+escapeHtml(v1CoreAssessment.decision||'—')+'</div></div>'+\n      '<div class="m"><div class="s">V1 finale Wahl</div><div class="b">'+escapeHtml(v1Selected.label||strongest.label||'—')+'</div></div>'+\n      '<div class="m"><div class="s">V1 Wahrscheinlichkeit</div><div class="b">'+escapeHtml((v1Selected.probability_pct!=null?v1Selected.probability_pct:strongest.probability_pct))+'%</div></div>'+\n      '<div class="m"><div class="s">V1 Entscheidung</div><div class="b">'+escapeHtml(finalDecision||v1Selected.decision||data.decision||'—')+'</div></div>'+"""
+    if old_decision_card not in html:
+        raise RuntimeError("V1 short-decision card anchor not found.")
+    html = html.replace(old_decision_card, new_decision_cards, 1)
 
     card_anchor = "      observeCard+\n"
     if card_anchor not in html:
