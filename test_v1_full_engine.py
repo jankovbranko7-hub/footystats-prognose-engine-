@@ -153,6 +153,13 @@ class V1FullRuntimeTests(unittest.TestCase):
         self.assertIn("V1 Multi-Market & Specialists", html)
         self.assertIn("Alle sechs Märkte", html)
         self.assertIn("Core-Topmarkt", html)
+        self.assertIn("Core-Wahrscheinlichkeit", html)
+        self.assertIn("Core-Gate", html)
+        self.assertIn("V1 finale Wahl", html)
+        self.assertIn("V1 Wahrscheinlichkeit", html)
+        self.assertIn("V1 Entscheidung", html)
+        self.assertIn("v1CoreAssessment.decision", html)
+        self.assertNotIn('<div class="s">Entscheidung</div><div class="b">'+"escapeHtml(data.decision)"+'</div>', html)
 
 
 if __name__ == "__main__":
