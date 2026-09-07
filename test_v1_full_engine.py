@@ -4,6 +4,7 @@ import v042_engine
 import v043_engine
 import v043_release
 import v1_full_engine
+import v1_release  # installs the audited production fixes on v1_full_engine
 
 
 class DummyLegacy:
@@ -51,6 +52,24 @@ class V1FullUnitTests(unittest.TestCase):
         self.assertEqual(mixed["direction"], "GEMISCHT")
         self.assertEqual(single["direction"], "GEMISCHT")
 
+    def test_real_formdaten_teams_container_is_parsed(self):
+        form_data = {
+            "teams": [
+                {
+                    "data": [
+                        {
+                            "id": 11,
+                            "last_x_match_num": 5,
+                            "stats": {"seasonPPG_overall": 2.0},
+                        }
+                    ]
+                }
+            ]
+        }
+        rows = v1_full_engine._form_records(form_data)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["id"], 11)
+
     def test_leakage_guard_blocks_target_live_and_gpt_fields(self):
         payload = {
             "homeGoalCount": 2,
@@ -82,6 +101,14 @@ class V1FullUnitTests(unittest.TestCase):
         ]
         chosen = v1_full_engine._select_robust_market(assessments)
         self.assertEqual(chosen["key"], "over_2_5")
+
+    def test_cross_family_selection_uses_normalized_strength_before_raw_probability(self):
+        assessments = [
+            {"key": "home_win", "decision": "SPIELEN", "probability_pct": 58.0, "family_strength_pct": 37.0},
+            {"key": "btts_yes", "decision": "SPIELEN", "probability_pct": 68.0, "family_strength_pct": 36.0},
+        ]
+        chosen = v1_full_engine._select_robust_market(assessments)
+        self.assertEqual(chosen["key"], "home_win")
 
     def test_specialist_alignment_never_adds_confirmation_count(self):
         full = {"btts": {"direction": "BTTS_NO", "balance": -3, "applicable_signal_count": 3}}
