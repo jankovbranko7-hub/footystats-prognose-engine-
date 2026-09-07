@@ -19,6 +19,15 @@ Verbindlich aktiv:
 
 Der V0.4.3-Core wird durch V1 nicht editiert.
 
+### Finaler Produktionsaudit
+
+Vor der endgültigen Freigabe wurden zwei Integrationsfehler im Full-Specialist-Entwurf gefunden und im Produktions-Lock `v1_release.py` korrigiert:
+
+1. **FormDaten-Routing:** Der reale bestehende fünf-Dateien-Export speichert Form-Seiten unter `teams`. Der erste Full-Specialist-Entwurf suchte zusätzlich nur unter `pages`/`data`; dadurch wäre das neue Form Regime bei realen Exporten teilweise leer geblieben. Produktion liest jetzt verbindlich `teams` und behält `pages`/`data` nur als kompatible alternative Struktur bei. Es werden keine Ersatzwerte erzeugt.
+2. **Robuste Cross-Family-Auswahl:** Zwischen 1X2, BTTS und O/U wird nicht zuerst nach roher Probability sortiert. Die Auswahl verwendet zuerst die bereits etablierte normalisierte Marktfamilienstärke und danach erst die Probability. Dadurch wird 1X2 gegenüber binären Märkten nicht strukturell benachteiligt.
+
+Diese Korrekturen verändern weder Lambda noch FULL-5-Parameter, Dixon-Coles oder die sechs Markt-Wahrscheinlichkeiten.
+
 ## Gate V1
 
 Die strukturelle Confirmation-Regel lautet:
@@ -46,7 +55,7 @@ V1 erstellt für jedes Spiel eine eigene Gate-Bewertung für:
 
 Jede Bewertung enthält Probability, normalisierte Marktfamilienstärke, klassische Confirmations, Counter-Blöcke, Gate-V1-Anforderung, Specialist-Alignment und konkrete Gründe.
 
-Der rohe V0.4.3-Core-Topmarkt bleibt als `core_strongest_market` sichtbar. Zusätzlich wählt V1 den stärksten robust freigegebenen Markt als `selected_robust_market`. Dadurch kann ein geringfügig niedrigerer, aber strukturell freigegebener Markt vor einem höheren BEOBACHTEN-Markt gewählt werden, ohne dessen Probability zu verändern.
+Der rohe V0.4.3-Core-Topmarkt bleibt als `core_strongest_market` sichtbar. Zusätzlich wählt V1 den stärksten robust freigegebenen Markt als `selected_robust_market`. Zuerst zählt die Freigabeklasse SPIELEN/BEOBACHTEN/AUSLASSEN, innerhalb derselben Klasse die normalisierte Marktfamilienstärke und erst danach die rohe Probability. Dadurch kann ein geringfügig niedrigerer, aber relativ stärkerer und strukturell freigegebener Markt vor einem höheren Roh-Prozentmarkt gewählt werden, ohne dessen Probability zu verändern.
 
 ## Vollständig aktive V1-Specialists
 
@@ -110,7 +119,7 @@ Form wird als eine Datenfamilie strukturiert:
 - FORM_BTTS
 - FORM_TEMPO
 
-Last5/Last6/Last10 werden nie als drei unabhängige Confirmations gezählt.
+Last5/Last6/Last10 werden nie als drei unabhängige Confirmations gezählt. Der Produktions-Lock liest dabei den realen `teams`-Container des bestehenden FormDaten-Exports.
 
 ### H2H Diagnostics
 
@@ -171,9 +180,10 @@ CI prüft mindestens:
 - Gate V1 BTTS 3/3 vs. 2/3
 - strukturelle 1X2/O-U Requirements
 - alle sechs Märkte vorhanden
+- realer `teams`-Container aus FormDaten wird gelesen
+- robuste Cross-Family-Auswahl nutzt normalisierte Family Strength vor Roh-Probability
 - Leakage Guard
 - Double-Counting Guard
-- robuste Marktauswahl
 - alle Specialists aktiv
 - Spielpaarung und konkrete BEOBACHTEN-Begründung sichtbar
 - V0.4.3-Core-Dateien im Feature-Diff unverändert
