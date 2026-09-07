@@ -1,59 +1,181 @@
-# FootyStats V1 — V0.4.3 FULL-5 Core + Gate V1
+# FootyStats V1 — vollständige Multi-Market Production Engine
 
-## Production architecture
+## Produktionskern bleibt eingefroren
 
-V1 keeps the proven V0.4.3 probability path frozen:
+V1 baut direkt auf dem bestehenden V0.4.3 FULL-5 Probability Core auf und ersetzt ihn nicht.
 
-- 40 FULL-5 features
-- production alpha = 3.0
-- V0.4.2 hybrid lambda as fallback/base
-- Dixon-Coles rho = -0.25
-- no Elite-Lambda correction
-- no invented replacement values
-- same five iPhone export files: MatchDaten, LeagueDaten, FormDaten, TableDaten, PlayerDaten
+Verbindlich aktiv:
 
-V1 is an overlay above that probability core. It does not replace or reweight the V0.4.3 probabilities.
+- 40 bestehende FULL-5 Features
+- V0.4.2 Hybrid-Lambda als Basis/Fallback
+- Dixon-Coles mit rho = -0.25
+- Elite-Lambda-Korrektur deaktiviert
+- keine erfundenen Ersatzwerte
+- weiterhin exakt fünf FootyStats-Dateien: MatchDaten, LeagueDaten, FormDaten, TableDaten, PlayerDaten
+
+### Alpha-Prüfung
+
+`v043_engine.py` enthält als Modul-Default weiterhin `FULL5_ALPHA = 1.0`. Der produktive Release-Layer `v043_release.py` setzt jedoch bewusst `FULL5_ALPHA = 3.0`, überschreibt damit den Engine-Wert und lädt die dazugehörigen auf 137 Strict-Prematch-Archiven refitteten Produktionsparameter. Der V1-Health-Contract prüft deshalb explizit `alpha = 3.0`.
+
+Der V0.4.3-Core wird durch V1 nicht editiert.
 
 ## Gate V1
 
-The confirmation requirement is now:
+Die strukturelle Confirmation-Regel lautet:
 
 `required = min(original_required, structural_applicable_block_count_for_family)`
 
-Structural maxima:
+Strukturelle Maxima:
 
-- 1X2: 4
-- BTTS: 3
-- O/U 2.5: 4
+- 1X2: 4 — UNDERLYING + MATCH + FORM + TABLE
+- BTTS: 3 — UNDERLYING + MATCH + FORM
+- O/U 2.5: 4 — UNDERLYING + MATCH + FORM + PLAYER
 
-Therefore only low-sample BTTS changes from an impossible 4-of-3 requirement to 3-of-3. Missing data does not lower the requirement. Low-sample BTTS 2-of-3 remains BEOBACHTEN.
+Damit kann Low-Sample-BTTS erstmals mit 3/3 SPIELEN erreichen. 2/3 bleibt blockiert. Fehlende Daten reduzieren die strukturelle Anforderung nicht.
 
-## Six-stage challenger protocol
+## Alle sechs Märkte werden separat geprüft
 
-1. **V0.4.3 + Gate V1** — active production decision rule.
-2. **First-Half BTTS Venue** — calculated from the existing LeagueDaten and exposed as a specialist diagnostic. No invented probability weight.
-3. **CS/FTS Survival** — calculated from the existing LeagueDaten and exposed as a specialist diagnostic. No invented probability weight.
-4. **FH-BTTS + CS/FTS** — joint direction is shown for BTTS robustness; it does not silently alter lambda/probability.
-5. **Player Depth / Concentration** — calculated from the existing PlayerDaten and used as reliability context, not an unvalidated lambda adjustment.
-6. **Combinations** — no hard probability reweighting is enabled until a combination proves incremental OOS value. Failed or unproven challengers are not smuggled into the probability core.
+V1 erstellt für jedes Spiel eine eigene Gate-Bewertung für:
 
-This follows the agreed rule: test one family at a time and only promote successful challengers.
+1. HOME WIN
+2. AWAY WIN
+3. BTTS YES
+4. BTTS NO
+5. OVER 2.5
+6. UNDER 2.5
 
-## Visible Render behavior
+Jede Bewertung enthält Probability, normalisierte Marktfamilienstärke, klassische Confirmations, Counter-Blöcke, Gate-V1-Anforderung, Specialist-Alignment und konkrete Gründe.
 
-The V0.4.3 pairing card remains visible.
+Der rohe V0.4.3-Core-Topmarkt bleibt als `core_strongest_market` sichtbar. Zusätzlich wählt V1 den stärksten robust freigegebenen Markt als `selected_robust_market`. Dadurch kann ein geringfügig niedrigerer, aber strukturell freigegebener Markt vor einem höheren BEOBACHTEN-Markt gewählt werden, ohne dessen Probability zu verändern.
 
-For BEOBACHTEN, V1 now returns a football-readable reason such as:
+## Vollständig aktive V1-Specialists
 
-- insufficient family strength,
-- too few structurally required confirmations,
-- a concrete contradictory evidence source,
-- failed removal-stress robustness,
-- low data quality,
-- probability coherence failure.
+### BTTS Specialist
 
-Technical evidence block names remain available in the JSON, but the visible explanation uses human-readable labels and a sentence explaining why the market is not released.
+Aktiviert:
 
-## Shortcut
+- bestehendes First-Half-BTTS Venue Profile
+- CS/FTS Scoring-Survival
+- Second-Half-BTTS Venue Profile
+- Form-BTTS-Regime
+- Player Depth / Concentration als Reliability-Kontext
 
-No new iPhone shortcut is required for V1. The existing five-file exporter remains the production input. PlayerDetailDaten is not required in V1.0.
+### Over/Under 2.5 Specialist
+
+Aktiviert:
+
+- Shot Conversion
+- Shots per Goal
+- SOT per Goal
+- First-Half Goal Intensity
+- Second-Half Goal Intensity
+- FTS / Scoring Failure
+- Form Tempo
+
+Finishing-Metriken werden als eine korrelierte Evidenzgruppe behandelt und nicht mehrfach als unabhängige Confirmations gezählt.
+
+### 1X2 Specialist
+
+Aktiviert:
+
+- Home/Away PPG relativ zur jeweiligen Liga-Baseline
+- relative Venue-xG/xGA Attack/Defence Strength
+- normalisierte Tabellenposition `(Position - 1) / (Teams - 1)`
+- Venue-vs-Overall-Differenz
+- aktuelle Form
+- Player-Depth- und Sample-Reliability-Kontext
+
+### Player Structure
+
+Zusätzlich ausgewiesen werden unter anderem:
+
+- Players found / Spieler mit Minuten
+- Appearances und Minuten overall/home/away
+- Goals involved per 90
+- Goals per 90 home/away
+- Top-3- und Top-5-Goal Share
+- Top-3-Contribution Share
+- Produktion außerhalb Top 3
+- Minutenkonzentration
+- Venue Player Production
+
+Player Structure ist Reliability/Fragility, kein automatischer Lambda-Zuschlag.
+
+### Form Regime
+
+Form wird als eine Datenfamilie strukturiert:
+
+- FORM_ATTACK
+- FORM_DEFENCE
+- FORM_BTTS
+- FORM_TEMPO
+
+Last5/Last6/Last10 werden nie als drei unabhängige Confirmations gezählt.
+
+### H2H Diagnostics
+
+H2H wird nur aus MatchDaten gelesen und bleibt ein kleiner Diagnostic-/Counterargument-Kontext. Es erhält kein eigenständiges Gate-Gewicht und keine Lambda-Wirkung.
+
+## Leakage Guard
+
+V1-Specialists und Gates ignorieren Zielspiel-Live-/Post-Kickoff-Felder, darunter Goal Counts, Zielspiel-xG, Shots, SOT, Corners, Cards, Possession sowie `gpt_en`.
+
+Pre-Match-Felder wie `team_a_xg_prematch`, `team_b_xg_prematch` und Pre-Match-PPG bleiben erlaubt.
+
+## Double-Counting Guard
+
+V1 trennt explizit:
+
+- CORE EVIDENCE
+- SPECIALIST EVIDENCE
+- INDEPENDENT CONFIRMATION
+- DIAGNOSTIC
+
+Specialists erhöhen niemals künstlich den klassischen Confirmation Count. Ein Specialist darf bei klarer, unopponierter Mehrsignal-Widerspruchslage eine SPIELEN-Freigabe auf BEOBACHTEN begrenzen; die zugrunde liegende V0.4.3-Probability bleibt unverändert.
+
+## Render-UI
+
+Weiter sichtbar:
+
+- Spielpaarung
+- Match-ID
+- FULL-5 AKTIV / FALLBACK
+- Core-Topmarkt
+- Probability
+- finale Entscheidung
+- Warum BEOBACHTEN?
+
+Neu sichtbar:
+
+- V1 robuste Wahl
+- BTTS Specialist
+- O/U Specialist
+- 1X2 Specialist
+- Player Structure
+- Leakage-/Double-Counting-Status
+- alle sechs Märkte mit Probability, Entscheidung und Confirmation-Stand
+
+## Backup / Rollback
+
+Das vorhandene Backup `backup/v0.4.3-full5-2026-09-07` bleibt unverändert. V1 wird ausschließlich als Overlay auf dem bestehenden Produktionspfad aufgebaut.
+
+## Tests
+
+CI prüft mindestens:
+
+- 40 FULL-5 Features unverändert
+- Alpha 3.0 im Produktionspfad
+- Dixon-Coles rho = -0.25
+- keine V1-Probability-Reweighting-Logik
+- kein neuer Lambda-Core
+- Gate V1 BTTS 3/3 vs. 2/3
+- strukturelle 1X2/O-U Requirements
+- alle sechs Märkte vorhanden
+- Leakage Guard
+- Double-Counting Guard
+- robuste Marktauswahl
+- alle Specialists aktiv
+- Spielpaarung und konkrete BEOBACHTEN-Begründung sichtbar
+- V0.4.3-Core-Dateien im Feature-Diff unverändert
+
+V1.0 ist damit kein Challenger-Stufenmodell mehr, sondern der vollständige gemeinsame Produktionszustand der beschriebenen V1-Komponenten.
