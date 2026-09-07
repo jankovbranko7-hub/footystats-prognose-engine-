@@ -70,6 +70,16 @@ class V1FullUnitTests(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["id"], 11)
 
+    def test_real_matchdaten_h2h_sample_is_recognized(self):
+        self.assertEqual(
+            v1_full_engine._h2h_sample({"previous_matches_ids": [{"id": 1}, {"id": 2}, {"id": 3}]}),
+            3,
+        )
+        self.assertEqual(
+            v1_full_engine._h2h_sample({"previous_matches_results": {"totalMatches": 19}}),
+            19,
+        )
+
     def test_leakage_guard_blocks_target_live_and_gpt_fields(self):
         payload = {
             "homeGoalCount": 2,
@@ -136,6 +146,10 @@ class V1FullRuntimeTests(unittest.TestCase):
         html = legacy.INDEX_HTML
         self.assertIn("Spielpaarung", html)
         self.assertIn("Warum BEOBACHTEN?", html)
+        self.assertIn("Warum SPIELEN?", html)
+        self.assertIn("Warum AUSLASSEN?", html)
+        self.assertIn("Entscheidender Grund", html)
+        self.assertIn("Gate-Bild:", html)
         self.assertIn("V1 Multi-Market & Specialists", html)
         self.assertIn("Alle sechs Märkte", html)
         self.assertIn("Core-Topmarkt", html)
