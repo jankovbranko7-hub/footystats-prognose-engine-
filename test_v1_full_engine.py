@@ -136,6 +136,10 @@ class V1FullRuntimeTests(unittest.TestCase):
         html = legacy.INDEX_HTML
         self.assertIn("Spielpaarung", html)
         self.assertIn("Warum BEOBACHTEN?", html)
+        self.assertIn("Warum SPIELEN?", html)
+        self.assertIn("Warum AUSLASSEN?", html)
+        self.assertIn("Entscheidender Grund", html)
+        self.assertIn("Gate-Bild:", html)
         self.assertIn("V1 Multi-Market & Specialists", html)
         self.assertIn("Alle sechs Märkte", html)
         self.assertIn("Core-Topmarkt", html)
