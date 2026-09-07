@@ -1,0 +1,37 @@
+name: V1 V043 Gate Check
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ feat/v1-v043-gate-specialists ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Syntax check
+        run: python -m py_compile app.py app_v040.py v041_engine.py v042_engine.py v043_engine.py v043_release.py v043_pairing_ui.py v043_observe_fazit_ui.py v1_engine.py test_v1_engine.py
+      - name: V1 invariant tests
+        run: python -m unittest -v test_v1_engine.py
+      - name: Prove V0.4.3 core files were not edited
+        run: |
+          git fetch origin main
+          test -z "$(git diff --name-only origin/main...HEAD -- v043_engine.py v043_release.py v042_engine.py v041_engine.py app_v040.py)"
+      - name: Prove visible rationale and pairing remain
+        run: |
+          python - <<'PY'
+          import app
+          import app_v040 as legacy
+          html = legacy.INDEX_HTML
+          assert 'Spielpaarung' in html
+          assert 'Warum BEOBACHTEN?' in html
+          assert 'confirming_block_labels' in html
+          print('V1 UI invariants OK')
+          PY
