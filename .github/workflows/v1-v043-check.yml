@@ -1,10 +1,10 @@
-name: V1 V043 Gate Check
+name: V1 Full V043 Invariant Check
 
 on:
   pull_request:
     branches: [ main ]
   push:
-    branches: [ feat/v1-v043-gate-specialists ]
+    branches: [ feat/v1-full-specialists ]
 
 jobs:
   test:
@@ -17,14 +17,14 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
       - name: Syntax check
-        run: python -m py_compile app.py app_v040.py v041_engine.py v042_engine.py v043_engine.py v043_release.py v043_pairing_ui.py v043_observe_fazit_ui.py v1_engine.py test_v1_engine.py
-      - name: V1 invariant tests
-        run: python -m unittest -v test_v1_engine.py
+        run: python -m py_compile app.py app_v040.py v041_engine.py v042_engine.py v043_engine.py v043_release.py v043_pairing_ui.py v043_observe_fazit_ui.py v1_engine.py v1_full_engine.py test_v1_engine.py test_v1_full_engine.py
+      - name: V1 invariant and full-specialist tests
+        run: python -m unittest -v test_v1_engine.py test_v1_full_engine.py
       - name: Prove V0.4.3 core files were not edited
         run: |
           git fetch origin main
           test -z "$(git diff --name-only origin/main...HEAD -- v043_engine.py v043_release.py v042_engine.py v041_engine.py app_v040.py)"
-      - name: Prove visible rationale and pairing remain
+      - name: Prove visible V1 rationale, pairing and market breadth remain
         run: |
           python - <<'PY'
           import app
@@ -32,6 +32,17 @@ jobs:
           html = legacy.INDEX_HTML
           assert 'Spielpaarung' in html
           assert 'Warum BEOBACHTEN?' in html
-          assert 'confirming_block_labels' in html
-          print('V1 UI invariants OK')
+          assert 'V1 Multi-Market & Specialists' in html
+          assert 'Alle sechs Märkte' in html
+          assert 'Core-Topmarkt' in html
+          route = next(r for r in legacy.app.router.routes if getattr(r, 'path', None) == '/api/health')
+          health = route.endpoint()
+          assert health['alpha'] == 3.0
+          assert health['rho'] == -0.25
+          assert health['full5_features'] == 40
+          assert health['probabilities_modified_by_v1'] is False
+          assert health['new_lambda_core'] is False
+          assert len(health['all_six_markets']) == 6
+          assert all(health['specialists'].values())
+          print('V1 full invariants OK')
           PY
