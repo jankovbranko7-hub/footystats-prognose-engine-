@@ -1,4 +1,4 @@
-name: Verify Render V0.4.3 FULL-5
+name: Verify Render V1 Production
 
 on:
   push:
@@ -9,7 +9,7 @@ jobs:
   verify-render:
     runs-on: ubuntu-latest
     steps:
-      - name: Verify production health, pairing, FULL-5 status and BEOBACHTEN rationale
+      - name: Verify V1 health, full specialist UI and frozen V043 core
         shell: bash
         run: |
           set -euo pipefail
@@ -19,18 +19,21 @@ jobs:
             BODY="$(curl -fsS --max-time 20 "$HEALTH_URL" 2>/dev/null || true)"
             PAGE="$(curl -fsS --max-time 20 "$PAGE_URL" 2>/dev/null || true)"
             echo "attempt=$i health=$BODY"
-            if echo "$BODY" | python -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok") is True and d.get("version")=="0.4.3" and d.get("engine")=="five-source-full5-regularized-dixon-coles" and d.get("rho")==-0.25 and d.get("full5_features")==40 and d.get("alpha")==3.0 and d.get("production") is True and d.get("candidate") is False and d.get("elite_lambda_correction") is False' \
+            if echo "$BODY" | python -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok") is True and d.get("version")=="1.0.0" and d.get("engine")=="v1-v043-full5-full-multimarket-specialists" and d.get("baseline")=="0.4.3 FULL-5" and d.get("v043_probability_core_locked") is True and d.get("rho")==-0.25 and d.get("full5_features")==40 and d.get("alpha")==3.0 and d.get("gate_v1") is True and len(d.get("all_six_markets") or [])==6 and all((d.get("specialists") or {}).values()) and d.get("specialist_probability_weights") is False and d.get("probabilities_modified_by_v1") is False and d.get("new_lambda_core") is False and d.get("five_source_only") is True and d.get("new_shortcut_required") is False and d.get("production") is True' \
               && grep -Fq 'Spielpaarung' <<<"$PAGE" \
               && grep -Fq 'Match-ID:' <<<"$PAGE" \
               && grep -Fq 'FULL-5-Status' <<<"$PAGE" \
               && grep -Fq 'FULL-5: AKTIV ✅' <<<"$PAGE" \
               && grep -Fq 'FULL-5: FALLBACK AUF V0.4.2 ⚠️' <<<"$PAGE" \
               && grep -Fq 'Warum BEOBACHTEN?' <<<"$PAGE" \
-              && grep -Fq 'decision_reasons' <<<"$PAGE"; then
-              echo "Render V0.4.3 production + pairing + FULL-5 + BEOBACHTEN rationale UI verified"
+              && grep -Fq 'V1 Multi-Market & Specialists' <<<"$PAGE" \
+              && grep -Fq 'Alle sechs Märkte' <<<"$PAGE" \
+              && grep -Fq 'Core-Topmarkt' <<<"$PAGE" \
+              && grep -Fq 'V1 robuste Wahl' <<<"$PAGE"; then
+              echo "Render V1 production + full specialists + frozen V0.4.3 core verified"
               exit 0
             fi
             sleep 10
           done
-          echo "Render did not expose the expected V0.4.3 report UI"
+          echo "Render did not expose the expected V1 production contract"
           exit 1
