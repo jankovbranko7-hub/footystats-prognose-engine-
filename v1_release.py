@@ -14,6 +14,9 @@ probability core and applies production fixes found during final audits:
 3. The Render UI exposes an exact decision rationale not only for BEOBACHTEN,
    but also for SPIELEN and AUSLASSEN. This is presentation-only and reads the
    already computed V1 decision reasons/gates.
+4. H2H sample size recognizes the real MatchDaten fields
+   ``previous_matches_ids`` and ``previous_matches_results.totalMatches``.
+   H2H remains diagnostic-only and has no gate or probability weight.
 
 No lambda, FULL-5 coefficient, Dixon-Coles parameter or market probability is
 changed here.
@@ -80,6 +83,26 @@ def _select_robust_market_production(
                     _num_obj(item.get("probability_pct")) or -1.0,
                 ),
             )
+    return None
+
+
+def _h2h_sample_production(h2h: Dict[str, Any]) -> Optional[int]:
+    """Read H2H sample size from the actual FootyStats MatchDaten schema."""
+    for key in ("previous_matches_ids", "previous_matches", "matches", "results", "data"):
+        value = h2h.get(key)
+        if isinstance(value, list):
+            return len(value)
+
+    previous_results = h2h.get("previous_matches_results")
+    if isinstance(previous_results, dict):
+        total = _num_obj(previous_results.get("totalMatches"))
+        if total is not None and total >= 0:
+            return int(total)
+
+    for key in ("sample", "sample_size", "matches_count"):
+        value = _num_obj(h2h.get(key))
+        if value is not None:
+            return int(value)
     return None
 
 
@@ -160,6 +183,7 @@ def _install_exact_decision_ui(legacy: Any) -> None:
 # Install the audited production fixes before the full engine is applied.
 engine._form_records = _form_records_production
 engine._select_robust_market = _select_robust_market_production
+engine._h2h_sample = _h2h_sample_production
 
 
 def apply_patch(legacy: Any) -> Any:
