@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [ main ]
   push:
-    branches: [ feat/v1-full-specialists, fix/v1-production-audit ]
+    branches: [ feat/v1-full-specialists, fix/v1-production-audit, feat/v1-decision-reasons-ui ]
 
 jobs:
   test:
@@ -33,6 +33,10 @@ jobs:
           html = legacy.INDEX_HTML
           assert 'Spielpaarung' in html
           assert 'Warum BEOBACHTEN?' in html
+          assert 'Warum SPIELEN?' in html
+          assert 'Warum AUSLASSEN?' in html
+          assert 'Entscheidender Grund' in html
+          assert 'Gate-Bild:' in html
           assert 'V1 Multi-Market & Specialists' in html
           assert 'Alle sechs Märkte' in html
           assert 'Core-Topmarkt' in html
