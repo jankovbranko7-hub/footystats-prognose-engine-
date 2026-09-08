@@ -24,6 +24,10 @@ def _install_ui(legacy: Any) -> None:
     const nextDecision=next.decision||finalDecision||data.decision||'AUSLASSEN / KEIN BET';
     const nextReasons=Array.isArray(next.positive_reasons)?next.positive_reasons.filter(Boolean):[];
     const nextCounters=Array.isArray(next.counterarguments)?next.counterarguments.filter(Boolean):[];
+    const nextConfirmation=next.confirmation_gate||{};
+    const nextConfirmationText=(nextConfirmation.confirmations==null||nextConfirmation.applicable_blocks==null)
+      ? '—'
+      : nextConfirmation.confirmations+'/'+nextConfirmation.applicable_blocks+' anwendbare Signalblöcke bestätigt → '+(nextConfirmation.status||'—');
     const nextDecisionClass=nextDecision==='SPIELEN'?'ok':(nextDecision.indexOf('KEIN BET')>=0?'bad':'');
     const nextReasonList=nextReasons.length?'<ul>'+nextReasons.map(function(x){return '<li>'+escapeHtml(x)+'</li>';}).join('')+'</ul>':'<p class="s">Keine bestätigenden Gründe verfügbar.</p>';
     const nextCounterList=nextCounters.length?'<ul>'+nextCounters.map(function(x){return '<li>'+escapeHtml(x)+'</li>';}).join('')+'</ul>':'<p class="ok"><b>Keine relevanten Gegenargumente.</b></p>';
@@ -32,6 +36,7 @@ def _install_ui(legacy: Any) -> None:
       '<div class="m"><div class="s">V0.4.3 Core</div><div class="b">'+escapeHtml(next.probability_pct==null?'—':next.probability_pct+'%')+'</div></div>'+
       '<div class="m"><div class="s">Entscheidung</div><div class="b '+nextDecisionClass+'">'+escapeHtml(nextDecision)+'</div></div>'+
       '<div class="m"><div class="s">Signal Agreement / Conflict</div><div class="b">'+escapeHtml(next.signal_agreement==null?'—':next.signal_agreement)+' / '+escapeHtml(next.signal_conflict==null?'—':next.signal_conflict)+'</div></div>'+
+      '<div class="m"><div class="s">Bestätigung</div><div class="b">'+escapeHtml(nextConfirmationText)+'</div></div>'+
       '<div class="m"><div class="s">Datenqualität</div><div class="b">'+escapeHtml(next.data_quality||diag.data_quality||'—')+'</div></div>'+
       '<div class="m"><div class="s">Robustheit</div><div class="b">'+escapeHtml(next.robustness||'—')+'</div></div>'+
       '<div class="m"><div class="s">Sample</div><div class="b">'+escapeHtml(next.sample_security||diag.sample_security||'—')+'</div><div class="s">Quality '+escapeHtml(next.sample_quality==null?'—':next.sample_quality)+'</div></div>'+

@@ -16,6 +16,14 @@ MARKET_KEYS = (
     "home_win", "away_win", "btts_yes", "btts_no", "over_2_5", "under_2_5"
 )
 SOURCE_TYPES = ("match", "league", "form", "table", "player")
+APPLICABLE_EVIDENCE_BLOCKS = {
+    "home_win": ("UNDERLYING", "MATCH", "FORM", "TABLE"),
+    "away_win": ("UNDERLYING", "MATCH", "FORM", "TABLE"),
+    "btts_yes": ("UNDERLYING", "MATCH", "FORM"),
+    "btts_no": ("UNDERLYING", "MATCH", "FORM"),
+    "over_2_5": ("UNDERLYING", "MATCH", "FORM", "PLAYER"),
+    "under_2_5": ("UNDERLYING", "MATCH", "FORM", "PLAYER"),
+}
 PLAY_PROBABILITY = 0.60
 OBSERVE_PROBABILITY = 0.50
 MIN_CONFIRMING_BLOCKS = 3
@@ -141,6 +149,30 @@ def _higher_probability_reason(result: Mapping[str, Any], selected_key: str, sel
     )
 
 
+def _confirmation_diagnostic(market_key: str, confirming: Sequence[str]) -> Dict[str, Any]:
+    """Describe confirmations against blocks applicable to the selected family.
+
+    This is export/presentation metadata only.  The locked FULL-5 NEXT decision
+    conditions remain unchanged.
+    """
+    applicable_names = list(APPLICABLE_EVIDENCE_BLOCKS[market_key])
+    confirmed_names = [name for name in confirming if name in applicable_names]
+    required = min(MIN_CONFIRMING_BLOCKS, len(applicable_names))
+    if len(confirmed_names) >= required:
+        status = "BESTANDEN"
+    elif len(confirmed_names) >= 2:
+        status = "EINGESCHRÄNKT"
+    else:
+        status = "NICHT BESTANDEN"
+    return {
+        "confirmations": len(confirmed_names),
+        "applicable_blocks": len(applicable_names),
+        "applicable_block_names": applicable_names,
+        "required": required,
+        "status": status,
+    }
+
+
 def apply_full5_next(result: Dict[str, Any], parsed_files: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
     """Attach the locked final decision while preserving every core probability."""
     if not isinstance(result, dict) or not result.get("ok"):
@@ -160,6 +192,7 @@ def apply_full5_next(result: Dict[str, Any], parsed_files: Sequence[Mapping[str,
     gates = protocol.get("gates") or {}
     confirming = list(protocol.get("confirming_blocks") or [])
     counters = list(protocol.get("counter_blocks") or [])
+    confirmation_gate = _confirmation_diagnostic(market_key, confirming)
     strict = ((gates.get("pre_match_integrity") or {}).get("strict_pre_match") is True)
     robust = diagnostics.get("robustness_status") == "BESTANDEN"
     found_sources = source_types(parsed_files)
@@ -193,7 +226,10 @@ def apply_full5_next(result: Dict[str, Any], parsed_files: Sequence[Mapping[str,
         f"V0.4.3-Core-Wahrscheinlichkeit: {probability:.1%}.",
     ]
     if confirming:
-        positive_reasons.append(f"Bestätigende Signalblöcke ({len(confirming)}): {', '.join(confirming)}.")
+        positive_reasons.append(
+            f"{confirmation_gate['confirmations']}/{confirmation_gate['applicable_blocks']} "
+            "anwendbare Signalblöcke bestätigt: " + ", ".join(confirming) + "."
+        )
     if robust:
         positive_reasons.append("Robustheitsprüfung bestanden.")
     if all_five:
@@ -241,6 +277,12 @@ def apply_full5_next(result: Dict[str, Any], parsed_files: Sequence[Mapping[str,
         "signal_conflict": len(counters),
         "confirming_blocks": confirming,
         "counter_blocks": counters,
+        "confirmations": confirmation_gate["confirmations"],
+        "applicable_blocks": confirmation_gate["applicable_blocks"],
+        "applicable_block_names": confirmation_gate["applicable_block_names"],
+        "required": confirmation_gate["required"],
+        "confirmation_status": confirmation_gate["status"],
+        "confirmation_gate": confirmation_gate,
         "strict_pre_match": strict,
         "all_five_sources": all_five,
         "data_quality_gate": data_quality_gate,
@@ -270,6 +312,9 @@ def apply_full5_next(result: Dict[str, Any], parsed_files: Sequence[Mapping[str,
     result["decision"] = decision
     protocol["final_decision"] = decision
     protocol["decision_reasons"] = positive_reasons + counterarguments
+    protocol_gates = dict(protocol.get("gates") or {})
+    protocol_gates["multi_block_confirmation"] = dict(confirmation_gate)
+    protocol["gates"] = protocol_gates
     protocol["full5_next"] = next_result
     diagnostics["elite_protocol"] = protocol
     diagnostics["full5_next"] = next_result

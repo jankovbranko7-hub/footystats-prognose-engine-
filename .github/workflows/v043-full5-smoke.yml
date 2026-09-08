@@ -18,7 +18,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install -r requirements.txt
-      - name: Syntax, 18 tests, entrypoint and locked production invariants
+      - name: Syntax, 19 tests, entrypoint and locked production invariants
         run: |
           python -m py_compile app_v040.py v041_engine.py v042_engine.py v043_engine.py v043_release.py v043_pairing_ui.py v043_observe_fazit_ui.py full5_next_engine.py full5_next_release.py app.py test_full5_next.py
           python -m unittest -v test_full5_next.py
@@ -55,6 +55,7 @@ jobs:
           assert 'Gewählter Markt' in legacy.INDEX_HTML
           assert 'Signal Agreement / Conflict' in legacy.INDEX_HTML
           assert 'Gegenargumente / Konflikte' in legacy.INDEX_HTML
+          assert 'anwendbare Signalblöcke bestätigt' in legacy.INDEX_HTML
           health = next(route.endpoint for route in app.app.router.routes if getattr(route,'path',None)=='/api/health')()
           assert health['version']=='FULL-5-NEXT-1.0.0'
           assert health['engine']=='full5-next-evidence-gated-six-market'

@@ -47,6 +47,14 @@ def result_template(*, key="over_2_5", probability=.70, confirming=3, counters=0
          "probability_pct": probabilities[market] * 100}
         for market in MARKET_KEYS
     ]
+    applicable = {
+        "home_win": ["UNDERLYING", "MATCH", "FORM", "TABLE"],
+        "away_win": ["UNDERLYING", "MATCH", "FORM", "TABLE"],
+        "btts_yes": ["UNDERLYING", "MATCH", "FORM"],
+        "btts_no": ["UNDERLYING", "MATCH", "FORM"],
+        "over_2_5": ["UNDERLYING", "MATCH", "FORM", "PLAYER"],
+        "under_2_5": ["UNDERLYING", "MATCH", "FORM", "PLAYER"],
+    }[key]
     return {
         "ok": True,
         "probabilities": probabilities,
@@ -66,9 +74,16 @@ def result_template(*, key="over_2_5", probability=.70, confirming=3, counters=0
                 "away": {"players_found": away_depth},
             }}},
             "elite_protocol": {
-                "confirming_blocks": [f"B{i}" for i in range(confirming)],
+                "confirming_blocks": applicable[:confirming],
                 "counter_blocks": [f"C{i}" for i in range(counters)],
-                "gates": {"pre_match_integrity": {"strict_pre_match": strict}},
+                "gates": {
+                    "pre_match_integrity": {"strict_pre_match": strict},
+                    "multi_block_confirmation": {
+                        "confirmations": confirming,
+                        "required": 4,
+                        "status": "EINGESCHRÄNKT",
+                    },
+                },
             },
         },
     }
@@ -160,6 +175,21 @@ class Full5NextTests(unittest.TestCase):
         clean = sanitize_parsed_files(files)
         self.assertNotIn("team_a_xg", clean[0]["data"]["data"])
         self.assertEqual(clean[0]["data"]["data"]["team_a_xg_prematch"], 1.4)
+
+    def test_19_btts_confirmation_export_is_three_of_three(self):
+        result = result_template(key="btts_yes", probability=.70, confirming=3)
+        before_probabilities = copy.deepcopy(result["probabilities"])
+        output = apply_full5_next(result, five_files())
+        gate = output["full5_next"]["confirmation_gate"]
+        legacy_gate = output["diagnostics"]["elite_protocol"]["gates"]["multi_block_confirmation"]
+        self.assertEqual(output["decision"], "SPIELEN")
+        self.assertEqual(output["probabilities"], before_probabilities)
+        self.assertEqual(gate["confirmations"], 3)
+        self.assertEqual(gate["applicable_blocks"], 3)
+        self.assertEqual(gate["required"], 3)
+        self.assertEqual(gate["status"], "BESTANDEN")
+        self.assertEqual(gate["applicable_block_names"], ["UNDERLYING", "MATCH", "FORM"])
+        self.assertEqual(legacy_gate, gate)
 
 
 if __name__ == "__main__":

@@ -29,7 +29,8 @@ jobs:
               && grep -Fq 'FULL-5 NEXT – Finale Entscheidung' <<<"$PAGE" \
               && grep -Fq 'Gewählter Markt' <<<"$PAGE" \
               && grep -Fq 'Signal Agreement / Conflict' <<<"$PAGE" \
-              && grep -Fq 'Gegenargumente / Konflikte' <<<"$PAGE"; then
+              && grep -Fq 'Gegenargumente / Konflikte' <<<"$PAGE" \
+              && grep -Fq 'anwendbare Signalblöcke bestätigt' <<<"$PAGE"; then
               echo "Render FULL-5 NEXT production UI verified"
               exit 0
             fi
