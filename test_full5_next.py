@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import unittest
+from unittest.mock import patch
 
 from full5_next_engine import (
     MARKET_KEYS,
@@ -89,6 +90,47 @@ def result_template(*, key="over_2_5", probability=.70, confirming=3, counters=0
     }
 
 
+def ai_ranking(result, *, rank_stability=.90, learned_score=.72):
+    key = result["strongest_market"]["key"]
+    protocol = result["diagnostics"]["elite_protocol"]
+    confirming = list(protocol.get("confirming_blocks") or [])
+    counters = list(protocol.get("counter_blocks") or [])
+    applicable = {
+        "home_win": ["UNDERLYING", "MATCH", "FORM", "TABLE"],
+        "away_win": ["UNDERLYING", "MATCH", "FORM", "TABLE"],
+        "btts_yes": ["UNDERLYING", "MATCH", "FORM"],
+        "btts_no": ["UNDERLYING", "MATCH", "FORM"],
+        "over_2_5": ["UNDERLYING", "MATCH", "FORM", "PLAYER"],
+        "under_2_5": ["UNDERLYING", "MATCH", "FORM", "PLAYER"],
+    }[key]
+    selected = {
+        "market": key, "label": result["strongest_market"]["label"],
+        "core_probability": result["probabilities"][key], "learned_score": learned_score,
+        "score_gap": .08, "rank_stability": rank_stability,
+        "confirming_blocks": confirming, "counter_blocks": counters,
+        "confirmations": len(confirming), "counters": len(counters),
+        "applicable_blocks": len(applicable), "applicable_block_names": applicable,
+        "confirmation_ratio": len(confirming) / len(applicable), "sample_quality": .80,
+    }
+    candidates = []
+    for index, market in enumerate(MARKET_KEYS):
+        candidates.append({
+            "market": market, "label": market, "core_probability": result["probabilities"][market],
+            "learned_score": learned_score if market == key else .60 - index * .01,
+        })
+    return {"selected": selected, "second": candidates[0], "candidates": candidates, "model": {}}
+
+
+def apply_ai(result, files=None, *, rank_stability=.90, learned_score=.72):
+    with patch(
+        "full5_next_engine.learned_ai.rank_markets",
+        side_effect=lambda current, parsed: ai_ranking(
+            current, rank_stability=rank_stability, learned_score=learned_score
+        ),
+    ):
+        return apply_full5_next(result, files or five_files())
+
+
 class Full5NextTests(unittest.TestCase):
     def test_01_probability_sums_valid(self):
         self.assertTrue(probability_sums_valid(result_template()["probabilities"]))
@@ -101,7 +143,7 @@ class Full5NextTests(unittest.TestCase):
     def test_03_all_six_markets_supported(self):
         for market in MARKET_KEYS:
             with self.subTest(market=market):
-                output = apply_full5_next(result_template(key=market, probability=.60), five_files())
+                output = apply_ai(result_template(key=market, probability=.60))
                 self.assertEqual(output["full5_next"]["selected_market"], market)
 
     def test_04_all_five_sources_recognized(self):
@@ -114,60 +156,62 @@ class Full5NextTests(unittest.TestCase):
         self.assertLess(sample_quality(result_template(home_n=1, away_n=1, home_depth=5, away_depth=5)), .40)
 
     def test_07_play_gate(self):
-        output = apply_full5_next(result_template(), five_files())
+        output = apply_ai(result_template())
         self.assertEqual(output["decision"], "SPIELEN")
 
     def test_08_two_confirmations_observe(self):
-        output = apply_full5_next(result_template(confirming=2), five_files())
+        output = apply_ai(result_template(confirming=2))
         self.assertEqual(output["decision"], "BEOBACHTEN")
 
     def test_09_counter_blocks_play(self):
-        output = apply_full5_next(result_template(counters=1), five_files())
+        output = apply_ai(result_template(counters=1))
         self.assertEqual(output["decision"], "BEOBACHTEN")
 
     def test_10_robustness_blocks_play(self):
-        output = apply_full5_next(result_template(robust=False), five_files())
+        output = apply_ai(result_template(robust=False))
         self.assertEqual(output["decision"], "BEOBACHTEN")
 
-    def test_11_low_sample_blocks_play(self):
+    def test_11_sample_quality_is_continuous_not_hard_cutoff(self):
         result = result_template(home_n=1, away_n=1, home_depth=5, away_depth=5)
-        output = apply_full5_next(result, five_files())
-        self.assertEqual(output["decision"], "BEOBACHTEN")
+        output = apply_ai(result)
+        self.assertEqual(output["decision"], "SPIELEN")
+        self.assertIn("no hard cutoff", output["full5_next"]["locked_parameters"]["sample_quality"])
 
     def test_12_non_strict_is_no_bet(self):
-        output = apply_full5_next(result_template(strict=False), five_files())
+        output = apply_ai(result_template(strict=False))
         self.assertEqual(output["decision"], "AUSLASSEN / KEIN BET")
 
     def test_13_missing_source_is_no_bet(self):
-        output = apply_full5_next(result_template(), five_files()[:-1])
+        output = apply_ai(result_template(), five_files()[:-1])
         self.assertEqual(output["decision"], "AUSLASSEN / KEIN BET")
         invalid = result_template()
         invalid["audit"]["valid"] = False
-        output = apply_full5_next(invalid, five_files())
+        output = apply_ai(invalid)
         self.assertEqual(output["decision"], "AUSLASSEN / KEIN BET")
 
-    def test_14_below_observe_is_no_bet(self):
-        output = apply_full5_next(result_template(probability=.49), five_files())
-        self.assertEqual(output["decision"], "AUSLASSEN / KEIN BET")
+    def test_14_no_probability_cutoff(self):
+        output = apply_ai(result_template(probability=.49))
+        self.assertEqual(output["decision"], "SPIELEN")
+        self.assertIsNone(output["full5_next"]["locked_parameters"]["play_probability"])
 
     def test_15_fallback_is_reported(self):
-        output = apply_full5_next(result_template(full5=False), five_files())
+        output = apply_ai(result_template(full5=False))
         self.assertEqual(output["full5_next"]["full5_status"], "FALLBACK AUF V0.4.2")
 
     def test_16_explainability_complete(self):
-        next_result = apply_full5_next(result_template(), five_files())["full5_next"]
+        next_result = apply_ai(result_template())["full5_next"]
         self.assertTrue(next_result["positive_reasons"])
         self.assertTrue(next_result["why_this_market"])
         self.assertEqual(next_result["signal_conflict"], 0)
 
     def test_17_higher_probability_market_explained(self):
-        output = apply_full5_next(result_template(key="home_win", probability=.40), five_files())
+        output = apply_ai(result_template(key="home_win", probability=.40))
         self.assertIn("höhere Rohwahrscheinlichkeit", output["full5_next"]["why_not_higher_probability_market"])
 
     def test_18_core_probabilities_unchanged(self):
         result = result_template()
         before = copy.deepcopy(result["probabilities"])
-        output = apply_full5_next(result, five_files())
+        output = apply_ai(result)
         self.assertEqual(output["probabilities"], before)
         files = five_files()
         files[0]["data"] = {"data": {"team_a_xg": 2.0, "team_a_xg_prematch": 1.4}}
@@ -179,7 +223,7 @@ class Full5NextTests(unittest.TestCase):
     def test_19_btts_confirmation_export_is_three_of_three(self):
         result = result_template(key="btts_yes", probability=.70, confirming=3)
         before_probabilities = copy.deepcopy(result["probabilities"])
-        output = apply_full5_next(result, five_files())
+        output = apply_ai(result)
         gate = output["full5_next"]["confirmation_gate"]
         legacy_gate = output["diagnostics"]["elite_protocol"]["gates"]["multi_block_confirmation"]
         self.assertEqual(output["decision"], "SPIELEN")
@@ -190,6 +234,30 @@ class Full5NextTests(unittest.TestCase):
         self.assertEqual(gate["status"], "BESTANDEN")
         self.assertEqual(gate["applicable_block_names"], ["UNDERLYING", "MATCH", "FORM"])
         self.assertEqual(legacy_gate, gate)
+
+    def test_20_unstable_ai_rank_is_no_bet(self):
+        output = apply_ai(result_template(), rank_stability=.49)
+        self.assertEqual(output["decision"], "AUSLASSEN / KEIN BET")
+        self.assertIn("nicht mehrheitsstabil", " ".join(output["full5_next"]["counterarguments"]))
+
+    def test_21_ai_failure_is_no_bet_without_core_change(self):
+        result = result_template()
+        before = copy.deepcopy(result["probabilities"])
+        with patch("full5_next_engine.learned_ai.rank_markets", side_effect=ValueError("missing input")):
+            output = apply_full5_next(result, five_files())
+        self.assertEqual(output["decision"], "AUSLASSEN / KEIN BET")
+        self.assertEqual(output["probabilities"], before)
+
+    def test_22_all_six_ai_scores_exported(self):
+        output = apply_ai(result_template())
+        ranking = output["full5_next"]["market_ranking"]
+        self.assertEqual(len(ranking), 6)
+        self.assertTrue(all("learned_score" in item for item in ranking))
+
+    def test_23_ai_score_does_not_replace_core_probability(self):
+        output = apply_ai(result_template(probability=.61), learned_score=.83)
+        self.assertEqual(output["full5_next"]["probability"], .61)
+        self.assertEqual(output["full5_next"]["learned_correctness_score"], .83)
 
 
 if __name__ == "__main__":

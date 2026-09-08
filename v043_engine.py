@@ -24,7 +24,9 @@ import v042_engine
 
 VERSION = "0.4.3"
 FEATURE_COUNT = 40
-FULL5_ALPHA = 1.0
+# Training regularisation used for the locked 40-feature Poisson fit.
+# The stored coefficients are unchanged; this constant is release metadata.
+FULL5_ALPHA = 3.0
 TRAINING_REFERENCE = "137 strict pre-match archives; competition-grouped repeated/nested CV"
 _FULL5_CONTEXT: ContextVar[Optional[Dict[str, Any]]] = ContextVar("v043_full5_context", default=None)
 

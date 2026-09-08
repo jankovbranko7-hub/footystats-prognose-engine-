@@ -7,6 +7,7 @@ on:
       - feat/v0.4.3-pairing-ui-final
       - feat/v0.4.3-observe-fazit
       - release/full5-next-1.0
+      - release/full5-next-ai
       - main
 
 jobs:
@@ -18,18 +19,19 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install -r requirements.txt
-      - name: Syntax, 19 tests, entrypoint and locked production invariants
+      - name: Syntax, tests, entrypoint and locked production invariants
         run: |
-          python -m py_compile app_v040.py v041_engine.py v042_engine.py v043_engine.py v043_release.py v043_pairing_ui.py v043_observe_fazit_ui.py full5_next_engine.py full5_next_release.py app.py test_full5_next.py
-          python -m unittest -v test_full5_next.py
+          python -m py_compile app_v040.py v041_engine.py v042_engine.py v043_engine.py v043_release.py v043_pairing_ui.py v043_observe_fazit_ui.py full5_next_ai.py full5_next_engine.py full5_next_release.py app.py test_full5_next.py test_full5_next_ai.py
+          python -m unittest discover -v
           python - <<'PY'
+          import json
           import math
           import app
           import app_v040 as legacy
           import v043_engine as e
           import v043_release as r
           import full5_next_engine as n
-          assert app.app.version == 'FULL-5-NEXT-1.0.0'
+          assert app.app.version == 'FULL-5-NEXT-AI-2.0.0'
           assert e.FEATURE_COUNT == 40
           assert len(e.FULL5_FEATURES) == len(e.FULL5_MEAN) == len(e.FULL5_SCALE) == len(e.FULL5_COEF) == 40
           assert all(math.isfinite(x) for x in e.FULL5_MEAN + e.FULL5_SCALE + e.FULL5_COEF)
@@ -56,19 +58,32 @@ jobs:
           assert 'Signal Agreement / Conflict' in legacy.INDEX_HTML
           assert 'Gegenargumente / Konflikte' in legacy.INDEX_HTML
           assert 'anwendbare Signalblöcke bestätigt' in legacy.INDEX_HTML
+          assert 'AI Correctness Score' in legacy.INDEX_HTML
+          assert 'AI-Rangstabilität' in legacy.INDEX_HTML
+          assert 'Alle sechs Märkte' in legacy.INDEX_HTML
+          model=json.load(open('full5_next_ai_model.json',encoding='utf-8'))
+          assert model['training_matches']==247
+          assert model['training_candidates']==1482
+          assert len(model['bootstrap_models'])==80
+          assert model['decision_policy']['probability_cutoff'] is None
           health = next(route.endpoint for route in app.app.router.routes if getattr(route,'path',None)=='/api/health')()
-          assert health['version']=='FULL-5-NEXT-1.0.0'
-          assert health['engine']=='full5-next-evidence-gated-six-market'
+          assert health['version']=='FULL-5-NEXT-AI-2.0.0'
+          assert health['engine']=='full5-next-trained-six-market-ranker'
           assert health['probability_core']=='V0.4.3 FULL-5'
           assert health['rho']==-0.25
           assert health['full5_features']==40
           assert health['alpha']==3.0
           assert health['production'] is True
           assert health['elite_lambda_correction'] is False
-          assert health['new_feature_blocks']==0
+          assert health['probability_core_new_feature_blocks']==0
+          assert health['decision_model_inputs']==18
+          assert health['probability_cutoff'] is None
+          assert health['sample_quality_hard_cutoff'] is None
           assert health['file_6'] is False and health['file_7'] is False
           assert health['no_bet'] is True
-          assert health['oos']['hits']==23 and health['oos']['plays']==33
-          assert n.PLAY_PROBABILITY==0.60 and n.MIN_SAMPLE_QUALITY==0.40
+          assert health['rolling_oof']['rank_hits']==94 and health['rolling_oof']['rank_matches']==150
+          assert health['rolling_oof']['play_hits']==52 and health['rolling_oof']['plays']==70
+          assert health['former_oos_claimed_untouched'] is False
+          assert n.MIN_CONFIRMATION_RATIO==0.75 and n.MIN_RANK_STABILITY==0.50
           print('FULL-5 NEXT production smoke OK', health, 'lambda@mean=', lam)
           PY

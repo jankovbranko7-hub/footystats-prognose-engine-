@@ -9,8 +9,10 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, Iterable, List, Mapping, Sequence, Set
 
+import full5_next_ai as learned_ai
 
-VERSION = "FULL-5-NEXT-1.0.0"
+
+VERSION = "FULL-5-NEXT-AI-2.0.0"
 CORE_VERSION = "0.4.3"
 MARKET_KEYS = (
     "home_win", "away_win", "btts_yes", "btts_no", "over_2_5", "under_2_5"
@@ -24,11 +26,9 @@ APPLICABLE_EVIDENCE_BLOCKS = {
     "over_2_5": ("UNDERLYING", "MATCH", "FORM", "PLAYER"),
     "under_2_5": ("UNDERLYING", "MATCH", "FORM", "PLAYER"),
 }
-PLAY_PROBABILITY = 0.60
-OBSERVE_PROBABILITY = 0.50
-MIN_CONFIRMING_BLOCKS = 3
+MIN_CONFIRMATION_RATIO = 0.75
 MAX_COUNTER_BLOCKS = 0
-MIN_SAMPLE_QUALITY = 0.40
+MIN_RANK_STABILITY = 0.50
 TARGET_MATCH_BLOCKLIST = {
     "homeGoalCount", "awayGoalCount", "totalGoalCount", "overallGoalCount",
     "HTGoalCount", "GoalCount_2hg", "homeGoals", "awayGoals",
@@ -145,7 +145,7 @@ def _higher_probability_reason(result: Mapping[str, Any], selected_key: str, sel
     key, label, probability = higher[0]
     return (
         f"{label} ({probability:.1%}) besitzt die höhere Rohwahrscheinlichkeit, "
-        "verlor aber den normalisierten Markt-Family-/Evidenzvergleich."
+        "verlor aber den trainierten Fünf-Dateien-Correctness-Vergleich."
     )
 
 
@@ -157,7 +157,7 @@ def _confirmation_diagnostic(market_key: str, confirming: Sequence[str]) -> Dict
     """
     applicable_names = list(APPLICABLE_EVIDENCE_BLOCKS[market_key])
     confirmed_names = [name for name in confirming if name in applicable_names]
-    required = min(MIN_CONFIRMING_BLOCKS, len(applicable_names))
+    required = math.ceil(MIN_CONFIRMATION_RATIO * len(applicable_names))
     if len(confirmed_names) >= required:
         status = "BESTANDEN"
     elif len(confirmed_names) >= 2:
@@ -174,25 +174,16 @@ def _confirmation_diagnostic(market_key: str, confirming: Sequence[str]) -> Dict
 
 
 def apply_full5_next(result: Dict[str, Any], parsed_files: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
-    """Attach the locked final decision while preserving every core probability."""
+    """Attach the trained final decision while preserving every core probability."""
     if not isinstance(result, dict) or not result.get("ok"):
         return result
     probabilities = result.get("probabilities") or {}
     if not probability_sums_valid(probabilities):
         raise ValueError("V0.4.3 probability sums are invalid")
 
-    strongest = result.get("strongest_market") or {}
-    market_key = str(strongest.get("key") or "")
-    if market_key not in MARKET_KEYS:
-        raise ValueError("V0.4.3 returned no valid strongest playable market")
-    probability = float(probabilities[market_key])
-
     diagnostics = result.get("diagnostics") or {}
     protocol = diagnostics.get("elite_protocol") or {}
     gates = protocol.get("gates") or {}
-    confirming = list(protocol.get("confirming_blocks") or [])
-    counters = list(protocol.get("counter_blocks") or [])
-    confirmation_gate = _confirmation_diagnostic(market_key, confirming)
     strict = ((gates.get("pre_match_integrity") or {}).get("strict_pre_match") is True)
     robust = diagnostics.get("robustness_status") == "BESTANDEN"
     found_sources = source_types(parsed_files)
@@ -203,27 +194,55 @@ def apply_full5_next(result: Dict[str, Any], parsed_files: Sequence[Mapping[str,
     data_quality = str(diagnostics.get("data_quality") or "UNBEKANNT")
     sample_security = str(diagnostics.get("sample_security") or "UNBEKANNT")
 
+    ai_error = None
+    try:
+        ranking = learned_ai.rank_markets(result, parsed_files)
+        selected = ranking["selected"]
+        market_key = str(selected["market"])
+        probability = float(probabilities[market_key])
+        learned_score = float(selected["learned_score"])
+        score_gap = float(selected["score_gap"])
+        rank_stability = float(selected["rank_stability"])
+        confirming = list(selected["confirming_blocks"])
+        counters = list(selected["counter_blocks"])
+        confirmation_gate = _confirmation_diagnostic(market_key, confirming)
+    except (KeyError, TypeError, ValueError, RuntimeError) as exc:
+        ai_error = str(exc)
+        strongest = result.get("strongest_market") or {}
+        market_key = str(strongest.get("key") or "")
+        if market_key not in MARKET_KEYS:
+            raise ValueError("V0.4.3 returned no valid playable market") from exc
+        probability = float(probabilities[market_key])
+        learned_score = score_gap = rank_stability = 0.0
+        confirming = []
+        counters = ["AI_INPUT"]
+        confirmation_gate = _confirmation_diagnostic(market_key, confirming)
+        ranking = {"selected": {}, "second": {}, "candidates": [], "model": {}}
+
+    confirmation_ratio = confirmation_gate["confirmations"] / max(1, confirmation_gate["applicable_blocks"])
     play = all((
         strict,
         data_quality_gate,
-        probability >= PLAY_PROBABILITY,
-        len(confirming) >= MIN_CONFIRMING_BLOCKS,
+        ai_error is None,
+        confirmation_ratio >= MIN_CONFIRMATION_RATIO,
         len(counters) <= MAX_COUNTER_BLOCKS,
         robust,
-        quality >= MIN_SAMPLE_QUALITY,
+        rank_stability >= MIN_RANK_STABILITY,
     ))
     observe = all((
         strict,
         data_quality_gate,
-        probability >= OBSERVE_PROBABILITY,
-        len(confirming) >= 2,
+        ai_error is None,
+        confirmation_ratio >= 0.50,
         len(counters) <= 1,
+        rank_stability >= MIN_RANK_STABILITY,
     ))
     decision = "SPIELEN" if play else "BEOBACHTEN" if observe else "AUSLASSEN / KEIN BET"
 
     positive_reasons: List[str] = [
-        "Der Markt gewann den normalisierten Vergleich aller sechs spielbaren Märkte.",
+        "Das trainierte FULL-5-NEXT-Modell wählte diesen Markt im Vergleich aller sechs Kandidaten.",
         f"V0.4.3-Core-Wahrscheinlichkeit: {probability:.1%}.",
+        f"Gelernter Correctness-Score: {learned_score:.1%}; Rangstabilität: {rank_stability:.1%}.",
     ]
     if confirming:
         positive_reasons.append(
@@ -235,7 +254,7 @@ def apply_full5_next(result: Dict[str, Any], parsed_files: Sequence[Mapping[str,
     if all_five:
         positive_reasons.append("Alle fünf FootyStats-Dateien wurden erkannt.")
 
-    counterarguments = list(counters)
+    counterarguments = [f"Gegenargument im Signalblock {name}." for name in counters]
     if not strict:
         counterarguments.append("Snapshot liegt nicht strikt vor Kickoff.")
     if not all_five:
@@ -243,22 +262,22 @@ def apply_full5_next(result: Dict[str, Any], parsed_files: Sequence[Mapping[str,
         counterarguments.append("Fehlende Datenquelle(n): " + ", ".join(missing) + ".")
     if not audit_valid:
         counterarguments.append("Datenqualitäts-Audit nicht bestanden.")
-    if probability < PLAY_PROBABILITY:
-        counterarguments.append(f"Probability Gate für SPIELEN nicht erreicht ({probability:.1%} < {PLAY_PROBABILITY:.0%}).")
-    if len(confirming) < MIN_CONFIRMING_BLOCKS:
+    if ai_error:
+        counterarguments.append("Trainierte Decision Engine nicht anwendbar: " + ai_error)
+    if confirmation_ratio < MIN_CONFIRMATION_RATIO:
         counterarguments.append(
-            f"Nur {len(confirming)} bestätigende Blöcke; für SPIELEN sind {MIN_CONFIRMING_BLOCKS} erforderlich."
+            f"Nur {confirmation_gate['confirmations']}/{confirmation_gate['applicable_blocks']} anwendbare Blöcke bestätigen den AI-Markt."
         )
     if not robust:
         counterarguments.append("Robustheitsprüfung nicht bestanden.")
-    if quality < MIN_SAMPLE_QUALITY:
-        counterarguments.append(f"Sample Quality zu niedrig ({quality:.2f} < {MIN_SAMPLE_QUALITY:.2f}).")
+    if rank_stability < MIN_RANK_STABILITY:
+        counterarguments.append(f"AI-Marktrang nicht mehrheitsstabil ({rank_stability:.1%}).")
 
     full5 = ((((result.get("expected_goals") or {}).get("hybrid_model") or {}).get("full5")) or {})
     next_result = {
         "version": VERSION,
-        "validation_reference": "247 strict+verified matches; development=160; chronological OOS=87",
-        "oos_play_result": {"hits": 23, "plays": 33, "hit_rate": 0.696969696969697},
+        "validation_reference": "247 strict+verified matches; five expanding chronological outer folds",
+        "rolling_oof_result": {"rank_hits": 94, "rank_matches": 150, "play_hits": 52, "plays": 70, "play_hit_rate": 0.7428571428571429},
         "probability_core": "V0.4.3 FULL-5",
         "probability_core_changed": False,
         "feature_count": 40,
@@ -267,9 +286,22 @@ def apply_full5_next(result: Dict[str, Any], parsed_files: Sequence[Mapping[str,
         "elite_lambda": False,
         "new_feature_blocks": [],
         "selected_market": market_key,
-        "selected_market_label": strongest.get("label") or market_key,
+        "selected_market_label": learned_ai.LABELS.get(market_key, market_key),
         "probability": probability,
         "probability_pct": round(probability * 100, 1),
+        "learned_correctness_score": round(learned_score, 6),
+        "learned_correctness_score_pct": round(learned_score * 100, 1),
+        "learned_score_gap": round(score_gap, 6),
+        "rank_stability": round(rank_stability, 6),
+        "rank_stability_pct": round(rank_stability * 100, 1),
+        "market_ranking": [
+            {
+                "market": item["market"], "label": item["label"],
+                "core_probability": round(float(item["core_probability"]), 6),
+                "learned_score": round(float(item["learned_score"]), 6),
+            }
+            for item in sorted(ranking["candidates"], key=lambda entry: entry["learned_score"], reverse=True)
+        ],
         "decision": decision,
         "positive_reasons": positive_reasons,
         "counterarguments": counterarguments,
@@ -294,18 +326,19 @@ def apply_full5_next(result: Dict[str, Any], parsed_files: Sequence[Mapping[str,
         "sample_security": sample_security,
         "full5_status": "AKTIV" if full5.get("applied") is True else "FALLBACK AUF V0.4.2",
         "why_this_market": (
-            "Der Markt gewann den normalisierten Vergleich aller sechs Märkte und besitzt "
-            "die stärkste bestätigte Evidenzfamilie."
+            "Der Markt besitzt nach gelernter, stark regularisierter Fünf-Dateien-Gewichtung den höchsten "
+            "Correctness-Score aller sechs Kandidaten."
         ),
         "why_not_higher_probability_market": _higher_probability_reason(result, market_key, probability),
         "locked_parameters": {
-            "play_probability": PLAY_PROBABILITY,
-            "observe_probability": OBSERVE_PROBABILITY,
-            "minimum_confirming_blocks": MIN_CONFIRMING_BLOCKS,
+            "play_probability": None,
+            "observe_probability": None,
+            "minimum_confirmation_ratio": MIN_CONFIRMATION_RATIO,
             "maximum_counter_blocks": MAX_COUNTER_BLOCKS,
             "robustness_required": True,
             "all_five_sources_required": True,
-            "minimum_sample_quality": MIN_SAMPLE_QUALITY,
+            "minimum_rank_stability": MIN_RANK_STABILITY,
+            "sample_quality": "continuous learned input; no hard cutoff",
         },
     }
     result["full5_next"] = next_result
@@ -325,7 +358,7 @@ def apply_full5_next(result: Dict[str, Any], parsed_files: Sequence[Mapping[str,
         "release_status": "production",
         "probability_core": "V0.4.3 FULL-5 unchanged",
         "decision_engine": VERSION,
-        "oos_reoptimized": False,
+        "validation": "rolling chronological grouped OOF; former OOS not claimed untouched",
         "file_6": False,
         "file_7": False,
     })

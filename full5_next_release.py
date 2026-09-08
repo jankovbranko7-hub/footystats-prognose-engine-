@@ -13,7 +13,7 @@ def _install_ui(legacy: Any) -> None:
     html = html.replace("<h2>FootyStats Prognose Engine v0.4.0</h2>", "<h2>FootyStats FULL-5 NEXT</h2>", 1)
     html = html.replace(
         "Liga-relativer V5.5-Kern · keine Odds · keine externen Matchdaten · INSUFFICIENT_DATA-Sperre und V5.2-Guardrails aktiv",
-        "V0.4.3 FULL-5 Probability Core · 40 Features · Alpha 3.0 · Dixon-Coles rho -0.25 · finale evidenzbasierte Decision Engine",
+        "V0.4.3 FULL-5 Probability Core · 40 Features · Alpha 3.0 · Dixon-Coles rho -0.25 · trainierte FULL-5-NEXT AI Decision Engine",
         1,
     )
 
@@ -25,6 +25,7 @@ def _install_ui(legacy: Any) -> None:
     const nextReasons=Array.isArray(next.positive_reasons)?next.positive_reasons.filter(Boolean):[];
     const nextCounters=Array.isArray(next.counterarguments)?next.counterarguments.filter(Boolean):[];
     const nextConfirmation=next.confirmation_gate||{};
+    const learnedRanking=Array.isArray(next.market_ranking)?next.market_ranking:[];
     const nextConfirmationText=(nextConfirmation.confirmations==null||nextConfirmation.applicable_blocks==null)
       ? '—'
       : nextConfirmation.confirmations+'/'+nextConfirmation.applicable_blocks+' anwendbare Signalblöcke bestätigt → '+(nextConfirmation.status||'—');
@@ -34,15 +35,18 @@ def _install_ui(legacy: Any) -> None:
     const nextCard='<div class="c"><h3>FULL-5 NEXT – Finale Entscheidung</h3><div class="g">'+
       '<div class="m"><div class="s">Gewählter Markt</div><div class="b">'+escapeHtml(next.selected_market_label||'—')+'</div></div>'+
       '<div class="m"><div class="s">V0.4.3 Core</div><div class="b">'+escapeHtml(next.probability_pct==null?'—':next.probability_pct+'%')+'</div></div>'+
+      '<div class="m"><div class="s">AI Correctness Score</div><div class="b">'+escapeHtml(next.learned_correctness_score_pct==null?'—':next.learned_correctness_score_pct+'%')+'</div></div>'+
       '<div class="m"><div class="s">Entscheidung</div><div class="b '+nextDecisionClass+'">'+escapeHtml(nextDecision)+'</div></div>'+
       '<div class="m"><div class="s">Signal Agreement / Conflict</div><div class="b">'+escapeHtml(next.signal_agreement==null?'—':next.signal_agreement)+' / '+escapeHtml(next.signal_conflict==null?'—':next.signal_conflict)+'</div></div>'+
       '<div class="m"><div class="s">Bestätigung</div><div class="b">'+escapeHtml(nextConfirmationText)+'</div></div>'+
       '<div class="m"><div class="s">Datenqualität</div><div class="b">'+escapeHtml(next.data_quality||diag.data_quality||'—')+'</div></div>'+
       '<div class="m"><div class="s">Robustheit</div><div class="b">'+escapeHtml(next.robustness||'—')+'</div></div>'+
+      '<div class="m"><div class="s">AI-Rangstabilität</div><div class="b">'+escapeHtml(next.rank_stability_pct==null?'—':next.rank_stability_pct+'%')+'</div></div>'+
       '<div class="m"><div class="s">Sample</div><div class="b">'+escapeHtml(next.sample_security||diag.sample_security||'—')+'</div><div class="s">Quality '+escapeHtml(next.sample_quality==null?'—':next.sample_quality)+'</div></div>'+
       '<div class="m"><div class="s">FULL-5</div><div class="b">'+escapeHtml(next.full5_status||'—')+'</div></div>'+
       '</div><h4>Wichtigste Entscheidungsgründe</h4>'+nextReasonList+
       '<h4>Gegenargumente / Konflikte</h4>'+nextCounterList+
+      (learnedRanking.length?'<h4>Alle sechs Märkte</h4><ul>'+learnedRanking.map(function(x){return '<li>'+escapeHtml(x.label||x.market)+': Core '+escapeHtml(Math.round((x.core_probability||0)*1000)/10)+'% · AI '+escapeHtml(Math.round((x.learned_score||0)*1000)/10)+'%</li>';}).join('')+'</ul>':'')+
       '<p class="s">'+escapeHtml(next.why_not_higher_probability_market||'')+'</p></div>';
 """
     html = html.replace(js_anchor, next_js, 1)
@@ -76,18 +80,23 @@ def apply_patch(legacy: Any) -> Any:
         return {
             "ok": True,
             "version": next_engine.VERSION,
-            "engine": "full5-next-evidence-gated-six-market",
+            "engine": "full5-next-trained-six-market-ranker",
             "probability_core": "V0.4.3 FULL-5",
             "baseline": "v0.4.2-hybrid-lambda",
             "full5_features": 40,
             "alpha": 3.0,
             "rho": -0.25,
             "elite_lambda_correction": False,
-            "new_feature_blocks": 0,
+            "decision_model": {"type": "regularized logistic ranker", "training_matches": 247, "market_candidates": 1482},
+            "probability_core_new_feature_blocks": 0,
+            "decision_model_inputs": 18,
+            "probability_cutoff": None,
+            "sample_quality_hard_cutoff": None,
             "file_6": False,
             "file_7": False,
             "no_bet": True,
-            "oos": {"hits": 23, "plays": 33, "hit_rate": 0.696969696969697},
+            "rolling_oof": {"rank_hits": 94, "rank_matches": 150, "play_hits": 52, "plays": 70, "play_hit_rate": 0.7428571428571429},
+            "former_oos_claimed_untouched": False,
             "production": True,
         }
 
