@@ -1,4 +1,4 @@
-name: Verify Render V1 Production
+name: Verify Render FULL-5 NEXT
 
 on:
   push:
@@ -9,7 +9,7 @@ jobs:
   verify-render:
     runs-on: ubuntu-latest
     steps:
-      - name: Verify V1 health, full specialist UI and frozen V043 core
+      - name: Verify production health, final NEXT decision UI and locked core
         shell: bash
         run: |
           set -euo pipefail
@@ -19,25 +19,21 @@ jobs:
             BODY="$(curl -fsS --max-time 20 "$HEALTH_URL" 2>/dev/null || true)"
             PAGE="$(curl -fsS --max-time 20 "$PAGE_URL" 2>/dev/null || true)"
             echo "attempt=$i health=$BODY"
-            if echo "$BODY" | python -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok") is True and d.get("version")=="1.0.0" and d.get("engine")=="v1-v043-full5-full-multimarket-specialists" and d.get("baseline")=="0.4.3 FULL-5" and d.get("v043_probability_core_locked") is True and d.get("rho")==-0.25 and d.get("full5_features")==40 and d.get("alpha")==3.0 and d.get("gate_v1") is True and len(d.get("all_six_markets") or [])==6 and all((d.get("specialists") or {}).values()) and d.get("specialist_probability_weights") is False and d.get("probabilities_modified_by_v1") is False and d.get("new_lambda_core") is False and d.get("five_source_only") is True and d.get("new_shortcut_required") is False and d.get("production") is True' \
+            if echo "$BODY" | python -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok") is True and d.get("version")=="FULL-5-NEXT-1.0.0" and d.get("engine")=="full5-next-evidence-gated-six-market" and d.get("probability_core")=="V0.4.3 FULL-5" and d.get("rho")==-0.25 and d.get("full5_features")==40 and d.get("alpha")==3.0 and d.get("production") is True and d.get("elite_lambda_correction") is False and d.get("new_feature_blocks")==0 and d.get("file_6") is False and d.get("file_7") is False and d.get("no_bet") is True and d.get("oos",{}).get("hits")==23 and d.get("oos",{}).get("plays")==33' \
               && grep -Fq 'Spielpaarung' <<<"$PAGE" \
               && grep -Fq 'Match-ID:' <<<"$PAGE" \
               && grep -Fq 'FULL-5-Status' <<<"$PAGE" \
               && grep -Fq 'FULL-5: AKTIV ✅' <<<"$PAGE" \
               && grep -Fq 'FULL-5: FALLBACK AUF V0.4.2 ⚠️' <<<"$PAGE" \
               && grep -Fq 'Warum BEOBACHTEN?' <<<"$PAGE" \
-              && grep -Fq 'Warum SPIELEN?' <<<"$PAGE" \
-              && grep -Fq 'Warum AUSLASSEN?' <<<"$PAGE" \
-              && grep -Fq 'Entscheidender Grund' <<<"$PAGE" \
-              && grep -Fq 'Gate-Bild:' <<<"$PAGE" \
-              && grep -Fq 'V1 Multi-Market & Specialists' <<<"$PAGE" \
-              && grep -Fq 'Alle sechs Märkte' <<<"$PAGE" \
-              && grep -Fq 'Core-Topmarkt' <<<"$PAGE" \
-              && grep -Fq 'V1 robuste Wahl' <<<"$PAGE"; then
-              echo "Render V1 production + exact decision reasons + full specialists + frozen V0.4.3 core verified"
+              && grep -Fq 'FULL-5 NEXT – Finale Entscheidung' <<<"$PAGE" \
+              && grep -Fq 'Gewählter Markt' <<<"$PAGE" \
+              && grep -Fq 'Signal Agreement / Conflict' <<<"$PAGE" \
+              && grep -Fq 'Gegenargumente / Konflikte' <<<"$PAGE"; then
+              echo "Render FULL-5 NEXT production UI verified"
               exit 0
             fi
             sleep 10
           done
-          echo "Render did not expose the expected V1 production contract"
+          echo "Render did not expose the expected FULL-5 NEXT report UI"
           exit 1
