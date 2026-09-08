@@ -4,7 +4,10 @@ import copy
 import unittest
 from unittest.mock import patch
 
-from full5_next_ai import FEATURE_NAMES, MARKETS, _predict, candidate_features, load_model, rank_markets
+from full5_next_ai import (
+    FEATURE_NAMES, MARKETS, POLICY_FEATURE_NAMES, _predict, candidate_features,
+    load_model, rank_markets,
+)
 
 
 def flat_inputs():
@@ -48,7 +51,11 @@ class Full5NextAiTests(unittest.TestCase):
         self.assertEqual(model["training_candidates"], 1482)
         self.assertEqual(len(model["bootstrap_models"]), 80)
         self.assertEqual(len(model["central_model"]["coefficient"]), len(FEATURE_NAMES))
-        self.assertIsNone(model["decision_policy"]["probability_cutoff"])
+        self.assertEqual(model["decision_policy"]["final_decision_source"], "TRAINED_AI_POLICY")
+        self.assertEqual(model["decision_policy"]["manual_performance_gates"], [])
+        self.assertEqual(len(model["abstention_policy"]["feature_names"]), len(POLICY_FEATURE_NAMES))
+        self.assertEqual(len(model["abstention_policy"]["bootstrap_models"]), 80)
+        self.assertEqual(model["abstention_validation"]["former_87_match_oos_rows_used"], 0)
 
     def test_05_scores_are_deterministic_and_bounded(self):
         model = load_model()["central_model"]

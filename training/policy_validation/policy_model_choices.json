@@ -1,0 +1,82 @@
+[
+  {
+    "fold": 0,
+    "train_matches": 60,
+    "test_matches": 30,
+    "regularization_c": 0.03,
+    "inner_choices": [
+      {
+        "regularization_c": 0.0003,
+        "inner_log_loss": 0.6496085631227435
+      },
+      {
+        "regularization_c": 0.001,
+        "inner_log_loss": 0.6394273483294358
+      },
+      {
+        "regularization_c": 0.003,
+        "inner_log_loss": 0.6200207327277907
+      },
+      {
+        "regularization_c": 0.01,
+        "inner_log_loss": 0.5955236802932558
+      },
+      {
+        "regularization_c": 0.03,
+        "inner_log_loss": 0.5938005480053284
+      },
+      {
+        "regularization_c": 0.1,
+        "inner_log_loss": 0.639314755984745
+      }
+    ],
+    "cluster_centres": [
+      0.45110815540931587,
+      0.6687175279716545,
+      0.879526749721979
+    ],
+    "learned_observe_boundary": 0.5599128416904852,
+    "learned_play_boundary": 0.7741221388468167,
+    "learning_method": "three_cluster_kmeans_on_trained_reliability; k=3 from the required product states"
+  },
+  {
+    "fold": 1,
+    "train_matches": 90,
+    "test_matches": 30,
+    "regularization_c": 0.01,
+    "inner_choices": [
+      {
+        "regularization_c": 0.0003,
+        "inner_log_loss": 0.6991308884008729
+      },
+      {
+        "regularization_c": 0.001,
+        "inner_log_loss": 0.6920224374001904
+      },
+      {
+        "regularization_c": 0.003,
+        "inner_log_loss": 0.6819960984695799
+      },
+      {
+        "regularization_c": 0.01,
+        "inner_log_loss": 0.6809459072034985
+      },
+      {
+        "regularization_c": 0.03,
+        "inner_log_loss": 0.7099311351205935
+      },
+      {
+        "regularization_c": 0.1,
+        "inner_log_loss": 0.7942840478176364
+      }
+    ],
+    "cluster_centres": [
+      0.47035903862321377,
+      0.6130321222572714,
+      0.7927040908947043
+    ],
+    "learned_observe_boundary": 0.5416955804402426,
+    "learned_play_boundary": 0.7028681065759879,
+    "learning_method": "three_cluster_kmeans_on_trained_reliability; k=3 from the required product states"
+  }
+]

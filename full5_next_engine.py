@@ -1,8 +1,9 @@
-"""Validated FULL-5 NEXT decision layer for the V0.4.3 FULL-5 core.
+"""Trained FULL-5 NEXT market-ranking and abstention layer.
 
 The probability core is intentionally unchanged: 40 features, alpha=3.0,
 Dixon-Coles rho=-0.25 and the established V0.4.2 fallback.  This module only
-applies the chronologically locked six-market evidence gate.
+applies the chronologically trained six-market ranker and reliability policy.
+Only data-integrity checks may override the trained final decision.
 """
 from __future__ import annotations
 
@@ -12,7 +13,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Sequence, Set
 import full5_next_ai as learned_ai
 
 
-VERSION = "FULL-5-NEXT-AI-2.0.0"
+VERSION = "FULL-5-NEXT-AI-2.1.0"
 CORE_VERSION = "0.4.3"
 MARKET_KEYS = (
     "home_win", "away_win", "btts_yes", "btts_no", "over_2_5", "under_2_5"
@@ -26,9 +27,6 @@ APPLICABLE_EVIDENCE_BLOCKS = {
     "over_2_5": ("UNDERLYING", "MATCH", "FORM", "PLAYER"),
     "under_2_5": ("UNDERLYING", "MATCH", "FORM", "PLAYER"),
 }
-MIN_CONFIRMATION_RATIO = 0.75
-MAX_COUNTER_BLOCKS = 0
-MIN_RANK_STABILITY = 0.50
 TARGET_MATCH_BLOCKLIST = {
     "homeGoalCount", "awayGoalCount", "totalGoalCount", "overallGoalCount",
     "HTGoalCount", "GoalCount_2hg", "homeGoals", "awayGoals",
@@ -122,7 +120,7 @@ def blocked_target_fields(parsed_files: Sequence[Mapping[str, Any]]) -> List[str
 
 
 def sample_quality(result: Mapping[str, Any]) -> float:
-    """Locked 0..1 sample score used in the validated decision gate."""
+    """Legacy diagnostic score; it never gates the final AI policy."""
     samples = result.get("samples") or {}
     venue_n = min(_number(samples.get("home_venue")), _number(samples.get("away_venue")))
     supplemental = ((result.get("diagnostics") or {}).get("supplemental_inputs") or {})
@@ -152,16 +150,15 @@ def _higher_probability_reason(result: Mapping[str, Any], selected_key: str, sel
 def _confirmation_diagnostic(market_key: str, confirming: Sequence[str]) -> Dict[str, Any]:
     """Describe confirmations against blocks applicable to the selected family.
 
-    This is export/presentation metadata only.  The locked FULL-5 NEXT decision
-    conditions remain unchanged.
+    This is export/presentation metadata only and never affects the decision.
     """
     applicable_names = list(APPLICABLE_EVIDENCE_BLOCKS[market_key])
     confirmed_names = [name for name in confirming if name in applicable_names]
-    required = math.ceil(MIN_CONFIRMATION_RATIO * len(applicable_names))
-    if len(confirmed_names) >= required:
+    required = len(applicable_names)
+    if len(confirmed_names) == required:
         status = "BESTANDEN"
-    elif len(confirmed_names) >= 2:
-        status = "EINGESCHRÄNKT"
+    elif confirmed_names:
+        status = "TEILWEISE"
     else:
         status = "NICHT BESTANDEN"
     return {
@@ -170,11 +167,18 @@ def _confirmation_diagnostic(market_key: str, confirming: Sequence[str]) -> Dict
         "applicable_block_names": applicable_names,
         "required": required,
         "status": status,
+        "diagnostic_only": True,
+        "affects_final_decision": False,
     }
 
 
 def apply_full5_next(result: Dict[str, Any], parsed_files: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
-    """Attach the trained final decision while preserving every core probability."""
+    """Attach the trained final decision while preserving every core probability.
+
+    The only hard overrides are data-integrity conditions. Confirmations,
+    counters, rank stability, robustness and sample quality remain diagnostics
+    or continuous model inputs; no fixed performance threshold is applied here.
+    """
     if not isinstance(result, dict) or not result.get("ok"):
         return result
     probabilities = result.get("probabilities") or {}
@@ -189,7 +193,7 @@ def apply_full5_next(result: Dict[str, Any], parsed_files: Sequence[Mapping[str,
     found_sources = source_types(parsed_files)
     all_five = found_sources == set(SOURCE_TYPES)
     audit_valid = ((result.get("audit") or {}).get("valid") is True)
-    data_quality_gate = all_five and audit_valid
+    leakage_guard_passed = not blocked_target_fields(parsed_files)
     quality = sample_quality(result)
     data_quality = str(diagnostics.get("data_quality") or "UNBEKANNT")
     sample_security = str(diagnostics.get("sample_security") or "UNBEKANNT")
@@ -206,6 +210,7 @@ def apply_full5_next(result: Dict[str, Any], parsed_files: Sequence[Mapping[str,
         confirming = list(selected["confirming_blocks"])
         counters = list(selected["counter_blocks"])
         confirmation_gate = _confirmation_diagnostic(market_key, confirming)
+        policy = learned_ai.apply_abstention_policy(result, ranking)
     except (KeyError, TypeError, ValueError, RuntimeError) as exc:
         ai_error = str(exc)
         strongest = result.get("strongest_market") or {}
@@ -218,39 +223,40 @@ def apply_full5_next(result: Dict[str, Any], parsed_files: Sequence[Mapping[str,
         counters = ["AI_INPUT"]
         confirmation_gate = _confirmation_diagnostic(market_key, confirming)
         ranking = {"selected": {}, "second": {}, "candidates": [], "model": {}}
+        policy = {
+            "decision": "AUSLASSEN / KEIN BET", "reliability": 0.0,
+            "reliability_bootstrap_mean": 0.0, "reliability_uncertainty": 0.0,
+            "reliability_q10": 0.0, "reliability_q90": 0.0,
+            "learned_observe_boundary": None, "learned_play_boundary": None,
+            "boundary_provenance": None, "final_decision_source": "TRAINED_AI_POLICY",
+            "manual_performance_gates": "NONE",
+            "integrity_gates": ["STRICT_PREMATCH", "FIVE_FILES", "AUDIT", "LEAKAGE", "REQUIRED_INPUTS"],
+        }
 
-    confirmation_ratio = confirmation_gate["confirmations"] / max(1, confirmation_gate["applicable_blocks"])
-    play = all((
-        strict,
-        data_quality_gate,
-        ai_error is None,
-        confirmation_ratio >= MIN_CONFIRMATION_RATIO,
-        len(counters) <= MAX_COUNTER_BLOCKS,
-        robust,
-        rank_stability >= MIN_RANK_STABILITY,
-    ))
-    observe = all((
-        strict,
-        data_quality_gate,
-        ai_error is None,
-        confirmation_ratio >= 0.50,
-        len(counters) <= 1,
-        rank_stability >= MIN_RANK_STABILITY,
-    ))
-    decision = "SPIELEN" if play else "BEOBACHTEN" if observe else "AUSLASSEN / KEIN BET"
+    integrity_checks = {
+        "STRICT_PREMATCH": strict,
+        "FIVE_FILES": all_five,
+        "AUDIT": audit_valid,
+        "LEAKAGE": leakage_guard_passed,
+        "REQUIRED_INPUTS": ai_error is None,
+    }
+    integrity_passed = all(integrity_checks.values())
+    policy_decision = str(policy["decision"])
+    decision = policy_decision if integrity_passed else "AUSLASSEN / KEIN BET"
 
     positive_reasons: List[str] = [
         "Das trainierte FULL-5-NEXT-Modell wählte diesen Markt im Vergleich aller sechs Kandidaten.",
         f"V0.4.3-Core-Wahrscheinlichkeit: {probability:.1%}.",
         f"Gelernter Correctness-Score: {learned_score:.1%}; Rangstabilität: {rank_stability:.1%}.",
+        f"Gelernte finale AI-Reliability: {float(policy['reliability']):.1%}.",
     ]
     if confirming:
         positive_reasons.append(
             f"{confirmation_gate['confirmations']}/{confirmation_gate['applicable_blocks']} "
-            "anwendbare Signalblöcke bestätigt: " + ", ".join(confirming) + "."
+            "anwendbare Signalblöcke bestätigt (nur Diagnose): " + ", ".join(confirming) + "."
         )
     if robust:
-        positive_reasons.append("Robustheitsprüfung bestanden.")
+        positive_reasons.append("Robustheitsdiagnose bestanden; kontinuierliche Stresswerte fließen in die AI ein.")
     if all_five:
         positive_reasons.append("Alle fünf FootyStats-Dateien wurden erkannt.")
 
@@ -262,22 +268,18 @@ def apply_full5_next(result: Dict[str, Any], parsed_files: Sequence[Mapping[str,
         counterarguments.append("Fehlende Datenquelle(n): " + ", ".join(missing) + ".")
     if not audit_valid:
         counterarguments.append("Datenqualitäts-Audit nicht bestanden.")
+    if not leakage_guard_passed:
+        counterarguments.append("Leakage-Schutz nicht bestanden.")
     if ai_error:
         counterarguments.append("Trainierte Decision Engine nicht anwendbar: " + ai_error)
-    if confirmation_ratio < MIN_CONFIRMATION_RATIO:
-        counterarguments.append(
-            f"Nur {confirmation_gate['confirmations']}/{confirmation_gate['applicable_blocks']} anwendbare Blöcke bestätigen den AI-Markt."
-        )
-    if not robust:
-        counterarguments.append("Robustheitsprüfung nicht bestanden.")
-    if rank_stability < MIN_RANK_STABILITY:
-        counterarguments.append(f"AI-Marktrang nicht mehrheitsstabil ({rank_stability:.1%}).")
+    if counters:
+        counterarguments.append("Diese Konflikte sind diagnostisch und kein manuelles Decision-Gate.")
 
     full5 = ((((result.get("expected_goals") or {}).get("hybrid_model") or {}).get("full5")) or {})
     next_result = {
         "version": VERSION,
-        "validation_reference": "247 strict+verified matches; five expanding chronological outer folds",
-        "rolling_oof_result": {"rank_hits": 94, "rank_matches": 150, "play_hits": 52, "plays": 70, "play_hit_rate": 0.7428571428571429},
+        "validation_reference": "Development-only chronological grouped rolling OOF; former 87-match OOS excluded",
+        "rolling_oof_result": learned_ai.load_model().get("abstention_validation") or {},
         "probability_core": "V0.4.3 FULL-5",
         "probability_core_changed": False,
         "feature_count": 40,
@@ -294,6 +296,8 @@ def apply_full5_next(result: Dict[str, Any], parsed_files: Sequence[Mapping[str,
         "learned_score_gap": round(score_gap, 6),
         "rank_stability": round(rank_stability, 6),
         "rank_stability_pct": round(rank_stability * 100, 1),
+        "ranking_uncertainty": round(float((ranking.get("selected") or {}).get("rank_score_std") or 0.0), 6),
+        "ranking_uncertainty_iqr": round(float((ranking.get("selected") or {}).get("rank_score_iqr") or 0.0), 6),
         "market_ranking": [
             {
                 "market": item["market"], "label": item["label"],
@@ -303,6 +307,19 @@ def apply_full5_next(result: Dict[str, Any], parsed_files: Sequence[Mapping[str,
             for item in sorted(ranking["candidates"], key=lambda entry: entry["learned_score"], reverse=True)
         ],
         "decision": decision,
+        "policy_decision": policy_decision,
+        "integrity_override": not integrity_passed,
+        "final_ai_reliability": round(float(policy["reliability"]), 6),
+        "final_ai_reliability_pct": round(float(policy["reliability"]) * 100, 1),
+        "final_ai_uncertainty": round(float(policy["reliability_uncertainty"]), 6),
+        "final_ai_reliability_q10": round(float(policy["reliability_q10"]), 6),
+        "final_ai_reliability_q90": round(float(policy["reliability_q90"]), 6),
+        "learned_observe_boundary": policy["learned_observe_boundary"],
+        "learned_play_boundary": policy["learned_play_boundary"],
+        "decision_boundary_provenance": policy["boundary_provenance"],
+        "FINAL_DECISION_SOURCE": "TRAINED_AI_POLICY",
+        "MANUAL_PERFORMANCE_GATES": "NONE",
+        "INTEGRITY_GATES": "STRICT_PREMATCH, FIVE_FILES, AUDIT, LEAKAGE, REQUIRED_INPUTS",
         "positive_reasons": positive_reasons,
         "counterarguments": counterarguments,
         "signal_agreement": len(confirming),
@@ -317,8 +334,12 @@ def apply_full5_next(result: Dict[str, Any], parsed_files: Sequence[Mapping[str,
         "confirmation_gate": confirmation_gate,
         "strict_pre_match": strict,
         "all_five_sources": all_five,
-        "data_quality_gate": data_quality_gate,
+        "data_quality_gate": all_five and audit_valid,
         "audit_valid": audit_valid,
+        "leakage_guard_passed": leakage_guard_passed,
+        "required_ai_inputs_valid": ai_error is None,
+        "integrity_checks": integrity_checks,
+        "integrity_passed": integrity_passed,
         "sources_found": sorted(found_sources),
         "data_quality": data_quality,
         "robustness": "BESTANDEN" if robust else "NICHT BESTANDEN",
@@ -330,15 +351,13 @@ def apply_full5_next(result: Dict[str, Any], parsed_files: Sequence[Mapping[str,
             "Correctness-Score aller sechs Kandidaten."
         ),
         "why_not_higher_probability_market": _higher_probability_reason(result, market_key, probability),
-        "locked_parameters": {
-            "play_probability": None,
-            "observe_probability": None,
-            "minimum_confirmation_ratio": MIN_CONFIRMATION_RATIO,
-            "maximum_counter_blocks": MAX_COUNTER_BLOCKS,
-            "robustness_required": True,
-            "all_five_sources_required": True,
-            "minimum_rank_stability": MIN_RANK_STABILITY,
-            "sample_quality": "continuous learned input; no hard cutoff",
+        "decision_policy": {
+            "source": "TRAINED_AI_POLICY",
+            "manual_performance_gates": "NONE",
+            "learned_observe_boundary": policy["learned_observe_boundary"],
+            "learned_play_boundary": policy["learned_play_boundary"],
+            "boundary_provenance": policy["boundary_provenance"],
+            "integrity_gates": list(integrity_checks),
         },
     }
     result["full5_next"] = next_result
@@ -358,7 +377,9 @@ def apply_full5_next(result: Dict[str, Any], parsed_files: Sequence[Mapping[str,
         "release_status": "production",
         "probability_core": "V0.4.3 FULL-5 unchanged",
         "decision_engine": VERSION,
-        "validation": "rolling chronological grouped OOF; former OOS not claimed untouched",
+        "validation": "Development-only rolling chronological grouped OOF; former 87-match OOS excluded",
+        "final_decision_source": "TRAINED_AI_POLICY",
+        "manual_performance_gates": "NONE",
         "file_6": False,
         "file_7": False,
     })

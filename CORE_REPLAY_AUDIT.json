@@ -1,0 +1,33 @@
+{
+  "baseline_commit": "8da4a8d9f8225c21d14aba00e40564d480d04adf",
+  "probability_core": "V0.4.3 FULL-5",
+  "core_source_files_bit_identical": true,
+  "core_source_sha256": {
+    "app_v040.py": "56b1e7f28414abe89843584f1cf592a74e5c767f96b5c67b07f8cffe5870a8f4",
+    "v041_engine.py": "b86166678a0b7a4f2f8580fba3f54a2c199e0b36b45cea0d72b209258ad3f6dd",
+    "v042_engine.py": "934d9512acb38ba294086637c6128ce5f0c37896f20a7af362762a9421357a0c",
+    "v043_engine.py": "b9e199e819f6148ea5cbb7702fdb9499e1c97ced0676f02b4931e9b7ee374152",
+    "v043_release.py": "c1aaa13d484c319391d758cc159a41173c86ea748f85d7d0a701413cdcec62ce",
+    "v043_pairing_ui.py": "29335079ca99808ad14c8a9bb593a4aeeb5773f10c0fac48c2c86f3f65c2fdd7",
+    "v043_observe_fazit_ui.py": "13c9607cea3eddacef4bed51db3c6ef6c4d1642d1f60751847fd643f49fb90bf"
+  },
+  "representative_replay": {
+    "selection": "first, median and last chronological Strict snapshot from the locked inventory",
+    "matches": [8550492, 8566927, 8570427],
+    "checked_outputs": [
+      "lambda_home",
+      "lambda_away",
+      "home_win",
+      "draw",
+      "away_win",
+      "btts_yes",
+      "btts_no",
+      "over_2_5",
+      "under_2_5"
+    ],
+    "maximum_absolute_difference": 0.0,
+    "bit_identical": true
+  },
+  "ranking_parameters_sha256": "73d070eaff41a676ac6be55e7496aa5e0f888d17e8517981414895e494c3c7f2",
+  "ranking_parameters_unchanged": true
+}

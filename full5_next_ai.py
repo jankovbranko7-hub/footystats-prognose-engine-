@@ -26,6 +26,26 @@ BASE_FEATURES = (
     "sample_quality", "player_depth",
 )
 FEATURE_NAMES = BASE_FEATURES + tuple(f"market_{market}" for market in MARKETS)
+POLICY_RAW_FEATURES = (
+    "learned_score", "score_gap", "rank_stability", "rank_score_std",
+    "rank_score_iqr", "core_probability", "family_margin",
+    "baseline_lambda_home", "baseline_lambda_away",
+    "match_prematch_xg_home", "match_prematch_xg_away", "match_prematch_xg_total",
+    "match_ppg_home", "match_ppg_away", "league_matches_home", "league_matches_away",
+    "league_ppg_home", "league_ppg_away", "league_btts_home", "league_btts_away",
+    "league_over25_home", "league_over25_away",
+    "league_first_half_btts_home", "league_first_half_btts_away",
+    "league_first_half_goals_avg_home", "league_first_half_goals_avg_away",
+    "league_second_half_goals_avg_home", "league_second_half_goals_avg_away",
+    "league_fts_home", "league_fts_away", "league_cs_home", "league_cs_away",
+    "form5_ppg_home", "form5_ppg_away", "form10_ppg_home", "form10_ppg_away",
+    "form10_btts_home", "form10_btts_away", "form10_over25_home", "form10_over25_away",
+    "table_ppg_home", "table_ppg_away",
+    "player_contribution_per90_home", "player_contribution_per90_away",
+    "player_depth_home", "player_depth_away",
+    "robustness_stress_min", "robustness_stress_max", "robustness_stress_range",
+)
+POLICY_FEATURE_NAMES = POLICY_RAW_FEATURES + tuple(f"market_{market}" for market in MARKETS)
 
 
 def _num(value: Any) -> float | None:
@@ -142,8 +162,15 @@ def _live_inputs(result: Mapping[str, Any], parsed_files: Sequence[Mapping[str, 
     cs_away = _required(_league_stat(away_team, "seasonCSPercentage", "away"), "league_cs_away")
     zero_pressure = ((fts_home + cs_away) / 2 + (fts_away + cs_home) / 2) / 2
     samples = result.get("samples") or {}
-    league_matches_mean = (_required(samples.get("home_venue"), "home_venue_sample") + _required(samples.get("away_venue"), "away_venue_sample")) / 2
-    depth_min = min(_required(home_player.get("players_found"), "player_depth_home"), _required(away_player.get("players_found"), "player_depth_away"))
+    league_matches_home = _required(samples.get("home_venue"), "home_venue_sample")
+    league_matches_away = _required(samples.get("away_venue"), "away_venue_sample")
+    league_matches_mean = (league_matches_home + league_matches_away) / 2
+    player_depth_home = _required(home_player.get("players_found"), "player_depth_home")
+    player_depth_away = _required(away_player.get("players_found"), "player_depth_away")
+    depth_min = min(player_depth_home, player_depth_away)
+    contribution_home = _required(home_player.get("goals_per_90"), "player_goals_home") + _required(home_player.get("assists_per_90"), "player_assists_home")
+    contribution_away = _required(away_player.get("goals_per_90"), "player_goals_away") + _required(away_player.get("assists_per_90"), "player_assists_away")
+    expected = result.get("expected_goals") or {}
 
     return {
         "baseline_home_win": _required(probabilities.get("home_win"), "home_win"),
@@ -156,21 +183,53 @@ def _live_inputs(result: Mapping[str, Any], parsed_files: Sequence[Mapping[str, 
         "match_prematch_xg_home": _required(match.get("home_prematch_xg"), "match_prematch_xg_home"),
         "match_prematch_xg_away": _required(match.get("away_prematch_xg"), "match_prematch_xg_away"),
         "match_prematch_xg_total": _required(match.get("total_prematch_xg"), "match_prematch_xg_total"),
+        "baseline_lambda_home": _required(expected.get("home"), "baseline_lambda_home"),
+        "baseline_lambda_away": _required(expected.get("away"), "baseline_lambda_away"),
+        "match_ppg_home": _required(match.get("pre_match_home_ppg"), "match_ppg_home"),
+        "match_ppg_away": _required(match.get("pre_match_away_ppg"), "match_ppg_away"),
         "match_ppg_diff": _required(match.get("pre_match_home_ppg"), "match_ppg_home") - _required(match.get("pre_match_away_ppg"), "match_ppg_away"),
+        "league_matches_home": league_matches_home,
+        "league_matches_away": league_matches_away,
+        "league_ppg_home": league_ppg_home,
+        "league_ppg_away": league_ppg_away,
         "league_ppg_diff": league_ppg_home - league_ppg_away,
+        "league_btts_home": league_btts_home,
+        "league_btts_away": league_btts_away,
         "league_btts_mean": (league_btts_home + league_btts_away) / 2,
+        "league_over25_home": league_over_home,
+        "league_over25_away": league_over_away,
         "league_over25_mean": (league_over_home + league_over_away) / 2,
+        "league_first_half_btts_home": first_btts_home,
+        "league_first_half_btts_away": first_btts_away,
         "league_first_half_btts_mean": (first_btts_home + first_btts_away) / 2,
+        "league_first_half_goals_avg_home": first_goals_home,
+        "league_first_half_goals_avg_away": first_goals_away,
         "league_first_half_goals_avg_mean": (first_goals_home + first_goals_away) / 2,
+        "league_second_half_goals_avg_home": second_goals_home,
+        "league_second_half_goals_avg_away": second_goals_away,
         "league_second_half_goals_avg_mean": (second_goals_home + second_goals_away) / 2,
+        "league_fts_home": fts_home, "league_fts_away": fts_away,
+        "league_cs_home": cs_home, "league_cs_away": cs_away,
         "btts_zero_goal_support": 100 - zero_pressure,
+        "form5_ppg_home": _required(home5.get("ppg"), "form5_ppg_home"),
+        "form5_ppg_away": _required(away5.get("ppg"), "form5_ppg_away"),
         "form5_ppg_diff": _required(home5.get("ppg"), "form5_ppg_home") - _required(away5.get("ppg"), "form5_ppg_away"),
+        "form10_ppg_home": _required(home10.get("ppg"), "form10_ppg_home"),
+        "form10_ppg_away": _required(away10.get("ppg"), "form10_ppg_away"),
         "form10_ppg_diff": _required(home10.get("ppg"), "form10_ppg_home") - _required(away10.get("ppg"), "form10_ppg_away"),
+        "form10_btts_home": _required(home10.get("btts_pct"), "form10_btts_home"),
+        "form10_btts_away": _required(away10.get("btts_pct"), "form10_btts_away"),
         "form10_btts_mean": _mean(home10.get("btts_pct"), away10.get("btts_pct"), "form10_btts"),
+        "form10_over25_home": _required(home10.get("over_25_pct"), "form10_over25_home"),
+        "form10_over25_away": _required(away10.get("over_25_pct"), "form10_over25_away"),
         "form10_over25_mean": _mean(home10.get("over_25_pct"), away10.get("over_25_pct"), "form10_over25"),
+        "table_ppg_home": _required(home_table.get("ppg"), "table_ppg_home"),
+        "table_ppg_away": _required(away_table.get("ppg"), "table_ppg_away"),
         "table_ppg_diff": _required(home_table.get("ppg"), "table_ppg_home") - _required(away_table.get("ppg"), "table_ppg_away"),
-        "player_contribution_per90_home": _required(home_player.get("goals_per_90"), "player_goals_home") + _required(home_player.get("assists_per_90"), "player_assists_home"),
-        "player_contribution_per90_away": _required(away_player.get("goals_per_90"), "player_goals_away") + _required(away_player.get("assists_per_90"), "player_assists_away"),
+        "player_contribution_per90_home": contribution_home,
+        "player_contribution_per90_away": contribution_away,
+        "player_depth_home": player_depth_home,
+        "player_depth_away": player_depth_away,
         "player_depth_min": depth_min,
         "league_matches_mean": league_matches_mean,
     }
@@ -277,13 +336,29 @@ def load_model() -> Dict[str, Any]:
 
 
 def _predict(parameters: Mapping[str, Any], features: Mapping[str, float]) -> float:
+    return _predict_named(parameters, features, FEATURE_NAMES)
+
+
+def _predict_named(parameters: Mapping[str, Any], features: Mapping[str, float], names: Sequence[str]) -> float:
     linear = float(parameters["intercept"])
-    for index, name in enumerate(FEATURE_NAMES):
+    for index, name in enumerate(names):
         scale = float(parameters["scale"][index])
         value = (float(features[name]) - float(parameters["mean"][index])) / (scale if scale > 0 else 1.0)
         linear += float(parameters["coefficient"][index]) * value
     linear = max(-30.0, min(30.0, linear))
     return 1 / (1 + math.exp(-linear))
+
+
+def _quantile(values: Sequence[float], quantile: float) -> float:
+    ordered = sorted(float(value) for value in values)
+    if not ordered:
+        raise ValueError("Cannot calculate an empty bootstrap quantile")
+    position = (len(ordered) - 1) * quantile
+    lower = math.floor(position)
+    upper = math.ceil(position)
+    if lower == upper:
+        return ordered[lower]
+    return ordered[lower] * (upper - position) + ordered[upper] * (position - lower)
 
 
 def rank_markets(result: Mapping[str, Any], parsed_files: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
@@ -295,14 +370,87 @@ def rank_markets(result: Mapping[str, Any], parsed_files: Sequence[Mapping[str, 
     selected = max(candidates, key=lambda item: (item["learned_score"], item["core_probability"]))
     second = sorted(candidates, key=lambda item: item["learned_score"], reverse=True)[1]
     bootstrap_winners = []
+    selected_bootstrap_scores = []
     for parameters in model.get("bootstrap_models") or []:
-        bootstrap_winners.append(max(
-            candidates,
-            key=lambda item: _predict(parameters, item["features"]),
-        )["market"])
+        scored = [(candidate, _predict(parameters, candidate["features"])) for candidate in candidates]
+        bootstrap_winners.append(max(scored, key=lambda item: item[1])[0]["market"])
+        selected_bootstrap_scores.append(next(score for candidate, score in scored if candidate["market"] == selected["market"]))
     rank_stability = bootstrap_winners.count(selected["market"]) / len(bootstrap_winners) if bootstrap_winners else 1.0
     selected["score_gap"] = selected["learned_score"] - second["learned_score"]
     selected["rank_stability"] = rank_stability
+    selected["rank_score_mean"] = sum(selected_bootstrap_scores) / len(selected_bootstrap_scores)
+    selected["rank_score_std"] = math.sqrt(sum((value - selected["rank_score_mean"]) ** 2 for value in selected_bootstrap_scores) / len(selected_bootstrap_scores))
+    selected["rank_score_q10"] = _quantile(selected_bootstrap_scores, 0.10)
+    selected["rank_score_q90"] = _quantile(selected_bootstrap_scores, 0.90)
+    selected["rank_score_iqr"] = _quantile(selected_bootstrap_scores, 0.75) - _quantile(selected_bootstrap_scores, 0.25)
+    selected_features = dict(selected["features"])
     for candidate in candidates:
         candidate.pop("features")
-    return {"selected": selected, "second": second, "candidates": candidates, "model": model}
+    return {
+        "selected": selected, "second": second, "candidates": candidates,
+        "selected_rank_features": selected_features, "live_inputs": inputs, "model": model,
+    }
+
+
+def policy_features(result: Mapping[str, Any], ranking: Mapping[str, Any]) -> Dict[str, float]:
+    model = ranking["model"]
+    policy = model.get("abstention_policy") or {}
+    if tuple(policy.get("feature_names") or ()) != POLICY_FEATURE_NAMES:
+        raise RuntimeError("FULL-5 NEXT abstention feature contract mismatch")
+    selected = ranking["selected"]
+    inputs = ranking["live_inputs"]
+    rank_features = ranking["selected_rank_features"]
+    stress = ((result.get("diagnostics") or {}).get("stress_family_strength_pct") or {})
+    stress_values = [_required(value, "robustness_stress") for value in stress.values()]
+    if not stress_values:
+        raise ValueError("FULL-5 NEXT AI input missing: robustness_stress")
+    values: Dict[str, float] = {
+        "learned_score": _required(selected.get("learned_score"), "learned_score"),
+        "score_gap": _required(selected.get("score_gap"), "score_gap"),
+        "rank_stability": _required(selected.get("rank_stability"), "rank_stability"),
+        "rank_score_std": _required(selected.get("rank_score_std"), "rank_score_std"),
+        "rank_score_iqr": _required(selected.get("rank_score_iqr"), "rank_score_iqr"),
+        "core_probability": _required(selected.get("core_probability"), "core_probability"),
+        "family_margin": _required(rank_features.get("family_margin"), "family_margin"),
+        "robustness_stress_min": min(stress_values),
+        "robustness_stress_max": max(stress_values),
+        "robustness_stress_range": max(stress_values) - min(stress_values),
+    }
+    for name in POLICY_RAW_FEATURES:
+        if name not in values:
+            values[name] = _required(inputs.get(name), name)
+    market = str(selected["market"])
+    values.update({f"market_{name}": float(name == market) for name in MARKETS})
+    return values
+
+
+def apply_abstention_policy(result: Mapping[str, Any], ranking: Mapping[str, Any]) -> Dict[str, Any]:
+    model = ranking["model"]
+    policy = model.get("abstention_policy") or {}
+    features = policy_features(result, ranking)
+    central = _predict_named(policy["central_model"], features, POLICY_FEATURE_NAMES)
+    bootstrap = [
+        _predict_named(parameters, features, POLICY_FEATURE_NAMES)
+        for parameters in policy.get("bootstrap_models") or []
+    ]
+    boundaries = policy.get("boundaries") or {}
+    observe_boundary = _required(boundaries.get("learned_observe_boundary"), "learned_observe_boundary")
+    play_boundary = _required(boundaries.get("learned_play_boundary"), "learned_play_boundary")
+    decision = (
+        "SPIELEN" if central >= play_boundary else
+        "BEOBACHTEN" if central >= observe_boundary else
+        "AUSLASSEN / KEIN BET"
+    )
+    mean = sum(bootstrap) / len(bootstrap) if bootstrap else central
+    dispersion = math.sqrt(sum((value - mean) ** 2 for value in bootstrap) / len(bootstrap)) if bootstrap else 0.0
+    return {
+        "decision": decision, "reliability": central,
+        "reliability_bootstrap_mean": mean, "reliability_uncertainty": dispersion,
+        "reliability_q10": _quantile(bootstrap, 0.10) if bootstrap else central,
+        "reliability_q90": _quantile(bootstrap, 0.90) if bootstrap else central,
+        "learned_observe_boundary": observe_boundary, "learned_play_boundary": play_boundary,
+        "boundary_provenance": boundaries.get("learning_method"),
+        "final_decision_source": "TRAINED_AI_POLICY",
+        "manual_performance_gates": "NONE",
+        "integrity_gates": list(policy.get("integrity_gates") or []),
+    }

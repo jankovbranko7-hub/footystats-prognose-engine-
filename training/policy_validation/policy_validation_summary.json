@@ -1,0 +1,60 @@
+{
+  "version": "FULL-5-NEXT-AI-2.1.0",
+  "ranking_hash_before": "73d070eaff41a676ac6be55e7496aa5e0f888d17e8517981414895e494c3c7f2",
+  "ranking_hash_after": "73d070eaff41a676ac6be55e7496aa5e0f888d17e8517981414895e494c3c7f2",
+  "policy_features": 55,
+  "rolling_oof": {
+    "method": "Development-only second-level expanding chronological grouped OOF on ranking-OOF rows; 60 initial + 2 disjoint 30-match tests",
+    "matches": 60,
+    "plays": 29,
+    "hits": 18,
+    "hit_rate": 0.6206896551724138,
+    "play_rate": 0.48333333333333334,
+    "brier": 0.26244890422266687,
+    "log_loss": 0.739940029917088,
+    "time_blocks": [
+      {
+        "fold": 0,
+        "matches": 30,
+        "plays": 13,
+        "hits": 8,
+        "hit_rate": 0.6153846153846154,
+        "play_rate": 0.43333333333333335,
+        "observe": 13,
+        "no_bet": 4,
+        "market_distribution": "{\"btts_yes\": 10, \"over_2_5\": 2, \"under_2_5\": 1}"
+      },
+      {
+        "fold": 1,
+        "matches": 30,
+        "plays": 16,
+        "hits": 10,
+        "hit_rate": 0.625,
+        "play_rate": 0.5333333333333333,
+        "observe": 10,
+        "no_bet": 4,
+        "market_distribution": "{\"btts_yes\": 2, \"home_win\": 1, \"over_2_5\": 13}"
+      }
+    ],
+    "market_distribution": {
+      "over_2_5": 15,
+      "btts_yes": 12,
+      "under_2_5": 1,
+      "home_win": 1
+    },
+    "development_population": 160,
+    "former_87_match_oos_rows_used": 0,
+    "no_untouched_oos_claim": true
+  },
+  "final_boundaries": {
+    "cluster_centres": [
+      0.6249171629344771,
+      0.6596518810451663,
+      0.6981447473783454
+    ],
+    "learned_observe_boundary": 0.6422845219898217,
+    "learned_play_boundary": 0.6788983142117558,
+    "learning_method": "three_cluster_kmeans_on_trained_reliability; k=3 from the required product states"
+  },
+  "final_regularization_c": 0.001
+}

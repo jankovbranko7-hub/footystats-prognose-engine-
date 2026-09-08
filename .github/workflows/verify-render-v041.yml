@@ -19,7 +19,7 @@ jobs:
             BODY="$(curl -fsS --max-time 20 "$HEALTH_URL" 2>/dev/null || true)"
             PAGE="$(curl -fsS --max-time 20 "$PAGE_URL" 2>/dev/null || true)"
             echo "attempt=$i health=$BODY"
-            if echo "$BODY" | python -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok") is True and d.get("version")=="FULL-5-NEXT-AI-2.0.0" and d.get("engine")=="full5-next-trained-six-market-ranker" and d.get("probability_core")=="V0.4.3 FULL-5" and d.get("rho")==-0.25 and d.get("full5_features")==40 and d.get("alpha")==3.0 and d.get("production") is True and d.get("elite_lambda_correction") is False and d.get("probability_core_new_feature_blocks")==0 and d.get("decision_model_inputs")==18 and d.get("probability_cutoff") is None and d.get("sample_quality_hard_cutoff") is None and d.get("file_6") is False and d.get("file_7") is False and d.get("no_bet") is True and d.get("rolling_oof",{}).get("rank_hits")==94 and d.get("rolling_oof",{}).get("rank_matches")==150 and d.get("rolling_oof",{}).get("play_hits")==52 and d.get("rolling_oof",{}).get("plays")==70 and d.get("former_oos_claimed_untouched") is False' \
+            if echo "$BODY" | python -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok") is True and d.get("version")=="FULL-5-NEXT-AI-2.1.0" and d.get("engine")=="full5-next-trained-ranking-and-abstention" and d.get("probability_core")=="V0.4.3 FULL-5" and d.get("rho")==-0.25 and d.get("full5_features")==40 and d.get("alpha")==3.0 and d.get("production") is True and d.get("elite_lambda_correction") is False and d.get("probability_core_new_feature_blocks")==0 and d.get("decision_model_inputs")==18 and d.get("abstention_model_inputs")==55 and d.get("probability_cutoff") is None and d.get("sample_quality_hard_cutoff") is None and d.get("file_6") is False and d.get("file_7") is False and d.get("no_bet") is True and d.get("rolling_oof",{}).get("matches")==60 and d.get("rolling_oof",{}).get("hits")==18 and d.get("rolling_oof",{}).get("plays")==29 and d.get("final_decision_source")=="TRAINED_AI_POLICY" and d.get("manual_performance_gates")=="NONE" and d.get("former_87_match_oos_rows_used")==0 and d.get("former_oos_claimed_untouched") is False' \
               && grep -Fq 'Spielpaarung' <<<"$PAGE" \
               && grep -Fq 'Match-ID:' <<<"$PAGE" \
               && grep -Fq 'FULL-5-Status' <<<"$PAGE" \
@@ -32,6 +32,9 @@ jobs:
               && grep -Fq 'Gegenargumente / Konflikte' <<<"$PAGE" \
               && grep -Fq 'AI Correctness Score' <<<"$PAGE" \
               && grep -Fq 'AI-Rangstabilität' <<<"$PAGE" \
+              && grep -Fq 'Finale AI Reliability' <<<"$PAGE" \
+              && grep -Fq 'Decision Source' <<<"$PAGE" \
+              && grep -Fq 'Deep Evidence (Diagnose)' <<<"$PAGE" \
               && grep -Fq 'Alle sechs Märkte' <<<"$PAGE" \
               && grep -Fq 'anwendbare Signalblöcke bestätigt' <<<"$PAGE"; then
               echo "Render FULL-5 NEXT production UI verified"

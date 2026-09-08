@@ -36,12 +36,15 @@ def _install_ui(legacy: Any) -> None:
       '<div class="m"><div class="s">Gewählter Markt</div><div class="b">'+escapeHtml(next.selected_market_label||'—')+'</div></div>'+
       '<div class="m"><div class="s">V0.4.3 Core</div><div class="b">'+escapeHtml(next.probability_pct==null?'—':next.probability_pct+'%')+'</div></div>'+
       '<div class="m"><div class="s">AI Correctness Score</div><div class="b">'+escapeHtml(next.learned_correctness_score_pct==null?'—':next.learned_correctness_score_pct+'%')+'</div></div>'+
+      '<div class="m"><div class="s">Finale AI Reliability</div><div class="b">'+escapeHtml(next.final_ai_reliability_pct==null?'—':next.final_ai_reliability_pct+'%')+'</div><div class="s">Unsicherheit '+escapeHtml(next.final_ai_uncertainty==null?'—':next.final_ai_uncertainty)+'</div></div>'+
       '<div class="m"><div class="s">Entscheidung</div><div class="b '+nextDecisionClass+'">'+escapeHtml(nextDecision)+'</div></div>'+
+      '<div class="m"><div class="s">Decision Source</div><div class="b">'+escapeHtml(next.FINAL_DECISION_SOURCE||'—')+'</div><div class="s">Manual Performance Gates: '+escapeHtml(next.MANUAL_PERFORMANCE_GATES||'—')+'</div></div>'+
+      '<div class="m"><div class="s">AI Score Gap</div><div class="b">'+escapeHtml(next.learned_score_gap==null?'—':next.learned_score_gap)+'</div></div>'+
       '<div class="m"><div class="s">Signal Agreement / Conflict</div><div class="b">'+escapeHtml(next.signal_agreement==null?'—':next.signal_agreement)+' / '+escapeHtml(next.signal_conflict==null?'—':next.signal_conflict)+'</div></div>'+
-      '<div class="m"><div class="s">Bestätigung</div><div class="b">'+escapeHtml(nextConfirmationText)+'</div></div>'+
+      '<div class="m"><div class="s">Deep Evidence (Diagnose)</div><div class="b">'+escapeHtml(nextConfirmationText)+'</div><div class="s">Nicht entscheidungswirksam</div></div>'+
       '<div class="m"><div class="s">Datenqualität</div><div class="b">'+escapeHtml(next.data_quality||diag.data_quality||'—')+'</div></div>'+
-      '<div class="m"><div class="s">Robustheit</div><div class="b">'+escapeHtml(next.robustness||'—')+'</div></div>'+
-      '<div class="m"><div class="s">AI-Rangstabilität</div><div class="b">'+escapeHtml(next.rank_stability_pct==null?'—':next.rank_stability_pct+'%')+'</div></div>'+
+      '<div class="m"><div class="s">Robustheit (AI-Input)</div><div class="b">'+escapeHtml(next.robustness||'—')+'</div><div class="s">Kein Boolean-Gate</div></div>'+
+      '<div class="m"><div class="s">AI-Rangstabilität</div><div class="b">'+escapeHtml(next.rank_stability_pct==null?'—':next.rank_stability_pct+'%')+'</div><div class="s">Unsicherheit '+escapeHtml(next.ranking_uncertainty==null?'—':next.ranking_uncertainty)+'</div></div>'+
       '<div class="m"><div class="s">Sample</div><div class="b">'+escapeHtml(next.sample_security||diag.sample_security||'—')+'</div><div class="s">Quality '+escapeHtml(next.sample_quality==null?'—':next.sample_quality)+'</div></div>'+
       '<div class="m"><div class="s">FULL-5</div><div class="b">'+escapeHtml(next.full5_status||'—')+'</div></div>'+
       '</div><h4>Wichtigste Entscheidungsgründe</h4>'+nextReasonList+
@@ -80,7 +83,7 @@ def apply_patch(legacy: Any) -> Any:
         return {
             "ok": True,
             "version": next_engine.VERSION,
-            "engine": "full5-next-trained-six-market-ranker",
+            "engine": "full5-next-trained-ranking-and-abstention",
             "probability_core": "V0.4.3 FULL-5",
             "baseline": "v0.4.2-hybrid-lambda",
             "full5_features": 40,
@@ -88,14 +91,25 @@ def apply_patch(legacy: Any) -> Any:
             "rho": -0.25,
             "elite_lambda_correction": False,
             "decision_model": {"type": "regularized logistic ranker", "training_matches": 247, "market_candidates": 1482},
+            "abstention_model": {
+                "type": "ridge logistic reliability model with learned three-state KMeans boundaries",
+                "training_source": "Development-only chronological grouped ranking OOF",
+                "inputs": 55,
+                "bootstrap_models": 80,
+            },
             "probability_core_new_feature_blocks": 0,
             "decision_model_inputs": 18,
+            "abstention_model_inputs": 55,
             "probability_cutoff": None,
             "sample_quality_hard_cutoff": None,
             "file_6": False,
             "file_7": False,
             "no_bet": True,
-            "rolling_oof": {"rank_hits": 94, "rank_matches": 150, "play_hits": 52, "plays": 70, "play_hit_rate": 0.7428571428571429},
+            "rolling_oof": next_engine.learned_ai.load_model().get("abstention_validation") or {},
+            "final_decision_source": "TRAINED_AI_POLICY",
+            "manual_performance_gates": "NONE",
+            "integrity_gates": ["STRICT_PREMATCH", "FIVE_FILES", "AUDIT", "LEAKAGE", "REQUIRED_INPUTS"],
+            "former_87_match_oos_rows_used": 0,
             "former_oos_claimed_untouched": False,
             "production": True,
         }

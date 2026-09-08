@@ -1,56 +1,57 @@
-# FULL-5 NEXT AI 2.0 — Model Card
+# FULL-5 NEXT AI 2.1 — Model Card
 
-## Zweck
+## Unveränderter Probability Core
 
-Die Decision Engine rankt sechs Wettmärkte pro Match. Sie verändert weder
-Lambda Home/Away noch eine der sieben Wahrscheinlichkeiten des V0.4.3-Cores.
+V0.4.3 FULL-5 bleibt unverändert: 40 Features, Alpha 3.0, Dixon-Coles rho
+-0.25 und V0.4.2 Hybrid-Lambda als Basis/Fallback. Datei 6/7 und Elite-Lambda
+sind deaktiviert.
 
-## Trainingsstand
+## Trainiertes Six-Market-Ranking
 
-- 247 eindeutige Strict-Pre-Match-Spiele mit verifiziertem Resultat
-- 1.482 abhängige Match×Markt-Kandidaten; zeitliche Splits erfolgen immer auf Match-Ebene
-- Ridge-logistische Regression, `C = 0.003`
-- 18 Modellinputs: zwölf kontinuierliche Decision-Signale und sechs Marktindikatoren
-- 80 nach Match gruppierte Bootstrap-Fits für Rangstabilität
-- versionierter Parametersatz: `full5_next_ai_model.json`
+- Ridge-logistische Regression (`C = 0.003`)
+- 247 Strict-/resultverifizierte Matches, 1.482 Match×Markt-Kandidaten
+- 18 Ranking-Inputs
+- 80 nach Match gruppierte Bootstrap-Modelle
+- Ranking-Parametersatz gegenüber AI 2.0 unverändert
 
-## Genutzte Decision-Signale
+## Trainierte Reliability-/Abstention-Policy
 
-- MatchDaten: Pre-Match-xG und Pre-Match-PPG
-- LeagueDaten: Venue-PPG, BTTS, Over 2.5, First-Half-BTTS, Halbzeit-Tore, CS/FTS-Zero-Goal-Profil
-- FormDaten: Last-5/Last-10-PPG sowie Last-10-BTTS/Over-Profile
-- TableDaten: relatives Venue-PPG
-- PlayerDaten: Goal-Contribution pro 90, Player Depth
-- V0.4.3 Core: Markt-Wahrscheinlichkeit und normalisierte Marktfamilienstärke
+Die zweite Modellstufe lernt, ob der ausgewählte Markt zuverlässig genug für
+SPIELEN, BEOBACHTEN oder KEIN BET ist. Sie verwendet 55 kontinuierliche bzw.
+rohe Inputs: Ranking-Score und Gap, Bootstrap-Stabilität/Dispersion,
+Core-Wahrscheinlichkeit, Lambda, rohe Match-/League-/Form-/Table-/Player-Werte
+und kontinuierliche Robustheits-Stresswerte.
 
-Nicht anwendbare Marktfamilienfelder werden durch die fest definierte
-Markttransformation als strukturell neutral geführt; fehlende tatsächlich
-benötigte Werte werden nicht ersetzt und führen zu KEIN BET.
+- Modelltyp: Ridge-logistische Reliability-Regression (`C = 0.001`)
+- 80 Bootstrap-Modelle
+- Training ausschließlich auf 120 Development-internen Ranking-OOF-Zeilen
+- Aktionsgrenzen aus 3-Cluster-KMeans der trainierten Reliability-Werte
+- gelernte Observe-Grenze: `0.6422845219898217`
+- gelernte Play-Grenze: `0.6788983142117558`
+- das frühere 87-Match-OOS wurde weder für Training noch Grenzwahl verwendet
+
+K=3 folgt aus den drei benötigten Produktzuständen; die Lage der Cluster und
+beide Grenzen wurden aus Development-Daten gelernt.
 
 ## Chronologische interne Validierung
 
-Die ersten 97 Matches bilden das anfängliche Training. Danach folgen fünf
-nicht überlappende Zeitblöcke mit je 30 Matches.
+Development-only second-level rolling grouped OOF: 60 Matches in zwei
+disjunkten 30-Match-Zeitblöcken. 29 Plays, 18 Treffer, 62,07 % Trefferquote,
+48,33 % Play Rate, Brier 0,26245 und Log Loss 0,73994. Die Zeitblöcke lagen bei
+8/13 (61,54 %) und 10/16 (62,50 %). Das ist interne OOF-Validierung und kein
+unangetastetes OOS.
 
-- AI-Marktranking: 94/150 = 62,67 %
-- höchste rohe Core-Wahrscheinlichkeit: 86/150 = 57,33 %
-- bisherige Familiennormalisierung: 93/150 = 62,00 %
-- finale AI-Plays: 52/70 = 74,29 %
+## Decision Contract
 
-Die 74,29 % sind Rolling-OOF und keine Garantie für zukünftige Ergebnisse. Die
-frühere 87-Match-OOS-Periode war bereits benutzt und ist daher kein unangetastetes
-OOS für diese neue Architektur.
+`FINAL_DECISION_SOURCE = TRAINED_AI_POLICY` und
+`MANUAL_PERFORMANCE_GATES = NONE`. Confirmation-/Counter- und Evidence-
+Schwellen werden nur für Diagnose/Erklärung berechnet. Auch Robustheitsstatus,
+Sample Quality und Rangstabilität besitzen kein Boolean- bzw. manuelles
+Performance-Gate.
 
-## Entscheidung
-
-Das Modell wählt den Markt mit dem höchsten gelernten Correctness-Score.
-SPIELEN ist nur möglich, wenn zusätzlich Strict Pre-Match, Fünf-Dateien-Audit,
-75 % der anwendbaren Evidenzblöcke, null Counter, Core-Robustheit und eine
-mehrheitlich stabile Bootstrap-Rangfolge erfüllt sind. Es existiert kein harter
-Core-Probability-Cutoff. Sample Quality wirkt kontinuierlich.
-
-## Grenzen
+Nur Integritätsregeln dürfen die gelernte Aktion zu KEIN BET überschreiben:
+Strict Pre-Match, alle fünf Dateien, Audit, Leakage-Schutz und gültige
+AI-Kerninputs.
 
 Ohne historische Quoten optimiert das Modell Trefferrisiko, nicht Profit oder
-ROI. Automatisches Online-Nachlernen ist deaktiviert: Ein neuer Parametersatz
-erfordert erneut chronologisch gruppiertes Training, Versionierung und Tests.
+ROI. Automatisches Online-Nachlernen ist deaktiviert.

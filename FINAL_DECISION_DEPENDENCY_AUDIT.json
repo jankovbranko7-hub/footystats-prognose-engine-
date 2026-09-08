@@ -1,0 +1,188 @@
+{
+  "production_version": "FULL-5-NEXT-AI-2.1.0",
+  "scope": "final market plus SPIELEN/BEOBACHTEN/KEIN BET production path",
+  "final_decision_source": "TRAINED_AI_POLICY",
+  "manual_performance_gates": "NONE",
+  "integrity_gates": [
+    "STRICT_PREMATCH",
+    "FIVE_FILES",
+    "AUDIT",
+    "LEAKAGE",
+    "REQUIRED_INPUTS"
+  ],
+  "components": [
+    {
+      "name": "V0.4.3 FULL-5 probability core",
+      "type": "frozen_probability_core",
+      "origin": "V0.4.3 production; 40 features; alpha=3.0; rho=-0.25",
+      "learned_parameter": false,
+      "manual_policy": false,
+      "affects_final_decision": true,
+      "integrity_only": false
+    },
+    {
+      "name": "six_market_ranking",
+      "type": "ridge_logistic_model",
+      "origin": "247 strict/result-verified matches; 1482 match-market candidates; 18 inputs",
+      "learned_parameter": true,
+      "manual_policy": false,
+      "affects_final_decision": true,
+      "integrity_only": false
+    },
+    {
+      "name": "ranking_bootstrap_distribution",
+      "type": "bootstrap_models",
+      "origin": "80 trained ranking bootstrap models",
+      "learned_parameter": true,
+      "manual_policy": false,
+      "affects_final_decision": true,
+      "integrity_only": false
+    },
+    {
+      "name": "reliability_abstention_model",
+      "type": "ridge_logistic_model",
+      "origin": "Development-only chronological grouped ranking OOF; 55 continuous/raw inputs",
+      "learned_parameter": true,
+      "manual_policy": false,
+      "affects_final_decision": true,
+      "integrity_only": false
+    },
+    {
+      "name": "learned_action_boundaries",
+      "type": "three_cluster_kmeans_boundaries",
+      "origin": "K=3 required product states; cluster centres learned from Development-only trained reliability",
+      "learned_parameter": true,
+      "manual_policy": false,
+      "affects_final_decision": true,
+      "integrity_only": false
+    },
+    {
+      "name": "MIN_CONFIRMATION_RATIO",
+      "type": "removed_manual_performance_gate",
+      "origin": "legacy value 0.75; removed from production decision path",
+      "learned_parameter": false,
+      "manual_policy": true,
+      "affects_final_decision": false,
+      "integrity_only": false
+    },
+    {
+      "name": "MAX_COUNTER_BLOCKS",
+      "type": "removed_manual_performance_gate",
+      "origin": "legacy value 0; removed from production decision path",
+      "learned_parameter": false,
+      "manual_policy": true,
+      "affects_final_decision": false,
+      "integrity_only": false
+    },
+    {
+      "name": "MIN_RANK_STABILITY",
+      "type": "removed_manual_performance_gate",
+      "origin": "legacy value 0.50; rank stability is now continuous AI uncertainty",
+      "learned_parameter": false,
+      "manual_policy": true,
+      "affects_final_decision": false,
+      "integrity_only": false
+    },
+    {
+      "name": "robustness_boolean_gate",
+      "type": "removed_manual_performance_gate",
+      "origin": "legacy BESTANDEN requirement; stress values are continuous abstention inputs",
+      "learned_parameter": false,
+      "manual_policy": true,
+      "affects_final_decision": false,
+      "integrity_only": false
+    },
+    {
+      "name": "confirmation_counter_evidence_thresholds",
+      "type": "diagnostic_explanation_rules",
+      "origin": "1X2 0.35/-0.35 and 0.25/-0.25; BTTS 1.00/0.70 and 0.60/0.40; O/U 2.80/2.20, 0.50/0.32 and 0.60/0.40",
+      "learned_parameter": false,
+      "manual_policy": true,
+      "affects_final_decision": false,
+      "integrity_only": false
+    },
+    {
+      "name": "diagnostic_sample_quality",
+      "type": "legacy_explanation_metric",
+      "origin": "0.6 venue sample + 0.4 player depth; shown diagnostically only",
+      "learned_parameter": false,
+      "manual_policy": true,
+      "affects_final_decision": false,
+      "integrity_only": false
+    },
+    {
+      "name": "frozen_ranker_form_transform",
+      "type": "frozen_feature_engineering",
+      "origin": "0.75 Last10 + 0.25 Last5 in explicitly locked existing ranker; raw Last5/Last10 enter the new abstention model separately",
+      "learned_parameter": false,
+      "manual_policy": false,
+      "affects_final_decision": true,
+      "affects_selected_market": true,
+      "affects_final_action_directly": false,
+      "integrity_only": false
+    },
+    {
+      "name": "frozen_ranker_sample_depth_transform",
+      "type": "frozen_feature_engineering",
+      "origin": "0.6*min(venue/10)+0.4*min(depth/22) and depth/22 in explicitly locked existing ranker; raw venue samples and home/away depth enter the new abstention model separately",
+      "learned_parameter": false,
+      "manual_policy": false,
+      "affects_final_decision": true,
+      "affects_selected_market": true,
+      "affects_final_action_directly": false,
+      "integrity_only": false
+    },
+    {
+      "name": "STRICT_PREMATCH",
+      "type": "integrity_gate",
+      "origin": "pre-match integrity contract",
+      "learned_parameter": false,
+      "manual_policy": true,
+      "affects_final_decision": true,
+      "integrity_only": true
+    },
+    {
+      "name": "FIVE_FILES",
+      "type": "integrity_gate",
+      "origin": "required five-file production contract",
+      "learned_parameter": false,
+      "manual_policy": true,
+      "affects_final_decision": true,
+      "integrity_only": true
+    },
+    {
+      "name": "AUDIT",
+      "type": "integrity_gate",
+      "origin": "V0.4.3 input audit",
+      "learned_parameter": false,
+      "manual_policy": true,
+      "affects_final_decision": true,
+      "integrity_only": true
+    },
+    {
+      "name": "LEAKAGE",
+      "type": "integrity_gate",
+      "origin": "target-match live/post field sanitizer and blocklist",
+      "learned_parameter": false,
+      "manual_policy": true,
+      "affects_final_decision": true,
+      "integrity_only": true
+    },
+    {
+      "name": "REQUIRED_INPUTS",
+      "type": "integrity_gate",
+      "origin": "finite and present trained-model input contract",
+      "learned_parameter": false,
+      "manual_policy": true,
+      "affects_final_decision": true,
+      "integrity_only": true
+    }
+  ],
+  "assertions": {
+    "all_manual_performance_rules_affect_final_decision_false": true,
+    "only_integrity_manual_policy_can_override_action": true,
+    "confirmations_and_counters_diagnostic_only": true,
+    "robustness_and_sample_have_no_hard_cutoff": true,
+    "final_action_is_emitted_by_trained_policy": true
+  }
+}

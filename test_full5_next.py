@@ -121,12 +121,33 @@ def ai_ranking(result, *, rank_stability=.90, learned_score=.72):
     return {"selected": selected, "second": candidates[0], "candidates": candidates, "model": {}}
 
 
-def apply_ai(result, files=None, *, rank_stability=.90, learned_score=.72):
+def ai_policy(*, decision="SPIELEN", reliability=.70):
+    return {
+        "decision": decision, "reliability": reliability,
+        "reliability_bootstrap_mean": reliability, "reliability_uncertainty": .02,
+        "reliability_q10": reliability - .03, "reliability_q90": reliability + .03,
+        "learned_observe_boundary": .6422845219898217,
+        "learned_play_boundary": .6788983142117558,
+        "boundary_provenance": "trained-test-policy",
+        "final_decision_source": "TRAINED_AI_POLICY",
+        "manual_performance_gates": "NONE",
+        "integrity_gates": ["STRICT_PREMATCH", "FIVE_FILES", "AUDIT", "LEAKAGE", "REQUIRED_INPUTS"],
+    }
+
+
+def apply_ai(result, files=None, *, rank_stability=.90, learned_score=.72,
+             policy_decision="SPIELEN", reliability=.70):
     with patch(
         "full5_next_engine.learned_ai.rank_markets",
         side_effect=lambda current, parsed: ai_ranking(
             current, rank_stability=rank_stability, learned_score=learned_score
         ),
+    ), patch(
+        "full5_next_engine.learned_ai.apply_abstention_policy",
+        return_value=ai_policy(decision=policy_decision, reliability=reliability),
+    ), patch(
+        "full5_next_engine.learned_ai.load_model",
+        return_value={"abstention_validation": {"matches": 60, "plays": 29, "hits": 18}},
     ):
         return apply_full5_next(result, files or five_files())
 
@@ -155,27 +176,28 @@ class Full5NextTests(unittest.TestCase):
     def test_06_sample_quality_low(self):
         self.assertLess(sample_quality(result_template(home_n=1, away_n=1, home_depth=5, away_depth=5)), .40)
 
-    def test_07_play_gate(self):
+    def test_07_trained_policy_selects_play(self):
         output = apply_ai(result_template())
         self.assertEqual(output["decision"], "SPIELEN")
 
-    def test_08_two_confirmations_observe(self):
+    def test_08_confirmations_do_not_gate_play(self):
         output = apply_ai(result_template(confirming=2))
-        self.assertEqual(output["decision"], "BEOBACHTEN")
+        self.assertEqual(output["decision"], "SPIELEN")
+        self.assertTrue(output["full5_next"]["confirmation_gate"]["diagnostic_only"])
 
-    def test_09_counter_blocks_play(self):
+    def test_09_counter_blocks_do_not_gate_play(self):
         output = apply_ai(result_template(counters=1))
-        self.assertEqual(output["decision"], "BEOBACHTEN")
+        self.assertEqual(output["decision"], "SPIELEN")
 
-    def test_10_robustness_blocks_play(self):
+    def test_10_robustness_boolean_does_not_gate_play(self):
         output = apply_ai(result_template(robust=False))
-        self.assertEqual(output["decision"], "BEOBACHTEN")
+        self.assertEqual(output["decision"], "SPIELEN")
 
     def test_11_sample_quality_is_continuous_not_hard_cutoff(self):
         result = result_template(home_n=1, away_n=1, home_depth=5, away_depth=5)
         output = apply_ai(result)
         self.assertEqual(output["decision"], "SPIELEN")
-        self.assertIn("no hard cutoff", output["full5_next"]["locked_parameters"]["sample_quality"])
+        self.assertEqual(output["full5_next"]["MANUAL_PERFORMANCE_GATES"], "NONE")
 
     def test_12_non_strict_is_no_bet(self):
         output = apply_ai(result_template(strict=False))
@@ -192,7 +214,7 @@ class Full5NextTests(unittest.TestCase):
     def test_14_no_probability_cutoff(self):
         output = apply_ai(result_template(probability=.49))
         self.assertEqual(output["decision"], "SPIELEN")
-        self.assertIsNone(output["full5_next"]["locked_parameters"]["play_probability"])
+        self.assertEqual(output["full5_next"]["FINAL_DECISION_SOURCE"], "TRAINED_AI_POLICY")
 
     def test_15_fallback_is_reported(self):
         output = apply_ai(result_template(full5=False))
@@ -235,10 +257,10 @@ class Full5NextTests(unittest.TestCase):
         self.assertEqual(gate["applicable_block_names"], ["UNDERLYING", "MATCH", "FORM"])
         self.assertEqual(legacy_gate, gate)
 
-    def test_20_unstable_ai_rank_is_no_bet(self):
+    def test_20_unstable_ai_rank_is_continuous_not_gate(self):
         output = apply_ai(result_template(), rank_stability=.49)
-        self.assertEqual(output["decision"], "AUSLASSEN / KEIN BET")
-        self.assertIn("nicht mehrheitsstabil", " ".join(output["full5_next"]["counterarguments"]))
+        self.assertEqual(output["decision"], "SPIELEN")
+        self.assertEqual(output["full5_next"]["rank_stability"], .49)
 
     def test_21_ai_failure_is_no_bet_without_core_change(self):
         result = result_template()
@@ -258,6 +280,27 @@ class Full5NextTests(unittest.TestCase):
         output = apply_ai(result_template(probability=.61), learned_score=.83)
         self.assertEqual(output["full5_next"]["probability"], .61)
         self.assertEqual(output["full5_next"]["learned_correctness_score"], .83)
+
+    def test_24_all_action_states_come_from_trained_policy(self):
+        for decision in ("SPIELEN", "BEOBACHTEN", "AUSLASSEN / KEIN BET"):
+            with self.subTest(decision=decision):
+                output = apply_ai(result_template(), policy_decision=decision)
+                self.assertEqual(output["decision"], decision)
+                self.assertEqual(output["full5_next"]["policy_decision"], decision)
+                self.assertFalse(output["full5_next"]["integrity_override"])
+
+    def test_25_only_integrity_may_override_trained_policy(self):
+        output = apply_ai(result_template(strict=False), policy_decision="SPIELEN")
+        self.assertEqual(output["decision"], "AUSLASSEN / KEIN BET")
+        self.assertTrue(output["full5_next"]["integrity_override"])
+        self.assertFalse(output["full5_next"]["integrity_checks"]["STRICT_PREMATCH"])
+
+    def test_26_leakage_integrity_gate_overrides_play(self):
+        files = five_files()
+        files[0]["data"] = {"team_a_xg": 2.4}
+        output = apply_ai(result_template(), files, policy_decision="SPIELEN")
+        self.assertEqual(output["decision"], "AUSLASSEN / KEIN BET")
+        self.assertFalse(output["full5_next"]["integrity_checks"]["LEAKAGE"])
 
 
 if __name__ == "__main__":

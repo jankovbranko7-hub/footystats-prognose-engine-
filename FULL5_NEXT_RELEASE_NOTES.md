@@ -1,22 +1,26 @@
-# FootyStats FULL-5 NEXT AI 2.0.0
+# FULL-5 NEXT AI 2.1.0 — Release Notes
 
-Finaler Produktionsstand auf Basis von V0.4.3 FULL-5.
+Diese Version korrigiert den finalen Decision-Pfad, ohne Probability Core oder
+Six-Market-Ranking zu verändern.
 
-- Probability Core unverändert: 40 Features, Alpha 3.0, Dixon-Coles rho -0.25.
-- V0.4.2 Hybrid-Lambda bleibt Basis und Fallback.
-- Elite-Lambda bleibt deaktiviert.
-- Keine Änderung an den 40 Probability-Core-Features.
-- Keine Datei 6 oder Datei 7.
-- Trainierte, stark regularisierte sechs-Markt-Decision-Engine auf 247 Strict- und resultverifizierten Matches beziehungsweise 1.482 Match×Markt-Kandidaten.
-- Kontinuierliche Decision-Signale aus Match-, League-, Form-, Table- und PlayerDaten; alle sechs Märkte werden gleichzeitig gescort und gerankt.
-- 80 gruppierte Bootstrap-Modelle bestimmen die modellinterne Rangstabilität.
-- Kein universeller Probability-Cutoff für SPIELEN oder BEOBACHTEN.
-- Sample Quality ist kontinuierlicher Modellinput und besitzt keinen harten Cutoff.
-- SPIELEN verlangt 75 % der für die Marktfamilie anwendbaren Evidenzblöcke, null Counter, mehrheitsstabilen AI-Rang, bestandene Core-Robustheit, alle fünf Dateien und Strict Pre-Match.
-- BEOBACHTEN und AUSLASSEN / KEIN BET sind eigenständige Zustände.
-- Rolling-OOF: fünf expandierende chronologische Außenblöcke mit je 30 Matches; 94/150 Marktauswahlen korrekt und 52/70 Plays korrekt (74,29 %).
-- Zeitblock-Playraten: 77,78 %, 76,47 %, 71,43 %, 78,95 %, 63,64 %.
-- Die frühere 87-Match-OOS-Periode war vor Entwicklung dieser Architektur bereits ausgewertet und wird ausdrücklich nicht als unangetastetes OOS der AI 2.0 beansprucht.
-- Fehlende AI-Kerninputs werden nicht imputiert; der sichere Zustand ist KEIN BET.
+- V0.4.3 FULL-5 Core unverändert: 40 Features, Alpha 3.0, rho -0.25.
+- V0.4.2 Hybrid-Lambda bleibt Basis/Fallback; Elite-Lambda bleibt aus.
+- Bestehendes Ranking unverändert: 247 Matches, 1.482 Kandidaten, 18 Inputs,
+  80 Bootstrap-Modelle.
+- Neue finale Modellstufe: trainierte Ridge-logistische Reliability-/
+  Abstention-Policy mit 55 Inputs und 80 Bootstrap-Modellen.
+- PLAY-/OBSERVE-Grenzen werden durch KMeans auf Development-internen
+  Reliability-Werten gelernt und im Modellartefakt gespeichert.
+- Entfernt aus dem finalen Decision-Pfad: Confirmation Ratio 0.75/0.50,
+  Counter-Grenzen 0/1, Rank-Stability 0.50 sowie Robustheits-Boolean-Gate.
+- Evidence-, Confirmation- und Counter-Regeln bleiben rein diagnostisch.
+- Harte Overrides sind nur Integrität: Strict Pre-Match, fünf Dateien, Audit,
+  Leakage-Schutz, gültige Kerninputs.
+- Export: `FINAL_DECISION_SOURCE = TRAINED_AI_POLICY`,
+  `MANUAL_PERFORMANCE_GATES = NONE`.
+- Development-only rolling grouped OOF: 60 Matches, 29 Plays, 18 Treffer
+  (62,07 %), Play Rate 48,33 %; zwei Zeitblöcke mit 61,54 % und 62,50 %.
+- Das frühere 87-Match-OOS wurde nicht für Policy-Training oder Grenzwahl
+  benutzt und wird nicht als unangetastete Validierung beworben.
 
-V1 ist nicht Bestandteil dieser Veröffentlichung. Der geschützte Backup-Branch `backup/v0.4.3-full5-2026-09-07` bleibt unverändert.
+Der geschützte Branch `backup/v0.4.3-full5-2026-09-07` bleibt unangetastet.

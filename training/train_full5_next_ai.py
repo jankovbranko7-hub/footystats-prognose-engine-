@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Fit the locked FULL-5 NEXT AI ranker and export pure-Python parameters."""
+"""Fit the frozen AI 2.0 six-market ranker only.
+
+This utility intentionally cannot overwrite the production combined model;
+the final action policy is trained separately by train_full5_next_abstention.py.
+"""
 from __future__ import annotations
 
 import argparse
@@ -49,7 +53,7 @@ def parameters(frame: pd.DataFrame, target: np.ndarray, indices: np.ndarray | No
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("matrix", type=Path)
-    parser.add_argument("--output", type=Path, default=REPO / "full5_next_ai_model.json")
+    parser.add_argument("--output", type=Path, default=REPO / "full5_next_ranking_model.json")
     parser.add_argument("--bootstrap-models", type=int, default=80)
     args = parser.parse_args()
     frame, target, groups = training_rows(args.matrix)
@@ -61,7 +65,7 @@ def main() -> None:
         sampled_rows = np.concatenate([np.flatnonzero(groups == group) for group in sampled_groups])
         bootstraps.append(parameters(frame, target, sampled_rows, 20260908 + seed))
     artifact = {
-        "version": "FULL-5-NEXT-AI-2.0.0",
+        "version": "FULL-5-NEXT-RANKING-2.0.0",
         "trained_at_utc": "2026-09-08T00:00:00Z",
         "training_matches": int(len(unique_groups)),
         "training_candidates": int(len(frame)),
@@ -69,24 +73,12 @@ def main() -> None:
         "regularization": {"model": "logistic_ridge", "c": 0.003},
         "central_model": parameters(frame, target),
         "bootstrap_models": bootstraps,
-        "decision_policy": {
-            "probability_cutoff": None,
-            "minimum_confirmation_ratio": 0.75,
-            "maximum_counter_blocks": 0,
-            "minimum_rank_stability": 0.5,
-            "core_robustness_required": True,
-            "sample_quality": "continuous model input; no hard cutoff",
-            "no_bet": "integrity failure, material conflict, insufficient evidence, or unstable learned rank",
-        },
         "validation": {
+            "scope": "six-market ranking only; no final action-policy result",
             "method": "five expanding chronological outer folds; 97 initial train + five disjoint 30-match tests",
             "outer_matches": 150,
             "rank_hits": 94,
             "rank_hit_rate": 94 / 150,
-            "play_hits": 52,
-            "plays": 70,
-            "play_hit_rate": 52 / 70,
-            "play_fold_rates": [7 / 9, 13 / 17, 10 / 14, 15 / 19, 7 / 11],
             "historical_oos_not_untouched": True,
         },
     }
