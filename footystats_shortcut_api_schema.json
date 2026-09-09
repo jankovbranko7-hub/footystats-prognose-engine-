@@ -1,18 +1,16 @@
 {
   "schema_version": "1.1",
-  "schema_revision": "1.1.3",
+  "schema_revision": "1.1.4",
   "name": "FOOTYSTATS_IPHONE_SHORTCUT_API_SCHEMA",
   "timezone": "Europe/Vienna",
   "footystats_base_url": "https://api.football-data-api.com",
   "render_base_url": "https://footystats-prognose-engine.onrender.com",
-  "primary_mode": "FAST_SERVER_SIDE_COLLECTION",
+  "primary_mode": "MANUAL_FIVE_FILE_EXPORT",
   "secret_handling": {
-    "api_key": "stored in the iOS Shortcut import parameter and sent only in POST form body to the user's Render service",
-    "persist_on_render": false,
+    "api_key": "stored only in the iOS Shortcut import parameter/variable",
     "write_to_files": false,
-    "write_to_job_state": false,
-    "include_in_response": false,
-    "include_in_error_urls": false
+    "send_to_render_automatically": false,
+    "include_in_saved_json": false
   },
   "selection": {
     "location": "IPHONE",
@@ -24,58 +22,81 @@
       "timezone": "Europe/Vienna",
       "page": "${PAGE}"
     },
-    "pagination": {"rule": "fetch until current_page == max_page"},
+    "pagination": {
+      "rule": "fetch until current_page == max_page"
+    },
     "user_action": "User manually selects exactly one match",
-    "send_to_render": ["selected.id", "FOOTYSTATS_API_KEY"]
+    "extract": ["id", "homeID", "awayID", "competition_id", "date_unix"]
   },
-  "fast_submit": {
-    "endpoint": "/api/predict-shortcut-fast",
-    "method": "POST",
-    "content_type": "multipart/form-data",
-    "fields": {"match_id": "${selected.id}", "api_key": "${FOOTYSTATS_API_KEY}"},
-    "response": {"job_id": "opaque id", "ready": false, "job_status": "QUEUED"}
+  "derived": {
+    "match_id": "selected.id",
+    "home_id": "selected.homeID",
+    "away_id": "selected.awayID",
+    "season_id": "selected.competition_id",
+    "kickoff_unix": "selected.date_unix",
+    "strict_max_time": "kickoff_unix - 1",
+    "captured_at_unix": "Render /api/health shortcut_capture_unix at collection start"
   },
-  "server_collection": {
-    "location": "RENDER",
-    "derive_from_match": ["homeID", "awayID", "competition_id", "date_unix"],
-    "strict_max_time": "date_unix - 1",
-    "parallel_collection": true,
-    "virtual_file_count": 5,
-    "virtual_files": [
-      {"file": "${match_id}_MatchDaten.json", "endpoint": "/match", "temporal_mode": "PREMATCH_FIELD_WHITELIST", "postprocess": "remove odds-only fields from the in-memory analysis copy"},
-      {"file": "${season_id}_LeagueDaten.json", "endpoint": "/league-season", "team_endpoint": "/league-teams", "max_time": "${kickoff_unix_minus_1}", "include": "stats", "pagination": "fetch all league-team pages", "temporal_mode": "STRICT_MAX_TIME"},
-      {"file": "${match_id}_FormDaten.json", "endpoint": "/lastx", "requests": ["homeID", "awayID"], "temporal_mode": "LIVE_CAPTURE_ONLY_NO_MAX_TIME"},
-      {"file": "${match_id}_TableDaten.json", "endpoint": "/league-tables", "include": "stats", "max_time": "${kickoff_unix_minus_1}", "temporal_mode": "STRICT_MAX_TIME"},
-      {"file": "${match_id}_PlayerDaten.json", "endpoint": "/league-players", "include": "stats", "max_time": "${kickoff_unix_minus_1}", "pagination": "fetch all pages then retain only players whose club_team_id or club_team_2_id is homeID or awayID", "temporal_mode": "STRICT_MAX_TIME"}
-    ]
-  },
-  "fast_status": {
-    "endpoint": "/api/predict-shortcut-fast-job/${job_id}",
-    "method": "GET",
-    "long_poll_seconds": 20,
-    "individual_request_timeout_seconds": 30,
-    "result": "the normal V0.5.0 analysis object plus shortcut_fast diagnostics"
+  "outputs": [
+    {
+      "file": "${match_id}_MatchDaten.json",
+      "endpoint": "/match",
+      "query": {"match_id": "${match_id}"},
+      "temporal_mode": "PREMATCH_FIELD_WHITELIST"
+    },
+    {
+      "file": "${season_id}_LeagueDaten.json",
+      "endpoint": "/league-season",
+      "team_endpoint": "/league-teams",
+      "max_time": "${strict_max_time}",
+      "include": "stats",
+      "pagination": "fetch all league-team pages",
+      "temporal_mode": "STRICT_MAX_TIME"
+    },
+    {
+      "file": "${match_id}_FormDaten.json",
+      "endpoint": "/lastx",
+      "requests": ["home_id", "away_id"],
+      "temporal_mode": "LIVE_CAPTURE_ONLY_NO_MAX_TIME"
+    },
+    {
+      "file": "${match_id}_TableDaten.json",
+      "endpoint": "/league-tables",
+      "include": "stats",
+      "max_time": "${strict_max_time}",
+      "temporal_mode": "STRICT_MAX_TIME"
+    },
+    {
+      "file": "${match_id}_PlayerDaten.json",
+      "endpoint": "/league-players",
+      "include": "stats",
+      "max_time": "${strict_max_time}",
+      "pagination": "fetch every page",
+      "temporal_mode": "STRICT_MAX_TIME"
+    }
+  ],
+  "iphone_storage": {
+    "save_all_five_files": true,
+    "target": "Shortcuts storage selected by the Shortcut",
+    "stop_after_fifth_save": true,
+    "automatic_render_request_after_save": false,
+    "automatic_result_popup_after_save": false
   },
   "render_upload": {
-    "mode": "LEGACY_ASYNC_FIVE_FILE_COMPATIBILITY",
-    "endpoint": "https://footystats-prognose-engine.onrender.com/api/predict-shortcut-v1-1-async",
+    "mode": "MANUAL_USER_UPLOAD",
+    "automatic_upload": false,
     "exact_file_count": 5,
-    "status_endpoint": "https://footystats-prognose-engine.onrender.com/api/predict-shortcut-v1-1-job/${job_id}"
-  },
-  "compatibility": {
-    "engine_input": "same five canonical virtual JSON files used by the existing parser",
-    "probability_core_modified": false,
-    "decision_engine_modified": false,
-    "legacy_five_file_upload_endpoint": "/api/predict-shortcut-v1-1",
-    "legacy_async_five_file_endpoint": "/api/predict-shortcut-v1-1-async"
+    "ui": "User opens the Render V0.5.0 page, selects the five JSON files for one match, then presses V0.5.0 Analyse starten.",
+    "analysis_endpoint": "/api/predict-bundle"
   },
   "validation": {
-    "reject_started_match": true,
     "reject_missing_core_identifiers": true,
     "do_not_fabricate_missing_fields": true,
     "do_not_use_target_match_postmatch_fields_as_features": true,
     "historical_lastx_rule": "NOT STRICT unless capture/source timestamp proves it existed before kickoff",
     "player_pagination_complete_required": true,
-    "league_team_pagination_complete_required": true
+    "league_team_pagination_complete_required": true,
+    "probability_core_modified": false,
+    "decision_engine_modified": false
   }
 }
