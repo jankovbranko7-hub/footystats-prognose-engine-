@@ -43,17 +43,67 @@ def _install_context_ui(legacy: Any) -> None:
         1,
     )
 
+    # V0.4.3 still computes legacy gate diagnostics, but they must never be
+    # presented as the reason for the V0.5.0 final action. Replace only the
+    # presentation block; no model values are touched.
+    legacy_observe_js = """    const finalDecision=protocol.final_decision||data.decision||'';
+    const decisionReasons=Array.isArray(protocol.decision_reasons)?protocol.decision_reasons.filter(Boolean):[];
+    const confirmingBlocks=Array.isArray(protocol.confirming_blocks)?protocol.confirming_blocks.filter(Boolean):[];
+    const counterBlocks=Array.isArray(protocol.counter_blocks)?protocol.counter_blocks.filter(Boolean):[];
+    const strongest=data.strongest_market||{};
+    const observeLead=(strongest.label&&strongest.probability_pct!=null)
+      ? strongest.label+' liegt bei '+strongest.probability_pct+' %, ist aber nach den Decision Gates noch nicht für SPIELEN freigegeben.'
+      : 'Der stärkste Markt ist nach den Decision Gates noch nicht für SPIELEN freigegeben.';
+    const observeReasonText=decisionReasons.length
+      ? decisionReasons.join(' ')
+      : 'Mindestens ein Freigabe-Gate ist noch nicht stark genug bestätigt.';
+    const observeBlocks=[];
+    if(confirmingBlocks.length)observeBlocks.push('Bestätigend: '+confirmingBlocks.join(', '));
+    if(counterBlocks.length)observeBlocks.push('Gegenargumente: '+counterBlocks.join(', '));
+    const observeCard=finalDecision==='BEOBACHTEN'
+      ? '<div class="c"><h3>Warum BEOBACHTEN?</h3><div class="b">'+escapeHtml(observeLead)+'</div><p>'+escapeHtml(observeReasonText)+'</p>'+
+        (observeBlocks.length?'<div class="s">'+escapeHtml(observeBlocks.join(' · '))+'</div>':'')+'</div>'
+      : '';
+"""
+    policy_observe_js = """    const finalDecision=data.decision||protocol.final_decision||'';
+    const strongest=data.strongest_market||{};
+    const learnedPolicy=data.learned_decision_policy||{};
+    const assignedCentroid=(typeof learnedPolicy.assigned_centroid==='number')?learnedPolicy.assigned_centroid:null;
+    const observeLead=(strongest.label&&strongest.probability_pct!=null)
+      ? strongest.label+' ist mit '+strongest.probability_pct+' % der stärkste Markt und wurde von der gelernten Reliability-Policy der mittleren Zuverlässigkeitsgruppe zugeordnet.'
+      : 'Der stärkste Markt wurde von der gelernten Reliability-Policy der mittleren Zuverlässigkeitsgruppe zugeordnet.';
+    const observeReasonText='Die finale V0.5.0-Entscheidung stammt aus der gelernten Reliability-Cluster-Policy. Alte V0.4.3 Decision Gates sind nur Diagnostik und beeinflussen SPIELEN / BEOBACHTEN / AUSLASSEN nicht.';
+    const observePolicyDetail=assignedCentroid==null
+      ? 'Keine manuell gesetzte Performance-Schwelle.'
+      : 'Zentrum der gelernten Gruppe: '+(assignedCentroid*100).toFixed(2)+' % · Zuordnung nach nächstem gelerntem Clusterzentrum · keine manuell gesetzte Performance-Schwelle.';
+    const observeCard=finalDecision==='BEOBACHTEN'
+      ? '<div class="c"><h3>Warum BEOBACHTEN?</h3><div class="b">'+escapeHtml(observeLead)+'</div><p>'+escapeHtml(observeReasonText)+'</p><div class="s">'+escapeHtml(observePolicyDetail)+'</div></div>'
+      : '';
+"""
+    if legacy_observe_js in html:
+        html = html.replace(legacy_observe_js, policy_observe_js, 1)
+
+    # Make any still-visible legacy diagnostics unmistakably diagnostic only.
+    html = html.replace('V5.2-Protokoll', 'Legacy V5.2-Diagnostik')
+    html = html.replace('Result (historische Quote)', 'Historische Ergebnisrate')
+
     js_anchor = "    const full5=(((goal||{}).hybrid_model||{}).full5)||{};"
     if js_anchor in html:
         js_extra = js_anchor + "\n" + """    const ctxMeta=data.research_context||{};
     const ctxInterp=data.context_interpretation||{};
     const availability=ctxInterp.availability||{};
+    const externalAudit=ctxMeta.external_source_audit||{};
+    const providerStatus=externalAudit.status||'UNAVAILABLE';
+    const fixtureStatus=externalAudit.fixture_resolved===true?'ZUgeordnet':(externalAudit.fixture_resolved===false?'NICHT ZUGEORDNET':'—');
+    const providerError=externalAudit.error?'<p class="s">Provider-Hinweis: '+escapeHtml(externalAudit.error)+'</p>':'';
     const contextCard='<div class="c"><h3>Aktueller Match-Kontext</h3><div class="g">'+
       '<div class="m"><div class="s">Trend</div><div class="b">'+escapeHtml(ctxMeta.trend_status||'UNAVAILABLE')+'</div></div>'+
       '<div class="m"><div class="s">News / Verfügbarkeit</div><div class="b">'+escapeHtml(ctxMeta.news_availability_status||'UNAVAILABLE')+'</div></div>'+
       '<div class="m"><div class="s">Aufstellung</div><div class="b">'+escapeHtml(ctxMeta.lineup_status||'UNAVAILABLE')+'</div></div>'+
       '<div class="m"><div class="s">Exakt verknüpfte Spieler-News</div><div class="b">'+escapeHtml(availability.exact_player_links==null?'—':availability.exact_player_links)+'</div></div>'+
-      '</div><p class="s">News und Aufstellung werden mit echten PlayerDaten verknüpft. Keine feste Injury-Penalty, kein NewsScore, keine erfundene Prozentkorrektur.</p></div>';
+      '<div class="m"><div class="s">API-Football Status</div><div class="b">'+escapeHtml(providerStatus)+'</div></div>'+
+      '<div class="m"><div class="s">Fixture-Zuordnung</div><div class="b">'+escapeHtml(fixtureStatus)+'</div></div>'+
+      '</div>'+providerError+'<p class="s">News und Aufstellung werden mit echten PlayerDaten verknüpft. Keine feste Injury-Penalty, kein NewsScore, keine erfundene Prozentkorrektur.</p></div>';
 """
         html = html.replace(js_anchor, js_extra, 1)
 
