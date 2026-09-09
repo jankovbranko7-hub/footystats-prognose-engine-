@@ -8,14 +8,21 @@ v043_engine.legacy = legacy
 
 app = apply_patch(legacy)
 
-# V0.5.0 is the only visible product identity. Historical protocol internals
-# remain available in backend diagnostics, but old V5.2 naming must not appear
-# as if it were the active decision engine.
-legacy.INDEX_HTML = legacy.INDEX_HTML.replace(
-    "Legacy V5.2-Diagnostik", "Interne Diagnose (ohne Einfluss)"
-).replace(
-    "V5.2-Protokoll", "Interne Diagnose (ohne Einfluss)"
+# The old V0.4.3/V5.2 protocol remains available in backend diagnostics for
+# auditability, but it has no role in the V0.5.0 final action and therefore is
+# removed completely from the normal short-decision UI.
+_legacy_diag_labels = (
+    "Legacy V5.2-Diagnostik",
+    "V5.2-Protokoll",
+    "Interne Diagnose (ohne Einfluss)",
 )
+for _label in _legacy_diag_labels:
+    _tile = (
+        "'<div class=\"m\"><div class=\"s\">" + _label + "</div><b>'+"
+        "escapeHtml(protocol.phase_1_data_audit||'—')+' / '+"
+        "escapeHtml(protocol.phase_2_all_six_markets||'—')+'</b></div>'+"
+    )
+    legacy.INDEX_HTML = legacy.INDEX_HTML.replace(_tile, "", 1)
 
 # Collapse the inherited two-card start screen into one actual V0.5.0 mask.
 # This is presentation-only: upload handling and V0.4.3 probabilities are untouched.
