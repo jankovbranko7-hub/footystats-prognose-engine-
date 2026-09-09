@@ -56,7 +56,7 @@ assert out["research_context"]["probabilities_modified_by_current_context"] is F
 assert out["research_context"]["iphone_file_count"] == 5
 assert out["context_interpretation"]["manual_injury_penalty"] is False
 assert out["context_interpretation"]["manual_news_score"] is False
-assert "news_score" not in str(out["context_interpretation"])
+assert "news_score" not in out["context_interpretation"]
 assert learned_action(0.80)["decision"] == "SPIELEN"
 assert learned_action(0.68)["decision"] == "BEOBACHTEN"
 assert learned_action(0.59)["decision"] == "AUSLASSEN / KEIN BET"
@@ -100,8 +100,6 @@ assert "/api/research/context-archive-bundle" in paths
 assert "/api/research/context-health" in paths
 
 prod=Legacy()
-# Production installer must preserve a frozen baseline closure and replace only
-# the bundle/health/archive delivery path.
 prod.app.add_api_route("/api/health",lambda:{"old":True},methods=["GET"])
 install_context_production(prod)
 prod_paths={getattr(route,"path",None) for route in prod.app.router.routes}
