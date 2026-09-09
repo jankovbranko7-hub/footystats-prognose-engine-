@@ -17,4 +17,14 @@ legacy.INDEX_HTML = legacy.INDEX_HTML.replace(
     "fetch('/api/research/predict-context',{method:'POST',body:formFor(files)})",
     1,
 )
+legacy.INDEX_HTML = legacy.INDEX_HTML.replace(
+    "fetch('/api/archive-bundle',{method:'POST',body:formFor(files)})",
+    "fetch('/api/research/context-archive-bundle',{method:'POST',body:formFor(files)})",
+    1,
+)
+legacy.INDEX_HTML = legacy.INDEX_HTML.replace(
+    "Erstellt eine einzelne, bereinigte Datei mit Analyse und allen ausgewählten FootyStats-Quellen. Sie wird nicht auf Render gespeichert.",
+    "Erstellt einen provenance-gesicherten Research-Snapshot mit Fünf-Dateien-Hashes, V0.4.3-Ausgabe und aktuellem Pre-Match-Kontext. Er wird heruntergeladen und nicht als dauerhafte Render-Speicherung ausgegeben.",
+    1,
+)
 app.title = "FootyStats V0.4.3 FULL-5 + Current Context (RESEARCH ONLY)"
