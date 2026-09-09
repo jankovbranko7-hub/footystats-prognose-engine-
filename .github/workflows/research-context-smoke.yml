@@ -17,7 +17,7 @@ jobs:
       - name: Install runtime dependencies
         run: pip install -r requirements.txt
       - name: Compile research modules
-        run: python -m py_compile research/current_match_context.py research/current_context_runtime.py research/api_football_context_adapter.py research/research_context_engine.py app_research_context.py
+        run: python -m py_compile research/current_match_context.py research/current_context_runtime.py research/api_football_context_adapter.py research/context_snapshot_archive.py research/research_context_engine.py app_research_context.py
       - name: Run research context smoke
         run: python -m research.test_research_context
       - name: Assert production entry point untouched
