@@ -1,0 +1,48 @@
+{
+  "policy_version": "FULL5_CONTEXT_RELIABILITY_POLICY_1.0",
+  "dataset": {
+    "strict_matches": 300,
+    "seed_matches": 23,
+    "prequential_oof_matches": 277,
+    "date_blocks": 9,
+    "one_match_one_unit": true
+  },
+  "probability_core": {
+    "source": "V0.4.3 FULL-5",
+    "change": "NONE",
+    "reason": "all tested full-context residual specialists worsened proper probability losses"
+  },
+  "rejected_context_specialists": {
+    "1X2_log_loss": {"context": 1.007692338977399, "baseline": 1.0000213695975613},
+    "BTTS_log_loss": {"context": 0.7053328385338019, "baseline": 0.657435366212342},
+    "OU25_log_loss": {"context": 0.7620147216301303, "baseline": 0.6156102757610031}
+  },
+  "market_selection": "argmax over HOME, AWAY, BTTS YES, BTTS NO, OVER 2.5, UNDER 2.5; DRAW remains modeled in 1X2 probabilities but is not one of the six selectable markets",
+  "decision_policy": {
+    "algorithm": "1D KMeans reliability clustering on strongest-market probability",
+    "k": 3,
+    "fit_target_used": false,
+    "human_performance_thresholds": false,
+    "human_feature_weights": false,
+    "mapping": "lowest learned centroid -> AUSLASSEN / KEIN BET; middle -> BEOBACHTEN; highest -> SPIELEN",
+    "final_centroids_300_probability_only": [0.5939096343988497, 0.6848009383779808, 0.7950201361084736],
+    "assignment": "nearest centroid"
+  },
+  "primary_prequential_validation": {
+    "AUSLASSEN / KEIN BET": {"matches": 118, "correct": 59, "hit_rate": 0.5, "wilson95": [0.41121889415183216, 0.5887811058481678]},
+    "BEOBACHTEN": {"matches": 124, "correct": 88, "hit_rate": 0.7096774193548387, "wilson95": [0.6244416488936401, 0.7823121575763984]},
+    "SPIELEN": {"matches": 35, "correct": 28, "hit_rate": 0.8, "wilson95": [0.6410838693433439, 0.8995755352620137]},
+    "overall_selected_market": {"matches": 277, "correct": 175, "hit_rate": 0.631768953068592}
+  },
+  "descriptive_final_fit_300": {
+    "AUSLASSEN / KEIN BET": {"matches": 126, "correct": 59, "hit_rate": 0.46825396825396826, "wilson95": [0.38335901902739644, 0.555027378717505]},
+    "BEOBACHTEN": {"matches": 125, "correct": 90, "hit_rate": 0.72, "wilson95": [0.6356343866129478, 0.7912468401553886]},
+    "SPIELEN": {"matches": 49, "correct": 39, "hit_rate": 0.7959183673469388, "wilson95": [0.6636299908048744, 0.8851815039421786]},
+    "overall_selected_market": {"matches": 300, "correct": 188, "hit_rate": 0.6266666666666667}
+  },
+  "external_context": {
+    "trend": "derived from five FootyStats files",
+    "news_availability": "fact/provenance layer; no invented numeric penalty",
+    "lineup": "optional fact/provenance layer; no invented numeric penalty"
+  }
+}
