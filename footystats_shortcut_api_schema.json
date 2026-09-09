@@ -1,0 +1,99 @@
+{
+  "schema_version": "1.1",
+  "name": "FOOTYSTATS_IPHONE_SHORTCUT_API_SCHEMA",
+  "timezone": "Europe/Vienna",
+  "base_url": "https://api.football-data-api.com",
+  "secret_handling": {
+    "api_key": "stored only in iOS Shortcut variable/secret input",
+    "never_write_key_to_files": true,
+    "metadata_request_template_must_redact_key": true
+  },
+  "selection": {
+    "endpoint": "/todays-matches",
+    "method": "GET",
+    "query": {
+      "key": "${FOOTYSTATS_API_KEY}",
+      "date": "${YYYY-MM-DD}",
+      "timezone": "Europe/Vienna",
+      "page": "${PAGE}"
+    },
+    "pagination": {
+      "max_per_page": 200,
+      "rule": "fetch until current_page == max_page"
+    },
+    "user_action": "User manually selects exactly one match",
+    "extract": [
+      "id",
+      "homeID",
+      "awayID",
+      "competition_id",
+      "date_unix"
+    ],
+    "season_id_source": "competition_id"
+  },
+  "derived": {
+    "match_id": "selected.id",
+    "home_id": "selected.homeID",
+    "away_id": "selected.awayID",
+    "season_id": "selected.competition_id",
+    "kickoff_unix": "selected.date_unix",
+    "strict_max_time": "kickoff_unix - 1",
+    "captured_at_unix": "current unix time at collection"
+  },
+  "outputs": [
+    {
+      "file": "${match_id}_MatchDaten.json",
+      "endpoint": "/match",
+      "query": {"key":"${FOOTYSTATS_API_KEY}","match_id":"${match_id}"},
+      "wrapper_meta": {"endpoint":"/match","match_id":"${match_id}","captured_at_unix":"${captured_at_unix}","kickoff_unix":"${kickoff_unix}","max_time":null,"temporal_mode":"PREMATCH_FIELD_WHITELIST"}
+    },
+    {
+      "file": "${season_id}_LeagueDaten.json",
+      "endpoint": "/league-season",
+      "query": {"key":"${FOOTYSTATS_API_KEY}","season_id":"${season_id}","max_time":"${strict_max_time}"},
+      "wrapper_meta": {"endpoint":"/league-season","season_id":"${season_id}","captured_at_unix":"${captured_at_unix}","kickoff_unix":"${kickoff_unix}","max_time":"${strict_max_time}","temporal_mode":"STRICT_MAX_TIME"}
+    },
+    {
+      "file": "${match_id}_FormDaten.json",
+      "endpoint": "/lastx",
+      "subrequests": [
+        {"query":{"key":"${FOOTYSTATS_API_KEY}","team_id":"${home_id}"},"store_as":"home"},
+        {"query":{"key":"${FOOTYSTATS_API_KEY}","team_id":"${away_id}"},"store_as":"away"}
+      ],
+      "wrapper_meta": {"endpoint":"/lastx","team_ids":["${home_id}","${away_id}"],"captured_at_unix":"${captured_at_unix}","kickoff_unix":"${kickoff_unix}","max_time":null,"temporal_mode":"LIVE_CAPTURE_ONLY_NO_MAX_TIME"}
+    },
+    {
+      "file": "${match_id}_TableDaten.json",
+      "endpoint": "/league-tables",
+      "query": {"key":"${FOOTYSTATS_API_KEY}","season_id":"${season_id}","include":"stats","max_time":"${strict_max_time}"},
+      "wrapper_meta": {"endpoint":"/league-tables","season_id":"${season_id}","captured_at_unix":"${captured_at_unix}","kickoff_unix":"${kickoff_unix}","max_time":"${strict_max_time}","temporal_mode":"STRICT_MAX_TIME"}
+    },
+    {
+      "file": "${match_id}_PlayerDaten.json",
+      "endpoint": "/league-players",
+      "query": {"key":"${FOOTYSTATS_API_KEY}","season_id":"${season_id}","include":"stats","max_time":"${strict_max_time}","page":"${PAGE}"},
+      "pagination": {"max_players_per_page":200,"rule":"repeat page += 1 until current_page == max_page","merge":"concatenate data arrays in page order"},
+      "postprocess": "retain players whose club_team_id or club_team_2_id matches home_id or away_id; preserve pager audit metadata",
+      "wrapper_meta": {"endpoint":"/league-players","season_id":"${season_id}","captured_at_unix":"${captured_at_unix}","kickoff_unix":"${kickoff_unix}","max_time":"${strict_max_time}","temporal_mode":"STRICT_MAX_TIME","pagination_complete":"${BOOLEAN}"}
+    }
+  ],
+  "file_wrapper": {
+    "_footystats_meta": "metadata object described per output; no API key",
+    "payload": "raw FootyStats response or merged raw responses",
+    "compatibility": "engine recursively reads nested raw fields; metadata provides provenance/temporal audit"
+  },
+  "render_upload": {
+    "endpoint": "https://footystats-prognose-engine.onrender.com/api/predict-bundle",
+    "method": "POST",
+    "content_type": "multipart/form-data",
+    "field_name": "files",
+    "exact_file_count": 5,
+    "files": ["${match_id}_MatchDaten.json","${season_id}_LeagueDaten.json","${match_id}_FormDaten.json","${match_id}_TableDaten.json","${match_id}_PlayerDaten.json"]
+  },
+  "validation": {
+    "reject_missing_core_identifiers": true,
+    "do_not_fabricate_missing_fields": true,
+    "do_not_use_target_match_postmatch_fields_as_features": true,
+    "historical_lastx_rule": "NOT STRICT unless capture/source timestamp proves it existed before kickoff"
+  }
+}
