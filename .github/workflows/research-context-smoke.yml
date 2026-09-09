@@ -17,9 +17,11 @@ jobs:
       - name: Install runtime dependencies
         run: pip install -r requirements.txt
       - name: Compile context and release modules
-        run: python -m py_compile app.py research/current_match_context.py research/current_context_runtime.py research/api_football_context_adapter.py research/context_interpreter.py research/learned_reliability_policy.py research/context_snapshot_archive.py research/context_snapshot_store.py research/research_context_engine.py research/test_research_context.py research/test_release_candidate.py app_research_context.py v050_context_release.py
+        run: python -m py_compile app.py research/current_match_context.py research/current_context_runtime.py research/api_football_context_adapter.py research/context_interpreter.py research/learned_reliability_policy.py research/context_snapshot_archive.py research/context_snapshot_store.py research/research_context_engine.py research/test_research_context.py research/test_release_candidate.py research/test_supervised_reliability_policy.py app_research_context.py v050_context_release.py
       - name: Run context-policy smoke
         run: python -m research.test_research_context
+      - name: Run result-supervised reliability v2 smoke
+        run: python -m research.test_supervised_reliability_policy
       - name: Run real V0.5.0 release-candidate smoke
         run: python -m research.test_release_candidate
       - name: Assert entry point is either locked pre-promotion or exact V0.5.0 promotion
