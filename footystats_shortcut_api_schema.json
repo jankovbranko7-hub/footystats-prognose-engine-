@@ -1,15 +1,21 @@
 {
   "schema_version": "1.1",
-  "schema_revision": "1.1.2",
+  "schema_revision": "1.1.3",
   "name": "FOOTYSTATS_IPHONE_SHORTCUT_API_SCHEMA",
   "timezone": "Europe/Vienna",
-  "base_url": "https://api.football-data-api.com",
+  "footystats_base_url": "https://api.football-data-api.com",
+  "render_base_url": "https://footystats-prognose-engine.onrender.com",
+  "primary_mode": "FAST_SERVER_SIDE_COLLECTION",
   "secret_handling": {
-    "api_key": "stored only in iOS Shortcut variable/secret input",
-    "never_write_key_to_files": true,
-    "metadata_request_template_must_redact_key": true
+    "api_key": "stored in the iOS Shortcut import parameter and sent only in POST form body to the user's Render service",
+    "persist_on_render": false,
+    "write_to_files": false,
+    "write_to_job_state": false,
+    "include_in_response": false,
+    "include_in_error_urls": false
   },
   "selection": {
+    "location": "IPHONE",
     "endpoint": "/todays-matches",
     "method": "GET",
     "query": {
@@ -18,94 +24,58 @@
       "timezone": "Europe/Vienna",
       "page": "${PAGE}"
     },
-    "pagination": {
-      "max_per_page": 200,
-      "rule": "fetch until current_page == max_page"
-    },
+    "pagination": {"rule": "fetch until current_page == max_page"},
     "user_action": "User manually selects exactly one match",
-    "extract": ["id", "homeID", "awayID", "competition_id", "date_unix"],
-    "season_id_source": "competition_id"
+    "send_to_render": ["selected.id", "FOOTYSTATS_API_KEY"]
   },
-  "derived": {
-    "match_id": "selected.id",
-    "home_id": "selected.homeID",
-    "away_id": "selected.awayID",
-    "season_id": "selected.competition_id",
-    "kickoff_unix": "selected.date_unix",
-    "strict_max_time": "kickoff_unix - 1",
-    "captured_at_unix": "Render /api/health shortcut_capture_unix at collection start"
-  },
-  "outputs": [
-    {
-      "file": "${match_id}_MatchDaten.json",
-      "endpoint": "/match",
-      "query": {"key": "${FOOTYSTATS_API_KEY}", "match_id": "${match_id}"},
-      "wrapper_meta": {"endpoint": "/match", "match_id": "${match_id}", "captured_at_unix": "${captured_at_unix}", "kickoff_unix": "${kickoff_unix}", "max_time": null, "temporal_mode": "PREMATCH_FIELD_WHITELIST"}
-    },
-    {
-      "file": "${season_id}_LeagueDaten.json",
-      "endpoint": "/league-season",
-      "query": {"key": "${FOOTYSTATS_API_KEY}", "season_id": "${season_id}", "max_time": "${strict_max_time}"},
-      "team_endpoint": "/league-teams",
-      "team_query": {"key": "${FOOTYSTATS_API_KEY}", "season_id": "${season_id}", "include": "stats", "max_time": "${strict_max_time}", "page": "${PAGE}"},
-      "team_pagination": {"max_teams_per_page": 50, "rule": "fetch page 1 and continue until current_page == max_page", "merge": "preserve all raw page responses in team_pages"},
-      "payload_shape": {"league": "raw /league-season response", "team_pages": "all raw /league-teams responses"},
-      "wrapper_meta": {"endpoint": "/league-season", "team_endpoint": "/league-teams", "season_id": "${season_id}", "captured_at_unix": "${captured_at_unix}", "kickoff_unix": "${kickoff_unix}", "max_time": "${strict_max_time}", "temporal_mode": "STRICT_MAX_TIME", "team_pagination_complete": "${BOOLEAN}"}
-    },
-    {
-      "file": "${match_id}_FormDaten.json",
-      "endpoint": "/lastx",
-      "subrequests": [
-        {"query": {"key": "${FOOTYSTATS_API_KEY}", "team_id": "${home_id}"}, "store_as": "home"},
-        {"query": {"key": "${FOOTYSTATS_API_KEY}", "team_id": "${away_id}"}, "store_as": "away"}
-      ],
-      "wrapper_meta": {"endpoint": "/lastx", "team_ids": ["${home_id}", "${away_id}"], "captured_at_unix": "${captured_at_unix}", "kickoff_unix": "${kickoff_unix}", "max_time": null, "temporal_mode": "LIVE_CAPTURE_ONLY_NO_MAX_TIME"}
-    },
-    {
-      "file": "${match_id}_TableDaten.json",
-      "endpoint": "/league-tables",
-      "query": {"key": "${FOOTYSTATS_API_KEY}", "season_id": "${season_id}", "include": "stats", "max_time": "${strict_max_time}"},
-      "wrapper_meta": {"endpoint": "/league-tables", "season_id": "${season_id}", "captured_at_unix": "${captured_at_unix}", "kickoff_unix": "${kickoff_unix}", "max_time": "${strict_max_time}", "temporal_mode": "STRICT_MAX_TIME"}
-    },
-    {
-      "file": "${match_id}_PlayerDaten.json",
-      "endpoint": "/league-players",
-      "query": {"key": "${FOOTYSTATS_API_KEY}", "season_id": "${season_id}", "include": "stats", "max_time": "${strict_max_time}", "page": "${PAGE}"},
-      "pagination": {"max_players_per_page": 200, "rule": "repeat page += 1 until current_page == max_page", "merge": "preserve all raw page responses in page order"},
-      "postprocess": "engine selects players whose club_team_id or club_team_2_id matches home_id or away_id; preserve pager audit metadata",
-      "wrapper_meta": {"endpoint": "/league-players", "season_id": "${season_id}", "captured_at_unix": "${captured_at_unix}", "kickoff_unix": "${kickoff_unix}", "max_time": "${strict_max_time}", "temporal_mode": "STRICT_MAX_TIME", "pagination_complete": "${BOOLEAN}"}
-    }
-  ],
-  "file_wrapper": {
-    "_footystats_meta": "metadata object described per output; no API key",
-    "payload": "raw FootyStats response or merged raw responses",
-    "compatibility": "engine recursively reads nested raw fields; metadata provides provenance/temporal audit"
-  },
-  "render_upload": {
-    "mode": "ASYNC_JOB",
-    "endpoint": "https://footystats-prognose-engine.onrender.com/api/predict-shortcut-v1-1-async",
+  "fast_submit": {
+    "endpoint": "/api/predict-shortcut-fast",
     "method": "POST",
     "content_type": "multipart/form-data",
-    "exact_file_count": 5,
-    "fields": {
-      "match_file": "${match_id}_MatchDaten.json",
-      "league_file": "${season_id}_LeagueDaten.json",
-      "form_file": "${match_id}_FormDaten.json",
-      "table_file": "${match_id}_TableDaten.json",
-      "player_file": "${match_id}_PlayerDaten.json"
-    },
-    "response": {"job_id": "opaque job id", "ready": false, "job_status": "QUEUED"},
-    "status_endpoint": "https://footystats-prognose-engine.onrender.com/api/predict-shortcut-v1-1-job/${job_id}",
+    "fields": {"match_id": "${selected.id}", "api_key": "${FOOTYSTATS_API_KEY}"},
+    "response": {"job_id": "opaque id", "ready": false, "job_status": "QUEUED"}
+  },
+  "server_collection": {
+    "location": "RENDER",
+    "derive_from_match": ["homeID", "awayID", "competition_id", "date_unix"],
+    "strict_max_time": "date_unix - 1",
+    "parallel_collection": true,
+    "virtual_file_count": 5,
+    "virtual_files": [
+      {"file": "${match_id}_MatchDaten.json", "endpoint": "/match", "temporal_mode": "PREMATCH_FIELD_WHITELIST", "postprocess": "remove odds-only fields from the in-memory analysis copy"},
+      {"file": "${season_id}_LeagueDaten.json", "endpoint": "/league-season", "team_endpoint": "/league-teams", "max_time": "${kickoff_unix_minus_1}", "include": "stats", "pagination": "fetch all league-team pages", "temporal_mode": "STRICT_MAX_TIME"},
+      {"file": "${match_id}_FormDaten.json", "endpoint": "/lastx", "requests": ["homeID", "awayID"], "temporal_mode": "LIVE_CAPTURE_ONLY_NO_MAX_TIME"},
+      {"file": "${match_id}_TableDaten.json", "endpoint": "/league-tables", "include": "stats", "max_time": "${kickoff_unix_minus_1}", "temporal_mode": "STRICT_MAX_TIME"},
+      {"file": "${match_id}_PlayerDaten.json", "endpoint": "/league-players", "include": "stats", "max_time": "${kickoff_unix_minus_1}", "pagination": "fetch all pages then retain only players whose club_team_id or club_team_2_id is homeID or awayID", "temporal_mode": "STRICT_MAX_TIME"}
+    ]
+  },
+  "fast_status": {
+    "endpoint": "/api/predict-shortcut-fast-job/${job_id}",
+    "method": "GET",
     "long_poll_seconds": 20,
-    "shortcut_poll_count": 15,
-    "reason": "iOS terminates a long synchronous request. Upload returns immediately; analysis runs after the response; the Shortcut polls in separate <=20 second requests."
+    "individual_request_timeout_seconds": 30,
+    "result": "the normal V0.5.0 analysis object plus shortcut_fast diagnostics"
+  },
+  "render_upload": {
+    "mode": "LEGACY_ASYNC_FIVE_FILE_COMPATIBILITY",
+    "endpoint": "https://footystats-prognose-engine.onrender.com/api/predict-shortcut-v1-1-async",
+    "exact_file_count": 5,
+    "status_endpoint": "https://footystats-prognose-engine.onrender.com/api/predict-shortcut-v1-1-job/${job_id}"
+  },
+  "compatibility": {
+    "engine_input": "same five canonical virtual JSON files used by the existing parser",
+    "probability_core_modified": false,
+    "decision_engine_modified": false,
+    "legacy_five_file_upload_endpoint": "/api/predict-shortcut-v1-1",
+    "legacy_async_five_file_endpoint": "/api/predict-shortcut-v1-1-async"
   },
   "validation": {
+    "reject_started_match": true,
     "reject_missing_core_identifiers": true,
     "do_not_fabricate_missing_fields": true,
     "do_not_use_target_match_postmatch_fields_as_features": true,
     "historical_lastx_rule": "NOT STRICT unless capture/source timestamp proves it existed before kickoff",
-    "league_team_requirement": "LeagueDaten must contain both league aggregate stats and all /league-teams?include=stats pages so the frozen FULL-5 core can resolve both clubs.",
-    "transport_only_change": "Async job transport must not alter V0.4.3 FULL-5 probabilities or V0.5.0 decision logic."
+    "player_pagination_complete_required": true,
+    "league_team_pagination_complete_required": true
   }
 }
