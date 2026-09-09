@@ -17,16 +17,31 @@ VERSION = "0.5.0"
 def _install_context_ui(legacy: Any) -> None:
     html = legacy.INDEX_HTML
 
-    # Add a release banner without relabelling the frozen V0.4.3 probability core.
+    # Add one clear V0.5.0 release identity while keeping V0.4.3 explicitly
+    # labelled as the frozen probability core rather than a second engine.
     wrapper_anchor = '<div class="w">'
     if wrapper_anchor in html:
         banner = (
             '<div class="w">'
             '<div class="c"><h2>FootyStats V0.5.0 CONTEXT-AWARE</h2>'
-            '<div class="s">Probability Core: V0.4.3 FULL-5 · 5 Dateien · gelernte Reliability-Policy · '
-            'Trend + News/Verfügbarkeit + optionale Aufstellung ohne erfundene Strafwerte</div></div>'
+            '<div class="s">Eine Engine · Probability Core: V0.4.3 FULL-5 · 5 Dateien · '
+            'gelernte Reliability-Policy · Trend + News/Verfügbarkeit + optionale Aufstellung '
+            'ohne erfundene Strafwerte</div></div>'
         )
         html = html.replace(wrapper_anchor, banner, 1)
+
+    # The legacy upload card is still the same five-file input surface. Relabel
+    # it so the UI does not look like two separate prediction engines.
+    html = html.replace(
+        'FootyStats Prognose Engine v0.4.3 FULL-5',
+        'V0.5.0 CONTEXT-AWARE – 5-Dateien Analyse',
+        1,
+    )
+    html = html.replace(
+        'V0.4.3 FULL-5 · Regularized Lambda + Dixon-Coles · 5 FootyStats-Dateien · familiennormalisierte Märkte · keine Odds',
+        'Eine gemeinsame Analyse: V0.4.3 FULL-5 Probability Core + gelernte Reliability-Policy + aktueller Match-Kontext · 5 FootyStats-Dateien · keine Odds',
+        1,
+    )
 
     js_anchor = "    const full5=(((goal||{}).hybrid_model||{}).full5)||{};"
     if js_anchor in html:
