@@ -1,12 +1,13 @@
-"""Release-candidate smoke: import the real V0.5.0 patch over the real V0.4.3 stack."""
+"""Release-candidate smoke for the real V0.5.0 unified FootyStats production stack."""
 import inspect
 
 import app_v040 as legacy
 import v042_engine
 import v043_engine
 import v043_release
-from research.learned_reliability_policy import LEARNED_CENTROIDS, POLICY_SOURCE
-from v050_context_release import VERSION, apply_patch
+from research.footystats_match_logic import FINAL_DECISION_SOURCE
+from research.learned_reliability_policy import LEARNED_CENTROIDS
+from v050_footystats_unified_logic import VERSION, apply_patch
 
 v043_engine.legacy = legacy
 app = apply_patch(legacy)
@@ -35,20 +36,28 @@ assert health["probability_core"] == "V0.4.3 FULL-5"
 assert health["full5_alpha"] == 3.0
 assert health["dixon_coles_rho"] == -0.25
 assert health["iphone_files"] == 5
-assert health["final_decision_source"] == POLICY_SOURCE
+assert health["final_decision_source"] == FINAL_DECISION_SOURCE
 assert health["manual_performance_gates"] == "NONE"
 assert health["current_context_numeric_probability_adjustment"] is False
+assert health["footystats_unified_context_logic"] is True
+assert health["footystats_context_can_change_action"] is True
+assert health["footystats_context_changes_probabilities"] is False
+assert health["footystats_context_manual_weights"] is False
+assert health["footystats_context_global_numeric_cutoffs"] is False
 
-# The promoted bundle analysis must be the context wrapper, while the wrapper's
-# frozen baseline is the pre-promotion V0.4.3 analyzer captured in its closure.
-assert legacy._analyze_bundle.__name__ == "context_analyze"
-closure=inspect.getclosurevars(legacy._analyze_bundle).nonlocals
-assert "baseline_analyze" in closure
-assert callable(closure["baseline_analyze"])
-assert closure["baseline_analyze"] is not legacy._analyze_bundle
+assert legacy._analyze_bundle.__name__ == "unified_analyze"
+outer=inspect.getclosurevars(legacy._analyze_bundle).nonlocals
+assert "context_analyze" in outer
+context_analyze=outer["context_analyze"]
+assert callable(context_analyze)
+inner=inspect.getclosurevars(context_analyze).nonlocals
+assert "baseline_analyze" in inner
+assert callable(inner["baseline_analyze"])
+assert inner["baseline_analyze"] is not legacy._analyze_bundle
 
-assert "Current Match Context" not in legacy.INDEX_HTML  # German UI label below
 assert "Aktueller Match-Kontext" in legacy.INDEX_HTML
+assert "FootyStats Gesamtlogik" in legacy.INDEX_HTML
+assert "Keine künstliche Prozentkorrektur" in legacy.INDEX_HTML
 assert "keine erfundene Prozentkorrektur" in legacy.INDEX_HTML
 
-print("V0.5.0 real release candidate smoke passed")
+print("V0.5.0 unified FootyStats release candidate smoke passed")
