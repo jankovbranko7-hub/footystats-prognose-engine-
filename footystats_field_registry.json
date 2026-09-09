@@ -1,0 +1,158 @@
+{
+  "schema_version": "1.1",
+  "name": "FOOTYSTATS_OFFICIAL_ANALYSIS_SPEC_FIELD_REGISTRY",
+  "status": "production_reference",
+  "principles": {
+    "venue_rule": "home team uses home split; away team uses away split; overall is context",
+    "potential_rule": "FootyStats *_potential fields are pre-match historical/statistical potentials, not calibrated model probabilities",
+    "official_vs_derived": "Only FootyStats-defined fields/rules are labelled OFFICIAL; engine-created comparisons/features are DERIVED",
+    "target_match_postmatch_rule": "same-match result/stat fields are target/backtest labels only, never prediction inputs"
+  },
+  "official_sources": [
+    "https://footystats.org/api/documentations/match-details",
+    "https://footystats.org/api/documentations/match-schedule-and-stats",
+    "https://footystats.org/api/documentations/league-season-stats-teams",
+    "https://footystats.org/api/documentations/team-last-5-6-10-stats",
+    "https://footystats.org/api/documentations/league-table",
+    "https://footystats.org/api/documentations/league-players",
+    "https://footystats.org/api/documentations/player-individual",
+    "https://footystats.org/api/tutorials"
+  ],
+  "markets": [
+    "home_win",
+    "draw",
+    "away_win",
+    "btts_yes",
+    "btts_no",
+    "over_2_5",
+    "under_2_5"
+  ],
+  "files": {
+    "MatchDaten": {
+      "endpoint": "/match",
+      "scope": "MATCH",
+      "temporal": "MIXED_FIELDS_USE_WHITELIST",
+      "core_fields": [
+        {"field":"id","meaning":"match id","role":"CORE_ID","markets":[],"temporal":"STRICT_ID"},
+        {"field":"homeID","meaning":"home team id","role":"CORE_ID","markets":[],"temporal":"STRICT_ID"},
+        {"field":"awayID","meaning":"away team id","role":"CORE_ID","markets":[],"temporal":"STRICT_ID"},
+        {"field":"competition_id","meaning":"season/competition id","role":"CORE_ID","markets":[],"temporal":"STRICT_ID"},
+        {"field":"date_unix","meaning":"kickoff unix timestamp","role":"CORE_TIME","markets":[],"temporal":"STRICT_ID"},
+        {"field":"no_home_away","meaning":"no home/away distinction flag","role":"CORE_CONTEXT","markets":["home_win","draw","away_win"],"temporal":"STRICT_PREMATCH"},
+        {"field":"pre_match_home_ppg","meaning":"home venue PPG before target match","role":"CORE","markets":["home_win","draw","away_win","btts_yes","btts_no","over_2_5","under_2_5"],"temporal":"STRICT_PREMATCH"},
+        {"field":"pre_match_away_ppg","meaning":"away venue PPG before target match","role":"CORE","markets":["home_win","draw","away_win","btts_yes","btts_no","over_2_5","under_2_5"],"temporal":"STRICT_PREMATCH"},
+        {"field":"pre_match_teamA_overall_ppg","meaning":"home team's overall PPG before match","role":"SUPPORT","markets":["home_win","draw","away_win"],"temporal":"STRICT_PREMATCH"},
+        {"field":"pre_match_teamB_overall_ppg","meaning":"away team's overall PPG before match","role":"SUPPORT","markets":["home_win","draw","away_win"],"temporal":"STRICT_PREMATCH"},
+        {"field":"btts_potential","meaning":"average pre-match BTTS stat for both teams","role":"CORE","markets":["btts_yes","btts_no"],"temporal":"STRICT_PREMATCH"},
+        {"field":"o15_potential..o45_potential","meaning":"average pre-match Over X stat for both teams","role":"CORE","markets":["over_2_5","under_2_5"],"temporal":"STRICT_PREMATCH"},
+        {"field":"u15_potential..u45_potential","meaning":"average pre-match Under X stat for both teams","role":"CORE","markets":["over_2_5","under_2_5"],"temporal":"STRICT_PREMATCH"},
+        {"field":"avg_potential","meaning":"pre-match average total goals for both teams","role":"CORE","markets":["over_2_5","under_2_5","btts_yes","btts_no"],"temporal":"STRICT_PREMATCH"},
+        {"field":"team_a_xg_prematch","meaning":"home pre-match xG","role":"SUPPORT_HIGH","markets":["home_win","away_win","btts_yes","btts_no","over_2_5","under_2_5"],"temporal":"STRICT_PREMATCH"},
+        {"field":"team_b_xg_prematch","meaning":"away pre-match xG","role":"SUPPORT_HIGH","markets":["home_win","away_win","btts_yes","btts_no","over_2_5","under_2_5"],"temporal":"STRICT_PREMATCH"},
+        {"field":"total_xg_prematch","meaning":"total pre-match xG","role":"SUPPORT_HIGH","markets":["btts_yes","btts_no","over_2_5","under_2_5"],"temporal":"STRICT_PREMATCH"},
+        {"field":"h2h","meaning":"head-to-head context supplied by match endpoint","role":"DIAGNOSTIC_SECONDARY","markets":["home_win","draw","away_win","btts_yes","btts_no","over_2_5","under_2_5"],"temporal":"LIVE_PREMATCH_OR_ARCHIVED_ONLY"},
+        {"field":"trends","meaning":"FootyStats textual trends","role":"DIAGNOSTIC","markets":["home_win","draw","away_win","btts_yes","btts_no","over_2_5","under_2_5"],"temporal":"LIVE_PREMATCH_OR_ARCHIVED_ONLY"}
+      ],
+      "current_only_fields": ["home_ppg","away_ppg"],
+      "target_only_forbidden_prediction_fields": [
+        "homeGoalCount","awayGoalCount","totalGoalCount","winningTeam","btts",
+        "over05","over15","over25","over35","over45","over55",
+        "team_a_shots","team_b_shots","team_a_shotsOnTarget","team_b_shotsOnTarget",
+        "team_a_possession","team_b_possession","team_a_corners","team_b_corners",
+        "team_a_yellow_cards","team_b_yellow_cards","team_a_red_cards","team_b_red_cards"
+      ]
+    },
+    "LeagueDaten": {
+      "endpoint": "/league-season",
+      "required_query": ["season_id","max_time"],
+      "strict_rule": "max_time == kickoff_unix - 1",
+      "scope": "LEAGUE_AND_TEAM_SEASON",
+      "team_split_families": [
+        {"family":"seasonMatchesPlayed_{overall|home|away}","role":"SAMPLE","markets":["all"]},
+        {"family":"seasonPPG_{overall|home|away}","role":"CORE_1X2","markets":["home_win","draw","away_win"]},
+        {"family":"winPercentage_{overall|home|away}","role":"CORE_1X2","markets":["home_win","away_win"]},
+        {"family":"drawPercentage_{overall|home|away}","role":"CORE_DRAW","markets":["draw"]},
+        {"family":"losePercentage_{overall|home|away}","role":"CORE_1X2","markets":["home_win","away_win"]},
+        {"family":"seasonGoals*/seasonScoredAVG_{overall|home|away}","role":"CORE_SCORING","markets":["home_win","away_win","btts_yes","btts_no","over_2_5","under_2_5"]},
+        {"family":"seasonConceded*/seasonConcededAVG_{overall|home|away}","role":"CORE_CONCEDING","markets":["home_win","away_win","btts_yes","btts_no","over_2_5","under_2_5"]},
+        {"family":"seasonAVG_{overall|home|away}","role":"CORE_GOALS","markets":["btts_yes","btts_no","over_2_5","under_2_5"]},
+        {"family":"seasonBTTSPercentage_{overall|home|away}","role":"CORE_BTTS","markets":["btts_yes","btts_no"]},
+        {"family":"seasonCSPercentage_{overall|home|away}","role":"CORE_CROSS_CONFIRMATION","markets":["btts_yes","btts_no","over_2_5","under_2_5"]},
+        {"family":"seasonFTSPercentage_{overall|home|away}","role":"CORE_CROSS_CONFIRMATION","markets":["btts_yes","btts_no","over_2_5","under_2_5"]},
+        {"family":"seasonOver{05..55}Percentage_{overall|home|away}","role":"CORE_GOALS","markets":["over_2_5","under_2_5"]},
+        {"family":"seasonUnder{05..55}Percentage_{overall|home|away}","role":"CORE_GOALS","markets":["over_2_5","under_2_5"]},
+        {"family":"xg_for_avg_{overall|home|away}","role":"CORE_UNDERLYING","markets":["home_win","away_win","btts_yes","btts_no","over_2_5","under_2_5"]},
+        {"family":"xg_against_avg_{overall|home|away}","role":"CORE_UNDERLYING","markets":["home_win","away_win","btts_yes","btts_no","over_2_5","under_2_5"]},
+        {"family":"seasonScoredOver{05..35}PercentageNum_{overall|home|away}","role":"CORE_CROSS_CONFIRMATION","markets":["btts_yes","btts_no","over_2_5","under_2_5"]},
+        {"family":"seasonConcededOver{05..35}PercentageNum_{overall|home|away}","role":"CORE_CROSS_CONFIRMATION","markets":["btts_yes","btts_no","over_2_5","under_2_5"]},
+        {"family":"seasonBTTSPercentageHT_{overall|home|away}","role":"SUPPORT_HIGH","markets":["btts_yes","btts_no","over_2_5","under_2_5"]},
+        {"family":"seasonCSPercentageHT_{overall|home|away}","role":"SUPPORT","markets":["btts_yes","btts_no","over_2_5","under_2_5"]},
+        {"family":"seasonFTSPercentageHT_{overall|home|away}","role":"SUPPORT","markets":["btts_yes","btts_no","over_2_5","under_2_5"]},
+        {"family":"HTPPG_{overall|home|away}","role":"SUPPORT","markets":["home_win","draw","away_win"]},
+        {"family":"scoredAVGHT_/concededAVGHT_/AVGHT_{overall|home|away}","role":"SUPPORT","markets":["btts_yes","btts_no","over_2_5","under_2_5"]},
+        {"family":"AVG_2hg_/scored_2hg_avg_/conceded_2hg_avg_{overall|home|away}","role":"SUPPORT","markets":["btts_yes","btts_no","over_2_5","under_2_5"]},
+        {"family":"shotsAVG_{overall|home|away}","role":"SUPPORT_CHANCE_VOLUME","markets":["home_win","away_win","btts_yes","over_2_5"]},
+        {"family":"shotsOnTargetAVG_{overall|home|away}","role":"SUPPORT_CHANCE_VOLUME","markets":["home_win","away_win","btts_yes","over_2_5"]},
+        {"family":"possessionAVG_{overall|home|away}","role":"DIAGNOSTIC","markets":["home_win","draw","away_win"]},
+        {"family":"goal timing families","role":"DIAGNOSTIC_TIMING","markets":["btts_yes","btts_no","over_2_5","under_2_5"]}
+      ],
+      "league_context_families": [
+        "matchesCompleted","totalMatches","progress","seasonAVG_overall","seasonBTTSPercentage",
+        "seasonCSPercentage","homeWinPercentage","drawPercentage","awayWinPercentage",
+        "homeAttackAdvantagePercentage","homeDefenceAdvantagePercentage","homeOverallAdvantage"
+      ]
+    },
+    "FormDaten": {
+      "endpoint": "/lastx",
+      "requests_per_match": 2,
+      "query": ["team_id"],
+      "documented_windows": [5,6,10],
+      "max_time_supported": false,
+      "temporal": "STRICT_ONLY_IF_CAPTURED_BEFORE_KICKOFF_OR_ARCHIVED_SOURCE_TIMESTAMP_PROVES_PREMATCH",
+      "attributes": "same team-stat attributes/properties as team endpoint",
+      "role": "RECENT_FORM_CROSS_CHECK"
+    },
+    "TableDaten": {
+      "endpoint": "/league-tables",
+      "required_query": ["season_id","include=stats","max_time"],
+      "strict_rule": "max_time == kickoff_unix - 1",
+      "tables": ["league_table","all_matches_table_overall","all_matches_table_home","all_matches_table_away","specific_tables"],
+      "role": "TABLE_AND_VENUE_CONTEXT",
+      "derived_allowed": ["ppg_diff","venue_ppg_diff","rank_diff","rank_percentile","relative_table_strength"],
+      "derived_origin": "OUR_DERIVED"
+    },
+    "PlayerDaten": {
+      "endpoint": "/league-players",
+      "required_query": ["season_id","include=stats","max_time","page"],
+      "strict_rule": "max_time == kickoff_unix - 1",
+      "pagination": {"max_players_per_page":200,"completion_rule":"fetch pages until current_page == max_page"},
+      "team_assignment_fields": ["club_team_id","club_team_2_id"],
+      "core_families": [
+        "id","position","minutes_played_overall/home/away","appearances_overall/home/away",
+        "goals_overall/home/away","assists_overall/home/away","goals_per_90_overall/home/away",
+        "assists_per_90_overall","goals_involved_per_90_overall","xg_per_90_overall",
+        "npxg_per_90_overall","xa_per_90_overall","shots","shots_on_target"
+      ],
+      "derived_allowed": [
+        "players_found_home","players_found_away","minutes_coverage_pct","depth_difference",
+        "top1_goal_share","top2_goal_share","top3_goal_share","top1_involvement_share",
+        "top3_involvement_share","top_xg_share"
+      ],
+      "derived_origin": "OUR_DERIVED"
+    }
+  },
+  "official_example_rules": {
+    "btts_yes": {
+      "label": "FootyStats API tutorial example",
+      "logic": "btts_potential >= 65 AND away_ppg >= 1.50",
+      "strict_historical_mapping": "btts_potential >= 65 AND pre_match_away_ppg >= 1.50",
+      "decision_influence": "EVIDENCE_FLAG_ONLY"
+    },
+    "low_scoring": {
+      "label": "FootyStats API tutorial example",
+      "logic": "avg_potential <= 1.80 AND home_ppg <= 1.50 AND away_ppg <= 1.50",
+      "strict_historical_mapping": "avg_potential <= 1.80 AND pre_match_home_ppg <= 1.50 AND pre_match_away_ppg <= 1.50",
+      "decision_influence": "EVIDENCE_FLAG_ONLY"
+    }
+  }
+}
