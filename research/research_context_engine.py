@@ -1,15 +1,16 @@
 from __future__ import annotations
-import copy, os
+import copy, json, os
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from fastapi import File, Form, UploadFile
+from fastapi import File, Form, Response, UploadFile
 
 from .api_football_context_adapter import ApiFootballClient, build_api_football_context_layers
+from .context_snapshot_archive import build_context_snapshot_record, snapshot_download_name
 from .current_context_runtime import build_runtime_context, extract_match_identity
 from .current_match_context import ContextValidationError, validate_current_match_context
 
-RESEARCH_CONTEXT_VERSION = "0.8.0-research"
+RESEARCH_CONTEXT_VERSION = "0.9.0-research"
 EXPECTED_FIVE_SOURCES = {"match", "league", "form", "table", "player"}
 
 def _now_utc() -> str:
@@ -63,13 +64,26 @@ def build_analysis_with_current_context(legacy: Any, parsed_files: List[Dict[str
 
 def install_research_context(legacy: Any) -> Any:
     app=legacy.app
-    app.router.routes=[route for route in app.router.routes if getattr(route,"path",None) not in {"/api/research/predict-context","/api/research/context-health"}]
+    research_paths={"/api/research/predict-context","/api/research/context-health","/api/research/context-archive-bundle"}
+    app.router.routes=[route for route in app.router.routes if getattr(route,"path",None) not in research_paths]
     async def predict_context(files: List[UploadFile]=File(...), fetch_external: str=Form("true")) -> Dict[str, Any]:
         parsed,errors=await legacy._read_bundle_uploads(files)
         if errors: return {"ok":False,"decision":"ANALYSE NICHT MÖGLICH","phase":"FILE_PARSE_FAILED","errors":errors}
         return build_analysis_with_current_context(legacy,parsed,fetch_external=_truthy(fetch_external))
+    async def context_archive_bundle(files: List[UploadFile]=File(...), fetch_external: str=Form("true")):
+        parsed,errors=await legacy._read_bundle_uploads(files)
+        if errors:
+            return {"ok":False,"decision":"ANALYSE NICHT MÖGLICH","phase":"FILE_PARSE_FAILED","errors":errors}
+        pair=legacy.select_pair(parsed)
+        if not pair.get("ok"): return pair
+        analysis=build_analysis_with_current_context(legacy,parsed,fetch_external=_truthy(fetch_external))
+        if not isinstance(analysis,dict) or not analysis.get("ok"): return analysis
+        record=build_context_snapshot_record(parsed,pair,analysis)
+        body=json.dumps(record,ensure_ascii=False,sort_keys=True,indent=2,allow_nan=False).encode("utf-8")
+        return Response(content=body,media_type="application/json",headers={"Content-Disposition":f'attachment; filename="{snapshot_download_name(record)}"',"Cache-Control":"no-store","X-Context-Record-SHA256":record["record_sha256"]})
     def context_health() -> Dict[str, Any]:
-        return {"ok":True,"version":RESEARCH_CONTEXT_VERSION,"research_only":True,"production_core":"0.4.3","iphone_files":5,"external_api_key_configured":bool((os.getenv("API_FOOTBALL_KEY") or "").strip()),"api_football_lineup_query_enabled":_truthy(os.getenv("API_FOOTBALL_FETCH_LINEUPS")),"probabilities_modified_by_current_context":False}
+        return {"ok":True,"version":RESEARCH_CONTEXT_VERSION,"research_only":True,"production_core":"0.4.3","iphone_files":5,"external_api_key_configured":bool((os.getenv("API_FOOTBALL_KEY") or "").strip()),"api_football_lineup_query_enabled":_truthy(os.getenv("API_FOOTBALL_FETCH_LINEUPS")),"probabilities_modified_by_current_context":False,"context_archive":"DOWNLOAD_ONLY_NO_SERVER_PERSISTENCE"}
     app.add_api_route("/api/research/predict-context",predict_context,methods=["POST"])
+    app.add_api_route("/api/research/context-archive-bundle",context_archive_bundle,methods=["POST"])
     app.add_api_route("/api/research/context-health",context_health,methods=["GET"])
     return app
