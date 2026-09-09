@@ -1,0 +1,114 @@
+{
+  "artifact": "FULL5_RESULT_SUPERVISED_RELIABILITY_POLICY",
+  "version": "2.0.0",
+  "final_decision_source": "RESULT_SUPERVISED_OOF_RELIABILITY_POLICY",
+  "trained_on_oof_rows": 277,
+  "training_uses_results": true,
+  "target": "strongest_selectable_market_correct",
+  "probability_core": "V0.4.3 FULL-5 frozen",
+  "model_type": "STANDARDIZED_L2_LOGISTIC_PLUS_KMEANS_3_RELIABILITY_GROUPS",
+  "regularization_C": 0.3,
+  "feature_names": [
+    "baseline_home_win",
+    "baseline_draw",
+    "baseline_away_win",
+    "baseline_btts_yes",
+    "baseline_over_2_5",
+    "sel_HOME",
+    "sel_AWAY",
+    "sel_BTTS_YES",
+    "sel_BTTS_NO",
+    "sel_OVER_2_5",
+    "sel_UNDER_2_5"
+  ],
+  "scaler_mean": [
+    0.3972676097234817,
+    0.2736968194142279,
+    0.32903557086229,
+    0.6496057837288587,
+    0.6250487129121429,
+    0.0,
+    0.0,
+    0.7003610108303249,
+    0.0,
+    0.22743682310469315,
+    0.07220216606498195
+  ],
+  "scaler_scale": [
+    0.12018084266417756,
+    0.042186395598672016,
+    0.11525895274756821,
+    0.07622427738262914,
+    0.11192629300339134,
+    1.0,
+    1.0,
+    0.4580998421076467,
+    1.0,
+    0.41917694903314784,
+    0.2588223585405771
+  ],
+  "logistic_coefficients": [
+    -0.10944317201112005,
+    -0.4035814332297539,
+    0.2618331844532771,
+    0.11714577081090767,
+    0.2816327202080124,
+    0.0,
+    0.0,
+    -0.044109189391905355,
+    0.0,
+    -0.13433121701007145,
+    0.29562732846406664
+  ],
+  "logistic_intercept": 0.6144297193439443,
+  "reliability_cluster_centers": [
+    0.4792998524589671,
+    0.6421979695630394,
+    0.8175575956624413
+  ],
+  "actions_by_cluster_order": [
+    "AUSLASSEN / KEIN BET",
+    "BEOBACHTEN",
+    "SPIELEN"
+  ],
+  "cluster_assignment": "nearest learned reliability center",
+  "manual_performance_thresholds": false,
+  "manual_feature_mix_weights": false,
+  "selected_market_support_counts": {
+    "BTTS YES": 194,
+    "OVER 2.5": 63,
+    "UNDER 2.5": 20
+  },
+  "primary_meta_oos_validation_file": "SUPERVISED_RELIABILITY_VALIDATION_0_13.json",
+  "primary_meta_oos_play": {
+    "n": 58,
+    "correct": 44,
+    "hit_rate": 0.7586206896551724,
+    "wilson95": [
+      0.6347001974698658,
+      0.8504112564333051
+    ],
+    "avg_predicted_reliability": 0.825391712924048
+  },
+  "descriptive_refit_277": {
+    "AUSLASSEN / KEIN BET": {
+      "n": 92,
+      "correct": 45,
+      "hit_rate": 0.4891304347826087,
+      "avg_predicted_reliability": 0.47929985245896706
+    },
+    "BEOBACHTEN": {
+      "n": 116,
+      "correct": 73,
+      "hit_rate": 0.6293103448275862,
+      "avg_predicted_reliability": 0.6421979695630394
+    },
+    "SPIELEN": {
+      "n": 69,
+      "correct": 57,
+      "hit_rate": 0.8260869565217391,
+      "avg_predicted_reliability": 0.8175575956624413
+    }
+  },
+  "source_oof_sha256": "a9e1d9a3f80ce2993f2be27105e41bd0e555c9bfce56a7dadc8c02bedec420a7"
+}
