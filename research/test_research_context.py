@@ -2,6 +2,7 @@ import copy
 from fastapi import FastAPI
 
 from research.context_snapshot_archive import build_context_snapshot_record
+from research.context_snapshot_store import persist_context_snapshot, snapshot_store_config
 from research.current_context_runtime import build_runtime_context
 from research.research_context_engine import build_analysis_with_current_context, install_research_context
 
@@ -52,9 +53,33 @@ assert record["policies"]["server_side_persistence_claimed"] is False
 assert record["frozen_v043_output"]["probabilities"] == BASELINE["probabilities"]
 assert len(record["record_sha256"]) == 64
 assert "actual_1x2" not in str(record)
+
+assert snapshot_store_config({}) == {"valid":True,"mode":"NONE","durable":False}
+assert persist_context_snapshot(record,environ={})["status"] == "DISABLED"
+config_error=persist_context_snapshot(record,environ={"CONTEXT_SNAPSHOT_STORE":"SUPABASE"})
+assert config_error["status"] == "CONFIG_ERROR"
+
+class DummyResponse:
+    status=201
+    def __enter__(self): return self
+    def __exit__(self,*args): return False
+captured={}
+def dummy_opener(request, timeout=15.0):
+    captured["url"]=request.full_url
+    captured["authorization"]=request.headers.get("Authorization")
+    captured["body"]=request.data
+    return DummyResponse()
+env={"CONTEXT_SNAPSHOT_STORE":"SUPABASE","SUPABASE_URL":"https://example.supabase.co","SUPABASE_SERVICE_ROLE_KEY":"server-secret","CONTEXT_SNAPSHOT_TABLE":"footystats_context_snapshots"}
+persisted=persist_context_snapshot(record,environ=env,opener=dummy_opener)
+assert persisted["status"] == "PERSISTED"
+assert persisted["record_sha256"] == record["record_sha256"]
+assert "server-secret" not in str(persisted)
+assert captured["authorization"] == "Bearer server-secret"
+assert b'"record_sha256"' in captured["body"]
+
 install_research_context(legacy)
 paths={getattr(route,"path",None) for route in legacy.app.router.routes}
 assert "/api/research/predict-context" in paths
 assert "/api/research/context-archive-bundle" in paths
 assert "/api/research/context-health" in paths
-print("research context + snapshot archive smoke passed")
+print("research context + snapshot archive + optional durable store smoke passed")
