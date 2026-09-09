@@ -11,7 +11,7 @@ import json
 import threading
 import time
 import uuid
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, Iterable, List, Tuple
 
 from fastapi import BackgroundTasks, File, UploadFile
 
@@ -19,6 +19,84 @@ from fastapi import BackgroundTasks, File, UploadFile
 JOB_TTL_SECONDS = 1800
 JOB_MAX_COUNT = 32
 JOB_POLL_MAX_WAIT_SECONDS = 25
+
+
+def _dicts(obj: Any) -> Iterable[Dict[str, Any]]:
+    if isinstance(obj, dict):
+        yield obj
+        for value in obj.values():
+            yield from _dicts(value)
+    elif isinstance(obj, list):
+        for value in obj:
+            yield from _dicts(value)
+
+
+def _to_int(value: Any) -> int | None:
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def _match_team_ids(parsed: List[Dict[str, Any]]) -> Tuple[int | None, int | None]:
+    for item in parsed:
+        if "matchdaten" not in str(item.get("name") or "").lower():
+            continue
+        for candidate in _dicts(item.get("data")):
+            home = _to_int(candidate.get("homeID", candidate.get("home_id")))
+            away = _to_int(candidate.get("awayID", candidate.get("away_id")))
+            if home is not None and away is not None:
+                return home, away
+    return None, None
+
+
+def _strip_odds(obj: Any) -> int:
+    """Remove odds-only keys from the in-memory analysis copy; return removed count."""
+    removed = 0
+    if isinstance(obj, dict):
+        for key in list(obj.keys()):
+            normalized = str(key).lower().replace("-", "_")
+            if normalized == "odds" or normalized.startswith("odds_") or normalized == "odds_comparison":
+                obj.pop(key, None)
+                removed += 1
+            else:
+                removed += _strip_odds(obj.get(key))
+    elif isinstance(obj, list):
+        for value in obj:
+            removed += _strip_odds(value)
+    return removed
+
+
+def _filter_player_pages(data: Any, home_id: int | None, away_id: int | None) -> Tuple[int, int]:
+    """Keep only target-team players in the in-memory PlayerDaten analysis copy."""
+    if home_id is None or away_id is None or not isinstance(data, dict):
+        return 0, 0
+    payload = data.get("payload")
+    if not isinstance(payload, dict):
+        return 0, 0
+    pages = payload.get("pages")
+    if not isinstance(pages, list):
+        return 0, 0
+
+    wanted = {home_id, away_id}
+    before = 0
+    after = 0
+    for page in pages:
+        if not isinstance(page, dict) or not isinstance(page.get("data"), list):
+            continue
+        rows = page.get("data") or []
+        before += len(rows)
+        filtered = []
+        for player in rows:
+            if not isinstance(player, dict):
+                continue
+            club_1 = _to_int(player.get("club_team_id"))
+            club_2 = _to_int(player.get("club_team_2_id"))
+            if club_1 in wanted or club_2 in wanted:
+                filtered.append(player)
+        page["data"] = filtered
+        after += len(filtered)
+    return before, after
 
 
 def apply_patch(legacy: Any, app: Any) -> Any:
@@ -65,6 +143,30 @@ def apply_patch(legacy: Any, app: Any) -> Any:
             for filename, raw in blobs:
                 data = json.loads(raw.decode("utf-8"))
                 parsed.append({"name": filename, "data": data})
+
+            home_id, away_id = _match_team_ids(parsed)
+            player_before = 0
+            player_after = 0
+            odds_removed = 0
+            for item in parsed:
+                lower_name = str(item.get("name") or "").lower()
+                if "playerdaten" in lower_name:
+                    player_before, player_after = _filter_player_pages(item.get("data"), home_id, away_id)
+                elif "matchdaten" in lower_name:
+                    odds_removed += _strip_odds(item.get("data"))
+
+            _put_job(
+                job_id,
+                {
+                    "transport_optimization": {
+                        "home_id": home_id,
+                        "away_id": away_id,
+                        "player_rows_before": player_before,
+                        "player_rows_after": player_after,
+                        "odds_fields_removed": odds_removed,
+                    }
+                },
+            )
 
             result = legacy._analyze_bundle(parsed)
             if not isinstance(result, dict):
@@ -120,6 +222,8 @@ def apply_patch(legacy: Any, app: Any) -> Any:
                 "shortcut_async_status_endpoint": "/api/predict-shortcut-v1-1-job/{job_id}",
                 "shortcut_async_long_poll_max_seconds": JOB_POLL_MAX_WAIT_SECONDS,
                 "shortcut_async_job_ttl_seconds": JOB_TTL_SECONDS,
+                "shortcut_async_player_prefilter": True,
+                "shortcut_async_odds_strip": True,
             }
         )
         return base
@@ -228,6 +332,7 @@ def apply_patch(legacy: Any, app: Any) -> Any:
                     "received": job.get("received"),
                     "file_count": job.get("file_count"),
                     "total_bytes": job.get("total_bytes"),
+                    "optimization": job.get("transport_optimization"),
                 }
                 return payload
 
@@ -241,6 +346,7 @@ def apply_patch(legacy: Any, app: Any) -> Any:
                     "decision": "ANALYSE NICHT MÖGLICH",
                     "error": job.get("error") or "Unbekannter Analysefehler.",
                     "received": job.get("received"),
+                    "optimization": job.get("transport_optimization"),
                 }
 
             if time.monotonic() >= deadline:
@@ -251,6 +357,7 @@ def apply_patch(legacy: Any, app: Any) -> Any:
                     "job_status": status,
                     "created_at_unix": job.get("created_at_unix"),
                     "started_at_unix": job.get("started_at_unix"),
+                    "optimization": job.get("transport_optimization"),
                 }
 
             await asyncio.sleep(0.5)
