@@ -1,10 +1,9 @@
-"""Render entry point for FootyStats Prognose Engine V0.4.3 FULL-5 production."""
+"""Render entry point for FootyStats V0.5.0 CONTEXT-AWARE production."""
 import app_v040 as legacy
 import v043_engine
-from v043_observe_fazit_ui import apply_patch
+from v050_context_release import apply_patch
 
-# FastAPI/Pydantic resolves the postponed legacy Payload annotation from the
-# patch module globals. Keep this explicit binding from the tested candidate.
+# Keep the frozen V0.4.3 FULL-5 probability stack bound exactly as before.
 v043_engine.legacy = legacy
 
 app = apply_patch(legacy)
