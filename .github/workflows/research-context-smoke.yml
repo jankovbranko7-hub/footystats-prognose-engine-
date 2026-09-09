@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - research/context-adaptive-current-layer
+      - main
   workflow_dispatch:
 
 jobs:
@@ -13,28 +14,25 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.12'
       - name: Install runtime dependencies
         run: pip install -r requirements.txt
       - name: Compile context and release modules
-        run: python -m py_compile app.py research/current_match_context.py research/current_context_runtime.py research/api_football_context_adapter.py research/context_interpreter.py research/learned_reliability_policy.py research/context_snapshot_archive.py research/context_snapshot_store.py research/research_context_engine.py research/test_research_context.py research/test_release_candidate.py app_research_context.py v050_context_release.py
+        run: python -m py_compile app.py research/current_match_context.py research/current_context_runtime.py research/api_football_context_adapter.py research/context_interpreter.py research/learned_reliability_policy.py research/footystats_match_logic.py research/context_snapshot_archive.py research/context_snapshot_store.py research/research_context_engine.py research/test_research_context.py research/test_footystats_match_logic.py research/test_release_candidate.py app_research_context.py v050_context_release.py v050_footystats_unified_logic.py
       - name: Run context-policy smoke
         run: python -m research.test_research_context
-      - name: Run real V0.5.0 release-candidate smoke
+      - name: Run qualitative FootyStats context logic
+        run: python -m research.test_footystats_match_logic
+      - name: Run real V0.5.0 unified release-candidate smoke
         run: python -m research.test_release_candidate
-      - name: Assert entry point is either locked pre-promotion or exact V0.5.0 promotion
+      - name: Assert exact V0.5.0 production entry point
         run: |
           python - <<'PY'
           from pathlib import Path
           app=Path('app.py').read_text()
-          if 'v050_context_release' in app:
-              assert 'from v050_context_release import apply_patch' in app
-              assert 'app = apply_patch(legacy)' in app
-              assert 'v043_engine.legacy = legacy' in app
-              assert 'app_research_context' not in app
-              print('app.py is exact V0.5.0 production promotion entry point')
-          else:
-              assert 'research.' not in app
-              assert 'v043_observe_fazit_ui' in app
-              print('app.py remains locked V0.4.3 pre-promotion entry point')
+          assert 'from v050_footystats_unified_logic import apply_patch' in app
+          assert 'app = apply_patch(legacy)' in app
+          assert 'v043_engine.legacy = legacy' in app
+          assert 'app_research_context' not in app
+          print('app.py is exact unified V0.5.0 production entry point')
           PY
