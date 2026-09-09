@@ -1,7 +1,7 @@
 """Render entry point for FootyStats V0.5.0 CONTEXT-AWARE production."""
 import app_v040 as legacy
 import v043_engine
-from v050_context_release import apply_patch
+from v050_footystats_unified_logic import apply_patch
 
 # Keep the frozen V0.4.3 FULL-5 probability stack bound exactly as before.
 v043_engine.legacy = legacy
@@ -39,7 +39,7 @@ legacy.INDEX_HTML = legacy.INDEX_HTML.replace(
     1,
 ).replace(
     "Eine gemeinsame Analyse: V0.4.3 FULL-5 Probability Core + gelernte Reliability-Policy + aktueller Match-Kontext · 5 FootyStats-Dateien · keine Odds",
-    "5-Dateien Pre-Match Analyse · V0.4.3 FULL-5 Probability Core · ergebnisvalidierte OOF-Reliability-Policy · Trend + News/Verfügbarkeit + optionale Aufstellung · keine Odds",
+    "5-Dateien Pre-Match Analyse · V0.4.3 FULL-5 Probability Core · ergebnisvalidierte OOF-Reliability-Policy + FootyStats Gesamtlogik · keine Odds",
     1,
 ).replace(
     "Match-Ordner auswählen",
@@ -51,14 +51,15 @@ legacy.INDEX_HTML = legacy.INDEX_HTML.replace(
     1,
 )
 
-# The normal user view explains the result-supervised reliability group without
-# exposing learned cluster centers as if they were manual betting thresholds.
+# The reliability model supplies the starting action. The five-file FootyStats
+# context then becomes one qualitative decision unit without changing any
+# probability or introducing hand-written percentage adjustments.
 legacy.INDEX_HTML = legacy.INDEX_HTML.replace(
     "gelernten Reliability-Policy der mittleren Zuverlässigkeitsgruppe",
     "ergebnisvalidierten OOF-Reliability-Policy der mittleren Zuverlässigkeitsgruppe",
 ).replace(
     "Die finale V0.5.0-Entscheidung stammt aus der gelernten Reliability-Cluster-Policy. Alte V0.4.3 Decision Gates sind nur Diagnostik und beeinflussen SPIELEN / BEOBACHTEN / AUSLASSEN nicht.",
-    "Die finale V0.5.0-Entscheidung stammt aus der ergebnisvalidierten OOF-Reliability-Policy. Sie wurde aus chronologischen OOF-Prognosen und tatsächlichen Ergebnissen gelernt. Alte V0.4.3 Decision Gates sind nur Diagnostik und beeinflussen die finale Aktion nicht.",
+    "Die OOF-Reliability-Policy liefert die Ausgangsaktion. Danach prüft die FootyStats Gesamtlogik die zusätzlichen fünf-Dateien-Kontextblöcke als eine qualitative Einheit. Ein klarer Widerspruch kann die Aktion eine Stufe senken; nur vollständige einstimmige Bestätigung kann sie eine Stufe erhöhen. Wahrscheinlichkeiten werden dabei nicht verändert.",
 ).replace(
     "Zentrum der gelernten Gruppe: '+(assignedCentroid*100).toFixed(2)+' % · Zuordnung nach nächstem gelerntem Clusterzentrum · keine manuell gesetzte Performance-Schwelle.",
     "Ergebnisvalidierte Zuverlässigkeitsgruppe · keine manuell gesetzte Performance-Schwelle.",
