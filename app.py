@@ -3,11 +3,15 @@ import app_v040 as legacy
 import v043_engine
 from v050_footystats_unified_logic import apply_patch as apply_v050_patch
 from v050_official_spec_patch import apply_patch as apply_official_spec_patch
+from v050_shortcut_async_patch import apply_patch as apply_shortcut_async_patch
 
 # Keep the frozen V0.4.3 FULL-5 probability stack bound exactly as before.
 v043_engine.legacy = legacy
 
-app = apply_official_spec_patch(legacy, apply_v050_patch(legacy))
+app = apply_shortcut_async_patch(
+    legacy,
+    apply_official_spec_patch(legacy, apply_v050_patch(legacy)),
+)
 
 # The old V0.4.3/V5.2 protocol remains available in backend diagnostics for
 # auditability, but it has no role in the V0.5.0 final action and therefore is

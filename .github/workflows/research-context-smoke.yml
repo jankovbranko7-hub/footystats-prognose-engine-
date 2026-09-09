@@ -5,6 +5,7 @@ on:
     branches:
       - research/context-adaptive-current-layer
       - feat/footystats-official-analysis-spec-v1-1
+      - feat/async-shortcut-fix6
       - main
   workflow_dispatch:
 
@@ -19,7 +20,7 @@ jobs:
       - name: Install runtime dependencies
         run: pip install -r requirements.txt
       - name: Compile context, official spec and release modules
-        run: python -m py_compile app.py research/current_match_context.py research/current_context_runtime.py research/api_football_context_adapter.py research/context_interpreter.py research/learned_reliability_policy.py research/footystats_match_logic.py research/footystats_official_spec.py research/context_snapshot_archive.py research/context_snapshot_store.py research/research_context_engine.py research/test_research_context.py research/test_footystats_match_logic.py research/test_official_spec_runtime.py research/test_release_candidate.py app_research_context.py v050_context_release.py v050_footystats_unified_logic.py v050_official_spec_patch.py
+        run: python -m py_compile app.py research/current_match_context.py research/current_context_runtime.py research/api_football_context_adapter.py research/context_interpreter.py research/learned_reliability_policy.py research/footystats_match_logic.py research/footystats_official_spec.py research/context_snapshot_archive.py research/context_snapshot_store.py research/research_context_engine.py research/test_research_context.py research/test_footystats_match_logic.py research/test_official_spec_runtime.py research/test_release_candidate.py app_research_context.py v050_context_release.py v050_footystats_unified_logic.py v050_official_spec_patch.py v050_shortcut_async_patch.py
       - name: Validate machine-readable contracts
         run: |
           python - <<'PY'
@@ -28,6 +29,9 @@ jobs:
               with open(path, encoding='utf-8') as fh:
                   data=json.load(fh)
               assert data.get('schema_version') == '1.1', path
+          schema=json.load(open('footystats_shortcut_api_schema.json', encoding='utf-8'))
+          assert schema.get('schema_revision') == '1.1.2'
+          assert schema.get('render_upload',{}).get('mode') == 'ASYNC_JOB'
           print('Official Analysis Spec JSON contracts valid')
           PY
       - name: Run context-policy smoke
@@ -45,17 +49,19 @@ jobs:
           source=Path('app.py').read_text()
           assert 'from v050_footystats_unified_logic import apply_patch as apply_v050_patch' in source
           assert 'from v050_official_spec_patch import apply_patch as apply_official_spec_patch' in source
-          assert 'app = apply_official_spec_patch(legacy, apply_v050_patch(legacy))' in source
+          assert 'from v050_shortcut_async_patch import apply_patch as apply_shortcut_async_patch' in source
+          assert 'app = apply_shortcut_async_patch(' in source
+          assert 'apply_official_spec_patch(legacy, apply_v050_patch(legacy))' in source
           assert 'v043_engine.legacy = legacy' in source
           assert 'app_research_context' not in source
-          print('app.py composes unified V0.5.0 plus Official Analysis Spec v1.1')
+          print('app.py composes unified V0.5.0 plus Official Analysis Spec v1.1 plus async transport')
           PY
       - name: Assert runtime endpoints and frozen-core contract
         run: |
           python - <<'PY'
           import app as production
           routes={getattr(r,'path',None):r for r in production.app.router.routes}
-          for path in ('/api/predict-bundle','/api/archive-bundle','/api/health','/api/footystats-official-spec','/api/shortcut-api-schema'):
+          for path in ('/api/predict-bundle','/api/archive-bundle','/api/health','/api/footystats-official-spec','/api/shortcut-api-schema','/api/predict-shortcut-v1-1','/api/predict-shortcut-v1-1-async','/api/predict-shortcut-v1-1-job/{job_id}'):
               assert path in routes, path
           health=routes['/api/health'].endpoint()
           assert health['ok'] is True
@@ -69,5 +75,8 @@ jobs:
           assert health['strict_prematch_validator'] is True
           assert health['official_rules_decision_influence'] is False
           assert health['official_rules_probability_influence'] is False
-          print('runtime endpoints and frozen-core contract passed')
+          assert health['shortcut_async_transport'] is True
+          assert health['shortcut_async_upload_endpoint'] == '/api/predict-shortcut-v1-1-async'
+          assert health['shortcut_async_status_endpoint'] == '/api/predict-shortcut-v1-1-job/{job_id}'
+          print('runtime endpoints, async transport and frozen-core contract passed')
           PY
