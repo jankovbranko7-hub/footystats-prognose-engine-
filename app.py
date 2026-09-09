@@ -16,3 +16,31 @@ legacy.INDEX_HTML = legacy.INDEX_HTML.replace(
 ).replace(
     "V5.2-Protokoll", "Interne Diagnose (ohne Einfluss)"
 )
+
+# Collapse the inherited two-card start screen into one actual V0.5.0 mask.
+# This is presentation-only: upload handling, prediction core and decision logic
+# are untouched.
+_v050_banner = (
+    '<div class="c"><h2>FootyStats V0.5.0 CONTEXT-AWARE</h2>'
+    '<div class="s">Eine Engine · Probability Core: V0.4.3 FULL-5 · 5 Dateien · '
+    'gelernte Reliability-Policy · Trend + News/Verfügbarkeit + optionale Aufstellung '
+    'ohne erfundene Strafwerte</div></div>'
+)
+legacy.INDEX_HTML = legacy.INDEX_HTML.replace(_v050_banner, "", 1)
+legacy.INDEX_HTML = legacy.INDEX_HTML.replace(
+    "V0.5.0 CONTEXT-AWARE – 5-Dateien Analyse",
+    "FootyStats V0.5.0 CONTEXT-AWARE",
+    1,
+).replace(
+    "Eine gemeinsame Analyse: V0.4.3 FULL-5 Probability Core + gelernte Reliability-Policy + aktueller Match-Kontext · 5 FootyStats-Dateien · keine Odds",
+    "5-Dateien Pre-Match Analyse · V0.4.3 FULL-5 Probability Core · gelernte Reliability-Policy · Trend + News/Verfügbarkeit + optionale Aufstellung · keine Odds",
+    1,
+).replace(
+    "Match-Ordner auswählen",
+    "5-Dateien Match-Paket auswählen",
+    1,
+).replace(
+    ">Analyse starten<",
+    ">V0.5.0 Analyse starten<",
+    1,
+)
