@@ -1,12 +1,13 @@
 """Render entry point for FootyStats V0.5.0 CONTEXT-AWARE production."""
 import app_v040 as legacy
 import v043_engine
-from v050_footystats_unified_logic import apply_patch
+from v050_footystats_unified_logic import apply_patch as apply_v050_patch
+from v050_official_spec_patch import apply_patch as apply_official_spec_patch
 
 # Keep the frozen V0.4.3 FULL-5 probability stack bound exactly as before.
 v043_engine.legacy = legacy
 
-app = apply_patch(legacy)
+app = apply_official_spec_patch(legacy, apply_v050_patch(legacy))
 
 # The old V0.4.3/V5.2 protocol remains available in backend diagnostics for
 # auditability, but it has no role in the V0.5.0 final action and therefore is
@@ -39,7 +40,7 @@ legacy.INDEX_HTML = legacy.INDEX_HTML.replace(
     1,
 ).replace(
     "Eine gemeinsame Analyse: V0.4.3 FULL-5 Probability Core + gelernte Reliability-Policy + aktueller Match-Kontext · 5 FootyStats-Dateien · keine Odds",
-    "5-Dateien Pre-Match Analyse · V0.4.3 FULL-5 Probability Core · ergebnisvalidierte OOF-Reliability-Policy + FootyStats Gesamtlogik · keine Odds",
+    "5-Dateien Pre-Match Analyse · V0.4.3 FULL-5 Probability Core · ergebnisvalidierte OOF-Reliability-Policy + FootyStats Gesamtlogik · Official Analysis Spec 1.1 · keine Odds",
     1,
 ).replace(
     "Match-Ordner auswählen",

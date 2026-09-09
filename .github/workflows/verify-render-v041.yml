@@ -9,26 +9,33 @@ jobs:
   verify-render:
     runs-on: ubuntu-latest
     steps:
-      - name: Verify deployed version, frozen core contract and unified FootyStats logic
+      - name: Verify deployed version, frozen core and Official Analysis Spec v1.1
         shell: bash
         run: |
           set -euo pipefail
           HEALTH_URL="https://footystats-prognose-engine.onrender.com/api/health"
           PAGE_URL="https://footystats-prognose-engine.onrender.com/"
+          SPEC_URL="https://footystats-prognose-engine.onrender.com/api/footystats-official-spec"
+          SHORTCUT_URL="https://footystats-prognose-engine.onrender.com/api/shortcut-api-schema"
           for i in $(seq 1 36); do
             BODY="$(curl -fsS --max-time 20 "$HEALTH_URL" 2>/dev/null || true)"
             PAGE="$(curl -fsS --max-time 20 "$PAGE_URL" 2>/dev/null || true)"
+            SPEC="$(curl -fsS --max-time 20 "$SPEC_URL" 2>/dev/null || true)"
+            SHORTCUT="$(curl -fsS --max-time 20 "$SHORTCUT_URL" 2>/dev/null || true)"
             echo "attempt=$i health=$BODY"
-            if echo "$BODY" | python -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok") is True and d.get("version")=="0.5.0" and d.get("engine")=="context-aware-full5-learned-reliability-policy" and d.get("production") is True and d.get("probability_core")=="V0.4.3 FULL-5" and d.get("full5_alpha")==3.0 and d.get("dixon_coles_rho")==-0.25 and d.get("iphone_files")==5 and d.get("final_decision_source")=="RESULT_SUPERVISED_OOF_RELIABILITY_POLICY_PLUS_FOOTYSTATS_UNIFIED_CONTEXT_LOGIC" and d.get("manual_performance_gates")=="NONE" and d.get("current_context_numeric_probability_adjustment") is False and d.get("footystats_unified_context_logic") is True and d.get("footystats_context_can_change_action") is True and d.get("footystats_context_changes_probabilities") is False and d.get("footystats_context_manual_weights") is False and d.get("footystats_context_global_numeric_cutoffs") is False' \
+            if echo "$BODY" | python -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok") is True and d.get("version")=="0.5.0" and d.get("engine")=="context-aware-full5-learned-reliability-policy" and d.get("production") is True and d.get("probability_core")=="V0.4.3 FULL-5" and d.get("full5_alpha")==3.0 and d.get("dixon_coles_rho")==-0.25 and d.get("iphone_files")==5 and d.get("final_decision_source")=="RESULT_SUPERVISED_OOF_RELIABILITY_POLICY_PLUS_FOOTYSTATS_UNIFIED_CONTEXT_LOGIC" and d.get("manual_performance_gates")=="NONE" and d.get("current_context_numeric_probability_adjustment") is False and d.get("footystats_unified_context_logic") is True and d.get("footystats_context_can_change_action") is True and d.get("footystats_context_changes_probabilities") is False and d.get("footystats_context_manual_weights") is False and d.get("footystats_context_global_numeric_cutoffs") is False and d.get("footystats_official_analysis_spec")=="1.1" and d.get("official_spec_runtime") is True and d.get("strict_prematch_validator") is True and d.get("official_rules_decision_influence") is False and d.get("official_rules_probability_influence") is False' \
+              && echo "$SPEC" | python -c 'import json,sys; d=json.load(sys.stdin); assert d.get("schema_version")=="1.1" and d.get("name")=="FOOTYSTATS_OFFICIAL_ANALYSIS_SPEC_FIELD_REGISTRY"' \
+              && echo "$SHORTCUT" | python -c 'import json,sys; d=json.load(sys.stdin); assert d.get("schema_version")=="1.1" and d.get("render_upload",{}).get("exact_file_count")==5' \
               && grep -Fq 'FootyStats V0.5.0 CONTEXT-AWARE' <<<"$PAGE" \
+              && grep -Fq 'FootyStats Official Analysis Spec' <<<"$PAGE" \
               && grep -Fq 'FootyStats Gesamtlogik' <<<"$PAGE" \
               && grep -Fq 'Aktueller Match-Kontext' <<<"$PAGE" \
               && grep -Fq 'FULL-5-Status' <<<"$PAGE" \
               && grep -Fq 'Spielpaarung' <<<"$PAGE"; then
-              echo "Render V0.5.0 unified FootyStats deployment identity verified; frozen probabilities unchanged"
+              echo "Render V0.5.0 + Official Analysis Spec v1.1 verified; frozen probabilities unchanged"
               exit 0
             fi
             sleep 10
           done
-          echo "Render did not expose the expected unified V0.5.0 deployment identity"
+          echo "Render did not expose the expected V0.5.0 + Official Analysis Spec v1.1 deployment"
           exit 1
