@@ -1,0 +1,30 @@
+{
+  "artifact": "FULL5_CONTEXT_RELIABILITY_POLICY",
+  "version": "1.0.0",
+  "trained_on_probability_rows": 300,
+  "training_uses_results": false,
+  "centroids": [
+    0.5939096343988497,
+    0.6848009383779808,
+    0.7950201361084736
+  ],
+  "actions_by_centroid_order": [
+    "AUSLASSEN / KEIN BET",
+    "BEOBACHTEN",
+    "SPIELEN"
+  ],
+  "market_order": [
+    "home_win",
+    "away_win",
+    "btts_yes",
+    "btts_no",
+    "over_2_5",
+    "under_2_5"
+  ],
+  "assignment": "nearest_centroid_absolute_distance",
+  "random_state": 20260909,
+  "n_init": 100,
+  "source_dataset_sha256": "27bdb435a7da0ed24c57134773773610b31d43a9defafffc7008cf27eef0ce09",
+  "validation_file": "FINAL_POLICY_BACKTEST_0_11.json",
+  "probability_core": "V0.4.3 FULL-5 frozen"
+}
