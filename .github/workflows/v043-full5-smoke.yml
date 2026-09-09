@@ -1,4 +1,4 @@
-name: V0.4.3 FULL-5 smoke
+name: V0.5.0 production smoke
 
 on:
   push:
@@ -17,44 +17,51 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install -r requirements.txt
-      - name: Syntax, entrypoint and FULL-5 production invariants
+      - name: Compile production stack
         run: |
-          python -m py_compile app_v040.py v041_engine.py v042_engine.py v043_engine.py v043_release.py v043_pairing_ui.py v043_observe_fazit_ui.py app.py
+          python -m py_compile app_v040.py v041_engine.py v042_engine.py v043_engine.py v043_release.py v043_pairing_ui.py v043_observe_fazit_ui.py v050_context_release.py v050_footystats_unified_logic.py research/learned_reliability_policy.py research/footystats_match_logic.py research/research_context_engine.py research/test_footystats_match_logic.py research/test_release_candidate.py app.py
+      - name: Run qualitative FootyStats action tests
+        run: python -m research.test_footystats_match_logic
+      - name: Run unified release smoke
+        run: python -m research.test_release_candidate
+      - name: Assert frozen probability core and active unified final logic
+        run: |
           python - <<'PY'
           import math
           import app
           import app_v040 as legacy
+          import v042_engine
           import v043_engine as e
           import v043_release as r
-          assert app.app.version == '0.4.3'
+          from research.footystats_match_logic import FINAL_DECISION_SOURCE
+
+          assert app.app.version == '0.5.0'
           assert e.FEATURE_COUNT == 40
           assert len(e.FULL5_FEATURES) == len(e.FULL5_MEAN) == len(e.FULL5_SCALE) == len(e.FULL5_COEF) == 40
           assert all(math.isfinite(x) for x in e.FULL5_MEAN + e.FULL5_SCALE + e.FULL5_COEF)
           assert all(x > 0 for x in e.FULL5_SCALE)
           assert r.FULL5_ALPHA == 3.0
           assert e.FULL5_ALPHA == 3.0
+          assert v042_engine.RHO == -0.25
           row={name:mean for name,mean in zip(e.FULL5_FEATURES,e.FULL5_MEAN)}
           lam=e._predict_lambda(row)
           assert 0.05 <= lam <= 3.95
           assert 'Spielpaarung' in legacy.INDEX_HTML
-          assert "const homeName=matchInfo.home_name" in legacy.INDEX_HTML
-          assert "const awayName=matchInfo.away_name" in legacy.INDEX_HTML
-          assert 'Match-ID:' in legacy.INDEX_HTML
           assert 'FULL-5-Status' in legacy.INDEX_HTML
-          assert 'FULL-5: AKTIV ✅' in legacy.INDEX_HTML
-          assert 'FULL-5: FALLBACK AUF V0.4.2 ⚠️' in legacy.INDEX_HTML
-          assert 'Warum BEOBACHTEN?' in legacy.INDEX_HTML
-          assert 'decision_reasons' in legacy.INDEX_HTML
-          assert 'confirming_blocks' in legacy.INDEX_HTML
-          assert 'counter_blocks' in legacy.INDEX_HTML
+          assert 'FootyStats Gesamtlogik' in legacy.INDEX_HTML
+          assert 'Keine künstliche Prozentkorrektur' in legacy.INDEX_HTML
+          assert 'Interne Diagnose (ohne Einfluss)' not in legacy.INDEX_HTML
           health = next(route.endpoint for route in app.app.router.routes if getattr(route,'path',None)=='/api/health')()
-          assert health['version']=='0.4.3'
-          assert health['engine']=='five-source-full5-regularized-dixon-coles'
-          assert health['rho']==-0.25
-          assert health['full5_features']==40
-          assert health['alpha']==3.0
+          assert health['version']=='0.5.0'
+          assert health['probability_core']=='V0.4.3 FULL-5'
+          assert health['full5_alpha']==3.0
+          assert health['dixon_coles_rho']==-0.25
           assert health['production'] is True
-          assert health['candidate'] is False
-          assert health['elite_lambda_correction'] is False
-          print('V0.4.3 FULL-5 production + pairing + BEOBACHTEN rationale UI smoke OK', health, 'lambda@mean=', lam)
+          assert health['final_decision_source']==FINAL_DECISION_SOURCE
+          assert health['footystats_unified_context_logic'] is True
+          assert health['footystats_context_can_change_action'] is True
+          assert health['footystats_context_changes_probabilities'] is False
+          assert health['footystats_context_manual_weights'] is False
+          assert health['footystats_context_global_numeric_cutoffs'] is False
+          print('V0.5.0 unified FootyStats production smoke OK', health, 'lambda@mean=', lam)
           PY
