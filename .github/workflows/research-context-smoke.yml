@@ -16,11 +16,13 @@ jobs:
           python-version: '3.11'
       - name: Install runtime dependencies
         run: pip install -r requirements.txt
-      - name: Compile research modules
-        run: python -m py_compile research/current_match_context.py research/current_context_runtime.py research/api_football_context_adapter.py research/context_interpreter.py research/learned_reliability_policy.py research/context_snapshot_archive.py research/context_snapshot_store.py research/research_context_engine.py app_research_context.py
-      - name: Run research context smoke
+      - name: Compile context and release modules
+        run: python -m py_compile research/current_match_context.py research/current_context_runtime.py research/api_football_context_adapter.py research/context_interpreter.py research/learned_reliability_policy.py research/context_snapshot_archive.py research/context_snapshot_store.py research/research_context_engine.py research/test_research_context.py research/test_release_candidate.py app_research_context.py v050_context_release.py
+      - name: Run context-policy smoke
         run: python -m research.test_research_context
-      - name: Assert production entry point untouched
+      - name: Run real V0.5.0 release-candidate smoke
+        run: python -m research.test_release_candidate
+      - name: Assert production entry point untouched before promotion
         run: |
           python - <<'PY'
           from pathlib import Path
@@ -28,5 +30,5 @@ jobs:
           assert 'app_research_context' not in app
           assert 'research.' not in app
           assert 'v043_observe_fazit_ui' in app
-          print('production entry point remains V0.4.3-only')
+          print('pre-promotion app.py remains V0.4.3-only')
           PY
