@@ -6,6 +6,7 @@ and leaves probabilities plus final action untouched.
 """
 from __future__ import annotations
 
+import time
 from typing import Any, Dict, List
 
 from research.footystats_official_spec import (
@@ -87,6 +88,7 @@ def apply_patch(legacy: Any, app: Any) -> Any:
                 "official_rules_probability_influence": False,
                 "field_registry_version": str(load_field_registry().get("schema_version") or ""),
                 "shortcut_api_schema_version": str(load_shortcut_schema().get("schema_version") or ""),
+                "shortcut_capture_unix": int(time.time()),
             }
         )
         return base
