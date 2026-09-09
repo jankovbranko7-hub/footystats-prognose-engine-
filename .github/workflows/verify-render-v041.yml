@@ -1,4 +1,4 @@
-name: Verify Render V0.4.3 FULL-5
+name: Verify Render V0.5.0 CONTEXT-AWARE
 
 on:
   push:
@@ -9,7 +9,7 @@ jobs:
   verify-render:
     runs-on: ubuntu-latest
     steps:
-      - name: Verify production health, pairing, FULL-5 status and BEOBACHTEN rationale
+      - name: Verify deployed version, frozen core contract and UI identity
         shell: bash
         run: |
           set -euo pipefail
@@ -19,18 +19,15 @@ jobs:
             BODY="$(curl -fsS --max-time 20 "$HEALTH_URL" 2>/dev/null || true)"
             PAGE="$(curl -fsS --max-time 20 "$PAGE_URL" 2>/dev/null || true)"
             echo "attempt=$i health=$BODY"
-            if echo "$BODY" | python -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok") is True and d.get("version")=="0.4.3" and d.get("engine")=="five-source-full5-regularized-dixon-coles" and d.get("rho")==-0.25 and d.get("full5_features")==40 and d.get("alpha")==3.0 and d.get("production") is True and d.get("candidate") is False and d.get("elite_lambda_correction") is False' \
-              && grep -Fq 'Spielpaarung' <<<"$PAGE" \
-              && grep -Fq 'Match-ID:' <<<"$PAGE" \
+            if echo "$BODY" | python -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok") is True and d.get("version")=="0.5.0" and d.get("engine")=="context-aware-full5-learned-reliability-policy" and d.get("production") is True and d.get("probability_core")=="V0.4.3 FULL-5" and d.get("full5_alpha")==3.0 and d.get("dixon_coles_rho")==-0.25 and d.get("iphone_files")==5 and d.get("final_decision_source")=="LEARNED_RELIABILITY_CLUSTER_POLICY" and d.get("manual_performance_gates")=="NONE" and d.get("current_context_numeric_probability_adjustment") is False' \
+              && grep -Fq 'FootyStats V0.5.0 CONTEXT-AWARE' <<<"$PAGE" \
+              && grep -Fq 'Aktueller Match-Kontext' <<<"$PAGE" \
               && grep -Fq 'FULL-5-Status' <<<"$PAGE" \
-              && grep -Fq 'FULL-5: AKTIV ✅' <<<"$PAGE" \
-              && grep -Fq 'FULL-5: FALLBACK AUF V0.4.2 ⚠️' <<<"$PAGE" \
-              && grep -Fq 'Warum BEOBACHTEN?' <<<"$PAGE" \
-              && grep -Fq 'decision_reasons' <<<"$PAGE"; then
-              echo "Render V0.4.3 production + pairing + FULL-5 + BEOBACHTEN rationale UI verified"
+              && grep -Fq 'Spielpaarung' <<<"$PAGE"; then
+              echo "Render V0.5.0 deployment identity verified; no model validation executed on Render"
               exit 0
             fi
             sleep 10
           done
-          echo "Render did not expose the expected V0.4.3 report UI"
+          echo "Render did not expose the expected V0.5.0 deployment identity"
           exit 1
