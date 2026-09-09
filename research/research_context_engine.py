@@ -7,10 +7,11 @@ from fastapi import File, Form, Response, UploadFile
 
 from .api_football_context_adapter import ApiFootballClient, build_api_football_context_layers
 from .context_snapshot_archive import build_context_snapshot_record, snapshot_download_name
+from .context_snapshot_store import persist_context_snapshot, snapshot_store_config
 from .current_context_runtime import build_runtime_context, extract_match_identity
 from .current_match_context import ContextValidationError, validate_current_match_context
 
-RESEARCH_CONTEXT_VERSION = "0.9.0-research"
+RESEARCH_CONTEXT_VERSION = "0.10.0-research"
 EXPECTED_FIVE_SOURCES = {"match", "league", "form", "table", "player"}
 
 def _now_utc() -> str:
@@ -62,6 +63,14 @@ def build_analysis_with_current_context(legacy: Any, parsed_files: List[Dict[str
     out["current_context_snapshot"]=context
     return out
 
+def _snapshot_and_persist(parsed: List[Dict[str, Any]], pair: Dict[str, Any], analysis: Dict[str, Any]):
+    record=build_context_snapshot_record(parsed,pair,analysis)
+    persistence=persist_context_snapshot(record)
+    research=analysis.setdefault("research_context",{})
+    research["snapshot_record_sha256"]=record["record_sha256"]
+    research["snapshot_persistence"]=persistence
+    return record,persistence
+
 def install_research_context(legacy: Any) -> Any:
     app=legacy.app
     research_paths={"/api/research/predict-context","/api/research/context-health","/api/research/context-archive-bundle"}
@@ -69,7 +78,12 @@ def install_research_context(legacy: Any) -> Any:
     async def predict_context(files: List[UploadFile]=File(...), fetch_external: str=Form("true")) -> Dict[str, Any]:
         parsed,errors=await legacy._read_bundle_uploads(files)
         if errors: return {"ok":False,"decision":"ANALYSE NICHT MÖGLICH","phase":"FILE_PARSE_FAILED","errors":errors}
-        return build_analysis_with_current_context(legacy,parsed,fetch_external=_truthy(fetch_external))
+        pair=legacy.select_pair(parsed)
+        if not pair.get("ok"): return pair
+        analysis=build_analysis_with_current_context(legacy,parsed,fetch_external=_truthy(fetch_external))
+        if isinstance(analysis,dict) and analysis.get("ok"):
+            _snapshot_and_persist(parsed,pair,analysis)
+        return analysis
     async def context_archive_bundle(files: List[UploadFile]=File(...), fetch_external: str=Form("true")):
         parsed,errors=await legacy._read_bundle_uploads(files)
         if errors:
@@ -78,11 +92,13 @@ def install_research_context(legacy: Any) -> Any:
         if not pair.get("ok"): return pair
         analysis=build_analysis_with_current_context(legacy,parsed,fetch_external=_truthy(fetch_external))
         if not isinstance(analysis,dict) or not analysis.get("ok"): return analysis
-        record=build_context_snapshot_record(parsed,pair,analysis)
+        record,persistence=_snapshot_and_persist(parsed,pair,analysis)
         body=json.dumps(record,ensure_ascii=False,sort_keys=True,indent=2,allow_nan=False).encode("utf-8")
-        return Response(content=body,media_type="application/json",headers={"Content-Disposition":f'attachment; filename="{snapshot_download_name(record)}"',"Cache-Control":"no-store","X-Context-Record-SHA256":record["record_sha256"]})
+        return Response(content=body,media_type="application/json",headers={"Content-Disposition":f'attachment; filename="{snapshot_download_name(record)}"',"Cache-Control":"no-store","X-Context-Record-SHA256":record["record_sha256"],"X-Context-Persistence-Status":str(persistence.get("status") or "UNKNOWN")})
     def context_health() -> Dict[str, Any]:
-        return {"ok":True,"version":RESEARCH_CONTEXT_VERSION,"research_only":True,"production_core":"0.4.3","iphone_files":5,"external_api_key_configured":bool((os.getenv("API_FOOTBALL_KEY") or "").strip()),"api_football_lineup_query_enabled":_truthy(os.getenv("API_FOOTBALL_FETCH_LINEUPS")),"probabilities_modified_by_current_context":False,"context_archive":"DOWNLOAD_ONLY_NO_SERVER_PERSISTENCE"}
+        store=snapshot_store_config()
+        safe_store={k:v for k,v in store.items() if k not in {"key","url"}}
+        return {"ok":True,"version":RESEARCH_CONTEXT_VERSION,"research_only":True,"production_core":"0.4.3","iphone_files":5,"external_api_key_configured":bool((os.getenv("API_FOOTBALL_KEY") or "").strip()),"api_football_lineup_query_enabled":_truthy(os.getenv("API_FOOTBALL_FETCH_LINEUPS")),"probabilities_modified_by_current_context":False,"context_archive":"PROVENANCE_LOCKED","snapshot_store":safe_store}
     app.add_api_route("/api/research/predict-context",predict_context,methods=["POST"])
     app.add_api_route("/api/research/context-archive-bundle",context_archive_bundle,methods=["POST"])
     app.add_api_route("/api/research/context-health",context_health,methods=["GET"])
