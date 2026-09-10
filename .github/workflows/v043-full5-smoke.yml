@@ -16,11 +16,13 @@ jobs:
       - run: pip install -r requirements.txt
       - name: Compile SPEC v1.1 full-signal production stack
         run: |
-          python -m py_compile app_v040.py spec11_native_engine.py spec11_signal_expansion.py spec11_strongest_market_engine.py spec11_strongest_market_patch.py spec11_full_signal_patch.py spec11_target_player_scope_patch.py spec11_ui_cleanup_patch.py research/test_spec11_native_engine.py research/test_spec11_strongest_market.py research/test_spec11_ranking_consistency.py app.py
+          python -m py_compile app_v040.py spec11_native_engine.py spec11_signal_expansion.py spec11_strongest_market_engine.py spec11_strongest_market_patch.py spec11_full_signal_patch.py spec11_target_player_scope_patch.py spec11_ui_cleanup_patch.py spec11_draw_parity_patch.py research/test_spec11_native_engine.py research/test_spec11_strongest_market.py research/test_spec11_ranking_consistency.py research/test_spec11_draw_parity.py app.py
       - name: Run strongest-market and cold-start smoke
         run: python -m research.test_spec11_strongest_market
       - name: Run ranking-consistency regression
         run: python -m research.test_spec11_ranking_consistency
+      - name: Run draw-parity regression
+        run: python -m research.test_spec11_draw_parity
       - name: Assert production is full-signal comparison without decision engine
         run: |
           python - <<'PY'
@@ -29,11 +31,11 @@ jobs:
           import spec11_strongest_market_engine as engine
           from spec11_ui_cleanup_patch import _clean_h2h_wording
 
-          assert app.app.version == '1.1.4-ranking-consistency'
-          assert engine.ENGINE_VERSION == '1.1.4-ranking-consistency'
-          assert 'SPEC v1.1 · Engine v1.1.4' in legacy.INDEX_HTML
-          assert 'Build 1.1.4-ranking-consistency' in legacy.INDEX_HTML
-          assert 'SPEC v1.1 / Engine v1.1.4 auswerten' in legacy.INDEX_HTML
+          assert app.app.version == '1.1.5-draw-parity'
+          assert engine.ENGINE_VERSION == '1.1.5-draw-parity'
+          assert 'SPEC v1.1 · Engine v1.1.5' in legacy.INDEX_HTML
+          assert 'Build 1.1.5-draw-parity' in legacy.INDEX_HTML
+          assert 'SPEC v1.1 / Engine v1.1.5 auswerten' in legacy.INDEX_HTML
           assert 'vollständige sinnvolle SPEC-v1.1-Signalbreite' in legacy.INDEX_HTML
           assert 'kein V0.4.x' in legacy.INDEX_HTML
           assert 'kein Fallback' in legacy.INDEX_HTML
@@ -69,9 +71,11 @@ jobs:
           assert health['other_league_players_market_evidence'] is False
           assert health['ranking_consistency_guard'] is True
           assert health['clear_requires_positive_total_evidence'] is True
+          assert health['draw_parity_guard'] is True
+          assert health['generic_strength_parity_is_draw_evidence'] is False
           paths = {getattr(route,'path',None) for route in app.app.router.routes}
           assert '/api/predict' not in paths
           assert '/api/predict-files' not in paths
           assert '/api/predict-bundle' in paths
-          print('SPEC v1.1 / Engine v1.1.4 UI cleanup smoke OK', health)
+          print('SPEC v1.1 / Engine v1.1.5 draw-parity smoke OK', health)
           PY
