@@ -67,7 +67,7 @@ Save the complete raw response as `${MATCH_ID}_TableDaten.json`. Missing league/
 
 GET `/league-players?season_id=SEASON_ID&include=stats&max_time=STRICT_MAX_TIME&page=PAGE`.
 
-FootyStats returns at most 200 players per page. Continue until `current_page == max_page` and retain the raw paginated response for completeness/audit. Set:
+FootyStats returns at most 200 players per page. Continue until `current_page == max_page` and retain the raw paginated response so both target teams can be found reliably and pagination can be audited. Set:
 
 ```json
 "pagination_complete": true
@@ -75,7 +75,7 @@ FootyStats returns at most 200 players per page. Continue until `current_page ==
 
 as a real Boolean only after every page has been fetched successfully.
 
-The backend analysis then uses only players whose `club_team_id` or `club_team_2_id` equals `HOME_ID` or `AWAY_ID`. Other league players do not become opponent/player signals; they may only be used as competition reference context. If one target team has no returned players, that player block is `NICHT VERFÜGBAR`, never zero strength.
+The backend analysis uses exclusively players whose `club_team_id` or `club_team_2_id` equals `HOME_ID` or `AWAY_ID`. All other league-player rows are retrieval/audit data only and must not influence any market ranking or supply a competition player benchmark. If one target team has no returned players, the Player block is `NICHT VERFÜGBAR`, never zero strength.
 
 ## Step 7 — Validate and save exactly five files
 
@@ -109,6 +109,7 @@ The backend evaluates the five FootyStats sources as SPEC-v1.1 evidence and repo
 - Missing values = `NICHT VERFÜGBAR`, not zero strength and not a fabricated replacement.
 - Related raw fields are grouped into evidence blocks so correlated columns are not counted as dozens of independent votes.
 - Independent central sources (Match, League, Form, Table, Player) have priority in the strongest-market comparison.
+- Player market evidence is target-team-only; league-wide player pages are never used as market evidence.
 - H2H/trends/diagnostic context is visible but does not receive an independent ranking vote.
 - No V0.4.3 or V0.4.2 probability core is used.
 - No fallback is used.
