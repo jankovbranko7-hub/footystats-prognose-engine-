@@ -1,6 +1,6 @@
 {
   "schema_version": "1.1",
-  "schema_revision": "1.1.4",
+  "schema_revision": "1.1.5",
   "name": "FOOTYSTATS_IPHONE_SHORTCUT_API_SCHEMA",
   "timezone": "Europe/Vienna",
   "footystats_base_url": "https://api.football-data-api.com",
@@ -51,12 +51,14 @@
       "max_time": "${strict_max_time}",
       "include": "stats",
       "pagination": "fetch all league-team pages",
+      "team_pagination_complete_type": "boolean",
       "temporal_mode": "STRICT_MAX_TIME"
     },
     {
       "file": "${match_id}_FormDaten.json",
       "endpoint": "/lastx",
       "requests": ["home_id", "away_id"],
+      "documented_windows": [5, 6, 10],
       "temporal_mode": "LIVE_CAPTURE_ONLY_NO_MAX_TIME"
     },
     {
@@ -71,7 +73,10 @@
       "endpoint": "/league-players",
       "include": "stats",
       "max_time": "${strict_max_time}",
-      "pagination": "fetch every page",
+      "pagination": "fetch every page until current_page == max_page",
+      "storage_scope": "raw paginated league response retained for completeness/audit",
+      "analysis_scope": "only players whose club_team_id or club_team_2_id equals HOME_ID or AWAY_ID; other players may only provide competition reference context",
+      "pagination_complete_type": "boolean",
       "temporal_mode": "STRICT_MAX_TIME"
     }
   ],
@@ -86,8 +91,18 @@
     "mode": "MANUAL_USER_UPLOAD",
     "automatic_upload": false,
     "exact_file_count": 5,
-    "ui": "User opens the Render V0.5.0 page, selects the five JSON files for one match, then presses V0.5.0 Analyse starten.",
+    "ui": "User opens the Render SPEC v1.1 Strongest-Market page, selects exactly five JSON files for one match, then presses 'SPEC v1.1 auswerten'.",
     "analysis_endpoint": "/api/predict-bundle"
+  },
+  "analysis": {
+    "mode": "SPEC_V1_1_STRONGEST_MARKET",
+    "probability_core": "NONE",
+    "decision_engine": "NONE",
+    "fallback": "NONE",
+    "odds_used": false,
+    "cold_start_supported": true,
+    "low_sample_supported": true,
+    "missing_values": "NICHT VERFÜGBAR; never converted into zero strength or fabricated replacements"
   },
   "validation": {
     "reject_missing_core_identifiers": true,
@@ -96,7 +111,9 @@
     "historical_lastx_rule": "NOT STRICT unless capture/source timestamp proves it existed before kickoff",
     "player_pagination_complete_required": true,
     "league_team_pagination_complete_required": true,
-    "probability_core_modified": false,
-    "decision_engine_modified": false
+    "player_analysis_target_teams_only": true,
+    "probability_core_used": false,
+    "decision_engine_used": false,
+    "fallback_used": false
   }
 }
