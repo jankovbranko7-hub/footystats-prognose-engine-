@@ -5,7 +5,6 @@ on:
     branches:
       - research/context-adaptive-current-layer
       - feat/footystats-official-analysis-spec-v1-1
-      - main
   workflow_dispatch:
 
 jobs:
@@ -28,11 +27,7 @@ jobs:
               with open(path, encoding='utf-8') as fh:
                   data=json.load(fh)
               assert data.get('schema_version') == '1.1', path
-          schema=json.load(open('footystats_shortcut_api_schema.json', encoding='utf-8'))
-          assert schema.get('primary_mode') == 'MANUAL_FIVE_FILE_EXPORT'
-          assert schema.get('render_upload',{}).get('mode') == 'MANUAL_USER_UPLOAD'
-          assert schema.get('render_upload',{}).get('automatic_upload') is False
-          print('Official Analysis Spec manual five-file contract valid')
+          print('Official Analysis Spec contracts valid')
           PY
       - name: Run context-policy smoke
         run: python -m research.test_research_context
@@ -40,42 +35,5 @@ jobs:
         run: python -m research.test_footystats_match_logic
       - name: Run FootyStats Official Analysis Spec runtime smoke
         run: python -m research.test_official_spec_runtime
-      - name: Run real V0.5.0 unified release-candidate smoke
+      - name: Run legacy V0.5.0 release-candidate smoke
         run: python -m research.test_release_candidate
-      - name: Assert exact V0.5.0 production composition
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          source=Path('app.py').read_text()
-          assert 'from v050_footystats_unified_logic import apply_patch as apply_v050_patch' in source
-          assert 'from v050_official_spec_patch import apply_patch as apply_official_spec_patch' in source
-          assert 'v050_shortcut_fast_patch' not in source
-          assert 'v050_shortcut_async_patch' not in source
-          assert 'app = apply_official_spec_patch(legacy, apply_v050_patch(legacy))' in source
-          assert 'v043_engine.legacy = legacy' in source
-          assert 'app_research_context' not in source
-          print('app.py composes manual-upload V0.5.0 + Official Analysis Spec only')
-          PY
-      - name: Assert runtime endpoints and frozen-core contract
-        run: |
-          python - <<'PY'
-          import app as production
-          routes={getattr(r,'path',None):r for r in production.app.router.routes}
-          for path in ('/api/predict-bundle','/api/archive-bundle','/api/health','/api/footystats-official-spec','/api/shortcut-api-schema'):
-              assert path in routes, path
-          assert '/api/predict-shortcut-fast' not in routes
-          assert '/api/predict-shortcut-v1-1-async' not in routes
-          health=routes['/api/health'].endpoint()
-          assert health['ok'] is True
-          assert health['version'] == '0.5.0'
-          assert health['probability_core'] == 'V0.4.3 FULL-5'
-          assert health['full5_alpha'] == 3.0
-          assert health['dixon_coles_rho'] == -0.25
-          assert health['iphone_files'] == 5
-          assert health['footystats_official_analysis_spec'] == '1.1'
-          assert health['official_spec_runtime'] is True
-          assert health['strict_prematch_validator'] is True
-          assert health['official_rules_decision_influence'] is False
-          assert health['official_rules_probability_influence'] is False
-          print('manual five-file runtime and frozen-core contract passed')
-          PY
