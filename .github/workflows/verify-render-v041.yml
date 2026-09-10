@@ -31,11 +31,13 @@ jobs:
               && echo "$OPENAPI" | python -c 'import json,sys; p=json.load(sys.stdin).get("paths",{}); assert "/api/predict-bundle" in p and "/api/predict" not in p and "/api/predict-files" not in p and "/api/predict-shortcut-fast" not in p' \
               && grep -Fq 'SPEC v1.1 · Engine v1.1.5' <<<"$PAGE" \
               && grep -Fq 'Build 1.1.5-draw-parity' <<<"$PAGE" \
-              && grep -Fq 'vollständige sinnvolle SPEC-v1.1-Signalbreite' <<<"$PAGE"; then
-              echo "Render SPEC v1.1 / Engine v1.1.5 draw-parity analysis verified"
+              && grep -Fq 'vollständige sinnvolle SPEC-v1.1-Signalbreite' <<<"$PAGE" \
+              && grep -Fq 'Backtest-Bericht herunterladen' <<<"$PAGE" \
+              && grep -Fq 'SPEC_V1_1_ENGINE_V1_1_5_BACKTEST_REPORT' <<<"$PAGE"; then
+              echo "Render SPEC v1.1 / Engine v1.1.5 draw-parity + backtest-report export verified"
               exit 0
             fi
             sleep 10
           done
-          echo "Render did not expose the expected SPEC v1.1 / Engine v1.1.5 draw-parity deployment"
+          echo "Render did not expose the expected SPEC v1.1 / Engine v1.1.5 backtest-report deployment"
           exit 1
