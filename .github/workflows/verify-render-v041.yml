@@ -25,17 +25,17 @@ jobs:
             SHORTCUT="$(curl -fsS --max-time 20 "$SHORTCUT_URL" 2>/dev/null || true)"
             OPENAPI="$(curl -fsS --max-time 20 "$OPENAPI_URL" 2>/dev/null || true)"
             echo "attempt=$i health=$BODY"
-            if echo "$BODY" | python -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok") is True and d.get("version")=="1.1.2-full-signal-breadth" and d.get("production") is True and d.get("architecture")=="SPEC_V1_1_FULL_SIGNAL_COMPARISON" and d.get("analysis_type")=="STRONGEST_MARKET" and d.get("decision_engine")=="NONE" and d.get("probability_core")=="NONE" and d.get("v043_used") is False and d.get("v042_used") is False and d.get("fallback")=="NONE" and d.get("odds_used") is False and d.get("cold_start_supported") is True and d.get("low_sample_supported") is True and d.get("player_analysis_scope")=="TARGET_HOME_AWAY_ONLY"' \
+            if echo "$BODY" | python -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok") is True and d.get("version")=="1.1.3-target-player-scope" and d.get("production") is True and d.get("architecture")=="SPEC_V1_1_FULL_SIGNAL_COMPARISON" and d.get("analysis_type")=="STRONGEST_MARKET" and d.get("decision_engine")=="NONE" and d.get("probability_core")=="NONE" and d.get("v043_used") is False and d.get("v042_used") is False and d.get("fallback")=="NONE" and d.get("odds_used") is False and d.get("cold_start_supported") is True and d.get("low_sample_supported") is True and d.get("player_analysis_scope")=="TARGET_HOME_AWAY_ONLY" and d.get("league_player_pages_role")=="RETRIEVAL_COMPLETENESS_AND_AUDIT_ONLY" and d.get("other_league_players_market_evidence") is False' \
               && echo "$SPEC" | python -c 'import json,sys; d=json.load(sys.stdin); assert d.get("schema_version")=="1.1" and d.get("name")=="FOOTYSTATS_OFFICIAL_ANALYSIS_SPEC_FIELD_REGISTRY"' \
-              && echo "$SHORTCUT" | python -c 'import json,sys; d=json.load(sys.stdin); assert d.get("schema_version")=="1.1" and d.get("schema_revision")=="1.1.5" and d.get("primary_mode")=="MANUAL_FIVE_FILE_EXPORT" and d.get("render_upload",{}).get("mode")=="MANUAL_USER_UPLOAD" and d.get("render_upload",{}).get("automatic_upload") is False and d.get("analysis",{}).get("decision_engine")=="NONE" and d.get("analysis",{}).get("probability_core")=="NONE" and d.get("validation",{}).get("player_analysis_target_teams_only") is True' \
+              && echo "$SHORTCUT" | python -c 'import json,sys; d=json.load(sys.stdin); assert d.get("schema_version")=="1.1" and d.get("schema_revision")=="1.1.6" and d.get("primary_mode")=="MANUAL_FIVE_FILE_EXPORT" and d.get("render_upload",{}).get("mode")=="MANUAL_USER_UPLOAD" and d.get("render_upload",{}).get("automatic_upload") is False and d.get("analysis",{}).get("decision_engine")=="NONE" and d.get("analysis",{}).get("probability_core")=="NONE" and d.get("validation",{}).get("player_analysis_target_teams_only") is True and d.get("validation",{}).get("other_league_players_market_evidence") is False' \
               && echo "$OPENAPI" | python -c 'import json,sys; p=json.load(sys.stdin).get("paths",{}); assert "/api/predict-bundle" in p and "/api/predict" not in p and "/api/predict-files" not in p and "/api/predict-shortcut-fast" not in p' \
               && grep -Fq 'SPEC-v1.1-Auswertung der FootyStats-Daten' <<<"$PAGE" \
               && grep -Fq 'stärkster Markt' <<<"$PAGE" \
               && grep -Fq 'vollständige sinnvolle SPEC-v1.1-Signalbreite' <<<"$PAGE"; then
-              echo "Render SPEC v1.1 full-signal strongest-market analysis verified"
+              echo "Render SPEC v1.1 full-signal target-player analysis verified"
               exit 0
             fi
             sleep 10
           done
-          echo "Render did not expose the expected SPEC v1.1 full-signal strongest-market deployment"
+          echo "Render did not expose the expected SPEC v1.1 full-signal target-player deployment"
           exit 1
