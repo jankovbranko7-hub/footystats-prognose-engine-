@@ -16,9 +16,11 @@ jobs:
       - run: pip install -r requirements.txt
       - name: Compile SPEC v1.1 full-signal production stack
         run: |
-          python -m py_compile app_v040.py spec11_native_engine.py spec11_signal_expansion.py spec11_strongest_market_engine.py spec11_strongest_market_patch.py spec11_full_signal_patch.py spec11_target_player_scope_patch.py research/test_spec11_native_engine.py research/test_spec11_strongest_market.py app.py
+          python -m py_compile app_v040.py spec11_native_engine.py spec11_signal_expansion.py spec11_strongest_market_engine.py spec11_strongest_market_patch.py spec11_full_signal_patch.py spec11_target_player_scope_patch.py research/test_spec11_native_engine.py research/test_spec11_strongest_market.py research/test_spec11_ranking_consistency.py app.py
       - name: Run strongest-market and cold-start smoke
         run: python -m research.test_spec11_strongest_market
+      - name: Run ranking-consistency regression
+        run: python -m research.test_spec11_ranking_consistency
       - name: Assert production is full-signal comparison without decision engine
         run: |
           python - <<'PY'
@@ -26,8 +28,8 @@ jobs:
           import app_v040 as legacy
           import spec11_strongest_market_engine as engine
 
-          assert app.app.version == '1.1.3-target-player-scope'
-          assert engine.ENGINE_VERSION == '1.1.3-target-player-scope'
+          assert app.app.version == '1.1.4-ranking-consistency'
+          assert engine.ENGINE_VERSION == '1.1.4-ranking-consistency'
           assert 'SPEC-v1.1-Auswertung der FootyStats-Daten' in legacy.INDEX_HTML
           assert 'vollständige sinnvolle SPEC-v1.1-Signalbreite' in legacy.INDEX_HTML
           assert 'kein V0.4.x' in legacy.INDEX_HTML
@@ -46,9 +48,11 @@ jobs:
           assert health['player_analysis_scope'] == 'TARGET_HOME_AWAY_ONLY'
           assert health['league_player_pages_role'] == 'RETRIEVAL_COMPLETENESS_AND_AUDIT_ONLY'
           assert health['other_league_players_market_evidence'] is False
+          assert health['ranking_consistency_guard'] is True
+          assert health['clear_requires_positive_total_evidence'] is True
           paths = {getattr(route,'path',None) for route in app.app.router.routes}
           assert '/api/predict' not in paths
           assert '/api/predict-files' not in paths
           assert '/api/predict-bundle' in paths
-          print('SPEC v1.1 full-signal target-player smoke OK', health)
+          print('SPEC v1.1 ranking-consistent target-player smoke OK', health)
           PY
