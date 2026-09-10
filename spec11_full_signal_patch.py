@@ -1,4 +1,4 @@
-"""Final production wrapper for SPEC v1.1 full-signal strongest-market analysis."""
+"""Production wrapper for SPEC v1.1 full-signal strongest-market analysis."""
 from __future__ import annotations
 import time
 from typing import Any, Dict
@@ -35,7 +35,8 @@ def apply_patch(legacy: Any) -> Any:
             "cold_start_supported": True,
             "low_sample_supported": True,
             "player_analysis_scope": "TARGET_HOME_AWAY_ONLY",
-            "league_player_pages_role": "COMPLETENESS_AND_COMPETITION_REFERENCE_ONLY",
+            "league_player_pages_role": "RETRIEVAL_COMPLETENESS_AND_AUDIT_ONLY",
+            "other_league_players_market_evidence": False,
             "shortcut_capture_unix": int(time.time()),
         }
 
