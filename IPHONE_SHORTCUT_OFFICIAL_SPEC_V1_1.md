@@ -1,6 +1,6 @@
 # iPhone Shortcut — FootyStats Official Analysis Spec v1.1
 
-This is the implementation contract for the existing five-file iPhone workflow.
+This is the implementation contract for the five-file iPhone workflow.
 The user selects exactly one match. The Shortcut does not select bets or matches automatically.
 
 ## Required variables
@@ -40,44 +40,14 @@ Extract from the selected match:
 
 ## Step 2 — MatchDaten
 
-GET `/match`
-
-Query:
-
-- `key=FOOTYSTATS_API_KEY`
-- `match_id=MATCH_ID`
-
-Save as `${MATCH_ID}_MatchDaten.json` with the wrapper:
-
-```json
-{
-  "_footystats_meta": {
-    "endpoint": "/match",
-    "match_id": "MATCH_ID",
-    "captured_at_unix": "CAPTURED_AT_UNIX",
-    "kickoff_unix": "KICKOFF_UNIX",
-    "max_time": null,
-    "temporal_mode": "PREMATCH_FIELD_WHITELIST"
-  },
-  "payload": "RAW_RESPONSE"
-}
-```
-
-Do not write the API key into the JSON.
+GET `/match?match_id=MATCH_ID`.
+Save the complete raw FootyStats response as `${MATCH_ID}_MatchDaten.json` inside the SPEC wrapper. The API key is never written into the JSON. MatchDaten is a mixed endpoint: only the SPEC v1.1 pre-match whitelist is eligible for analysis; same-match post-match/result fields are never prediction inputs.
 
 ## Step 3 — LeagueDaten
 
-GET `/league-season`
+GET `/league-season?season_id=SEASON_ID&max_time=STRICT_MAX_TIME` and `/league-teams?season_id=SEASON_ID&include=stats&max_time=STRICT_MAX_TIME&page=PAGE`.
 
-Query:
-
-- `key=FOOTYSTATS_API_KEY`
-- `season_id=SEASON_ID`
-- `max_time=STRICT_MAX_TIME`
-
-Save as `${SEASON_ID}_LeagueDaten.json`.
-
-Metadata must contain `endpoint=/league-season`, `kickoff_unix`, `captured_at_unix`, and `max_time=STRICT_MAX_TIME`.
+Fetch every `/league-teams` page until `current_page == max_page`. Save the complete league response plus all team pages as `${SEASON_ID}_LeagueDaten.json`. Set `team_pagination_complete` to the Boolean value `true` only after successful completion of all pages.
 
 ## Step 4 — FormDaten
 
@@ -86,64 +56,28 @@ Run two calls:
 1. GET `/lastx?team_id=HOME_ID`
 2. GET `/lastx?team_id=AWAY_ID`
 
-Store both raw responses in one `${MATCH_ID}_FormDaten.json`:
-
-```json
-{
-  "_footystats_meta": {
-    "endpoint": "/lastx",
-    "team_ids": ["HOME_ID", "AWAY_ID"],
-    "captured_at_unix": "CAPTURED_AT_UNIX",
-    "kickoff_unix": "KICKOFF_UNIX",
-    "max_time": null,
-    "temporal_mode": "LIVE_CAPTURE_ONLY_NO_MAX_TIME"
-  },
-  "payload": {
-    "home": "HOME_LASTX_RAW_RESPONSE",
-    "away": "AWAY_LASTX_RAW_RESPONSE"
-  }
-}
-```
-
-Because FootyStats does not document `max_time` for `/lastx`, historical strictness is proven only by a capture/source timestamp before kickoff.
+Store both complete raw responses in `${MATCH_ID}_FormDaten.json`. The documented Last-5/6/10 windows are retained. Because FootyStats does not document `max_time` for `/lastx`, strictness requires capture/source time before kickoff.
 
 ## Step 5 — TableDaten
 
-GET `/league-tables`
-
-Query:
-
-- `key=FOOTYSTATS_API_KEY`
-- `season_id=SEASON_ID`
-- `include=stats`
-- `max_time=STRICT_MAX_TIME`
-
-Save as `${MATCH_ID}_TableDaten.json` with strict metadata.
+GET `/league-tables?season_id=SEASON_ID&include=stats&max_time=STRICT_MAX_TIME`.
+Save the complete raw response as `${MATCH_ID}_TableDaten.json`. Missing league/home/away/specific tables stay unavailable and are never fabricated.
 
 ## Step 6 — PlayerDaten
 
-GET `/league-players`
+GET `/league-players?season_id=SEASON_ID&include=stats&max_time=STRICT_MAX_TIME&page=PAGE`.
 
-Query:
-
-- `key=FOOTYSTATS_API_KEY`
-- `season_id=SEASON_ID`
-- `include=stats`
-- `max_time=STRICT_MAX_TIME`
-- `page=PAGE`
-
-FootyStats returns at most 200 players per page. Continue until `current_page == max_page`.
-Concatenate player data in page order, retain pager audit information, then retain players whose `club_team_id` or `club_team_2_id` equals HOME_ID or AWAY_ID.
-
-Save as `${MATCH_ID}_PlayerDaten.json` and set:
+FootyStats returns at most 200 players per page. Continue until `current_page == max_page` and retain the raw paginated response for completeness/audit. Set:
 
 ```json
 "pagination_complete": true
 ```
 
-only after every page was successfully fetched.
+as a real Boolean only after every page has been fetched successfully.
 
-## Step 7 — Validate exactly five files
+The backend analysis then uses only players whose `club_team_id` or `club_team_2_id` equals `HOME_ID` or `AWAY_ID`. Other league players do not become opponent/player signals; they may only be used as competition reference context. If one target team has no returned players, that player block is `NICHT VERFÜGBAR`, never zero strength.
+
+## Step 7 — Validate and save exactly five files
 
 The package must contain exactly:
 
@@ -153,19 +87,17 @@ The package must contain exactly:
 4. `${MATCH_ID}_TableDaten.json`
 5. `${MATCH_ID}_PlayerDaten.json`
 
-If any source fails, stop with an error. Do not invent substitute values.
+If any source fails, stop with an error. Do not invent substitute values. The Shortcut stops after the fifth local save; it does not automatically upload to Render and does not show an automatic Render result popup.
 
-## Step 8 — Send to Render
+## Step 8 — Manual Render analysis
 
-POST multipart/form-data to:
+The user opens `https://footystats-prognose-engine.onrender.com`, selects the exact five JSON files for one match, and presses `SPEC v1.1 auswerten`.
 
-`https://footystats-prognose-engine.onrender.com/api/predict-bundle`
-
-Use form field `files` for all five JSON files.
+The analysis endpoint is `/api/predict-bundle`.
 
 ## Interpretation contract
 
-The backend, not the Shortcut, evaluates the match. The Shortcut only collects and preserves the five FootyStats sources.
+The backend evaluates the five FootyStats sources as SPEC-v1.1 evidence and reports the strongest supported market among Home, Draw, Away, BTTS Yes, BTTS No, Over 2.5 and Under 2.5.
 
 - Home team: primary `home` splits.
 - Away team: primary `away` splits.
@@ -173,4 +105,11 @@ The backend, not the Shortcut, evaluates the match. The Shortcut only collects a
 - `*_potential`: FootyStats historical/pre-match statistics, never relabelled as calibrated model probabilities.
 - Same-match post-match values: never prediction features.
 - Official FootyStats tutorial examples: evidence flags only.
-- V0.4.3 FULL-5 Probability Core remains unchanged.
+- 0 competition matches = `COLD START`; 1–3 = `LOW SAMPLE`; neither is an automatic exclusion.
+- Missing values = `NICHT VERFÜGBAR`, not zero strength and not a fabricated replacement.
+- Related raw fields are grouped into evidence blocks so correlated columns are not counted as dozens of independent votes.
+- Independent central sources (Match, League, Form, Table, Player) have priority in the strongest-market comparison.
+- H2H/trends/diagnostic context is visible but does not receive an independent ranking vote.
+- No V0.4.3 or V0.4.2 probability core is used.
+- No fallback is used.
+- No SPIELEN/BEOBACHTEN/AUSLASSEN decision engine is used.
