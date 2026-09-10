@@ -1,6 +1,6 @@
 {
   "schema_version": "1.1",
-  "schema_revision": "1.1.5",
+  "schema_revision": "1.1.6",
   "name": "FOOTYSTATS_IPHONE_SHORTCUT_API_SCHEMA",
   "timezone": "Europe/Vienna",
   "footystats_base_url": "https://api.football-data-api.com",
@@ -22,9 +22,7 @@
       "timezone": "Europe/Vienna",
       "page": "${PAGE}"
     },
-    "pagination": {
-      "rule": "fetch until current_page == max_page"
-    },
+    "pagination": {"rule": "fetch until current_page == max_page"},
     "user_action": "User manually selects exactly one match",
     "extract": ["id", "homeID", "awayID", "competition_id", "date_unix"]
   },
@@ -74,8 +72,9 @@
       "include": "stats",
       "max_time": "${strict_max_time}",
       "pagination": "fetch every page until current_page == max_page",
-      "storage_scope": "raw paginated league response retained for completeness/audit",
-      "analysis_scope": "only players whose club_team_id or club_team_2_id equals HOME_ID or AWAY_ID; other players may only provide competition reference context",
+      "storage_scope": "raw paginated league response retained so the two target teams cannot be missed and pagination can be audited",
+      "analysis_scope": "ONLY players whose club_team_id or club_team_2_id equals HOME_ID or AWAY_ID may influence market analysis",
+      "other_league_players_market_evidence": false,
       "pagination_complete_type": "boolean",
       "temporal_mode": "STRICT_MAX_TIME"
     }
@@ -95,7 +94,8 @@
     "analysis_endpoint": "/api/predict-bundle"
   },
   "analysis": {
-    "mode": "SPEC_V1_1_STRONGEST_MARKET",
+    "mode": "SPEC_V1_1_FULL_SIGNAL_STRONGEST_MARKET",
+    "signal_scope": "all meaningful registered SPEC v1.1 families, grouped to avoid correlated duplicate votes",
     "probability_core": "NONE",
     "decision_engine": "NONE",
     "fallback": "NONE",
@@ -112,6 +112,7 @@
     "player_pagination_complete_required": true,
     "league_team_pagination_complete_required": true,
     "player_analysis_target_teams_only": true,
+    "other_league_players_market_evidence": false,
     "probability_core_used": false,
     "decision_engine_used": false,
     "fallback_used": false
