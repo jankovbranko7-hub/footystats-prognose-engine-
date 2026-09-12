@@ -28,6 +28,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;backgrou
 .w{max-width:900px;margin:auto;padding:16px}.c{background:#fff;border-radius:15px;padding:16px;margin:12px 0;box-shadow:0 1px 5px #0001}
 .g{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:9px}.m{border:1px solid #e5e7eb;border-radius:11px;padding:11px}
 .b{font-size:1.1rem;font-weight:700}.hero{font-size:1.45rem;font-weight:800}.s{font-size:.84rem;color:#6b7280}.ok{color:#047857}.warn{color:#b45309}.bad{color:#b91c1c}
+.srcgrid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:7px;margin-top:9px}.src{border:1px solid #e5e7eb;border-radius:10px;padding:8px 5px;text-align:center;min-width:0}.src b{display:block;font-size:.76rem}.src span{display:block;font-size:.72rem;font-weight:800;margin-top:4px}.src small{display:block;font-size:.68rem;color:#6b7280;margin-top:3px}.src-ok{background:#ecfdf5}.src-bad{background:#fef2f2}.src-mix{background:#fff7ed}.src-neutral{background:#f9fafb}.src-na{background:#f9fafb;opacity:.72}.qsum{border:1px solid #e5e7eb;border-radius:10px;padding:10px;margin-top:9px;line-height:1.45}.qsum .s{margin-top:4px}@media(max-width:640px){.srcgrid{grid-template-columns:repeat(2,minmax(0,1fr))}.srcgrid .src:last-child{grid-column:span 2}}
 button{width:100%;padding:13px;border:0;border-radius:11px;background:#111827;color:#fff;font-weight:700;font-size:1rem;margin-top:8px}
 input{width:100%;margin:8px 0 8px}table{width:100%;border-collapse:collapse}td,th{padding:9px 6px;border-bottom:1px solid #eee;text-align:left;font-size:.9rem}
 summary{font-weight:700;cursor:pointer}pre{white-space:pre-wrap;word-break:break-word;font-size:.74rem}
@@ -57,6 +58,39 @@ function formFor(files){const f=new FormData();files.forEach(x=>f.append('files'
 function signalRows(signals){
   return (signals||[]).map(s=>'<tr><td>'+esc(s.source)+'</td><td>'+esc(s.domain)+'</td><td class="'+cls(s.status)+'"><b>'+esc(s.status)+'</b></td><td>'+esc(s.reason)+'</td></tr>').join('');
 }
+const CENTRAL_SOURCES=['MATCH','LEAGUE','FORM','TABLE','PLAYER'];
+function signed(v){
+  const n=Number(v||0);
+  return (n>0?'+':'')+String(n);
+}
+function sourceView(market,source){
+  const e=(((market||{}).source_evidence||{})[source]||{});
+  const sp=Number(e.support_blocks||0),sn=Number(e.contradiction_blocks||0),av=Number(e.available_blocks||0);
+  const status=e.status||'NICHT VERFÜGBAR';
+  if(!av||status==='NICHT VERFÜGBAR')return{label:'NICHT VERFÜGBAR',css:'src-na',kind:'na',sp,sn,av};
+  if(status==='BESTÄTIGEND')return{label:'BESTÄTIGEND',css:'src-ok',kind:'support',sp,sn,av};
+  if(status==='WIDERSPRUCH')return{label:'WIDERSPRUCH',css:'src-bad',kind:'contra',sp,sn,av};
+  if(sp>0&&sn>0)return{label:'GEMISCHT',css:'src-mix',kind:'mixed',sp,sn,av};
+  return{label:'NEUTRAL',css:'src-neutral',kind:'neutral',sp,sn,av};
+}
+function sourceGrid(market){
+  return '<div class="srcgrid">'+CENTRAL_SOURCES.map(function(source){
+    const v=sourceView(market,source);
+    return '<div class="src '+v.css+'"><b>'+esc(source)+'</b><span>'+esc(v.label)+'</span><small>'+esc(v.sp)+' + / '+esc(v.sn)+' −</small></div>';
+  }).join('')+'</div>';
+}
+function sourceBalance(market){
+  const counts={support:0,contra:0,mixed:0,neutral:0,na:0};
+  CENTRAL_SOURCES.forEach(function(source){counts[sourceView(market,source).kind]++;});
+  const parts=[
+    counts.support+' bestätigend',
+    counts.contra+' widersprechend',
+    counts.mixed+' gemischt'
+  ];
+  if(counts.neutral)parts.push(counts.neutral+' neutral');
+  if(counts.na)parts.push(counts.na+' nicht verfügbar');
+  return parts.join(' · ');
+}
 document.getElementById('go').onclick=async function(){
   const files=[...picker.files],out=document.getElementById('out');
   if(files.length!==5){out.innerHTML='<div class="c bad"><b>Exakt 5 JSON-Dateien auswählen.</b></div>';return;}
@@ -70,7 +104,15 @@ document.getElementById('go').onclick=async function(){
     }
     const top=d.strongest_market||{},sample=d.sample_state||{},integ=d.integrity||{},match=(d.audit||{}).match||{};
     const lead=top.clear_lead?'KLAR FÜHREND':'KEINE KLARE EMPFEHLUNG';
-    const markets=(d.markets||[]).map(m=>'<tr><td>'+esc(m.rank)+'</td><td><b>'+esc(m.label)+'</b></td><td>'+esc(m.support_count)+'</td><td>'+esc(m.contradiction_count)+'</td><td>'+esc(m.neutral_count)+'</td><td>'+esc(m.available_signal_count)+'</td><td><b>'+esc(m.net_evidence)+'</b></td></tr>').join('');
+    const ordered=d.markets||[];
+    const topMarket=ordered.find(m=>m.key===top.key)||(ordered[0]||top);
+    const second=ordered[1]||{};
+    const sourcesHtml=sourceGrid(topMarket);
+    const sourceBalanceText=sourceBalance(topMarket);
+    const rankContext=second.label
+      ? '<div class="qsum"><b>Rangvergleich:</b> #1 '+esc(topMarket.label)+' · Quellen-Netto '+esc(signed(topMarket.source_net_evidence))+' · Roh-Netto '+esc(signed(topMarket.net_evidence))+'<br>#2 '+esc(second.label)+' · Quellen-Netto '+esc(signed(second.source_net_evidence))+' · Roh-Netto '+esc(signed(second.net_evidence))+'<div class="s">V1.1.5 rankt primär nach unabhängiger Quellenrichtung und Quellenbilanz; die Roh-Netto-Evidenz ist nachrangig und entscheidet nicht allein.</div></div>'
+      : '';
+    const markets=ordered.map(m=>'<tr><td>'+esc(m.rank)+'</td><td><b>'+esc(m.label)+'</b></td><td>'+esc(m.support_count)+'</td><td>'+esc(m.contradiction_count)+'</td><td>'+esc(m.neutral_count)+'</td><td>'+esc(m.available_signal_count)+'</td><td><b>'+esc(m.net_evidence)+'</b></td></tr>').join('');
     const details=(d.markets||[]).map(m=>'<div class="c"><details><summary>#'+esc(m.rank)+' '+esc(m.label)+'</summary><p class="s">Bestätigend '+esc(m.support_count)+' · Widerspruch '+esc(m.contradiction_count)+' · Neutral '+esc(m.neutral_count)+' · verfügbar '+esc(m.available_signal_count)+' · Netto '+esc(m.net_evidence)+'</p><table><tr><th>Quelle</th><th>Signal</th><th>Status</th><th>Begründung</th></tr>'+signalRows(m.signals)+'</table></details></div>').join('');
     out.innerHTML=
       '<div class="c"><h3>Spiel</h3><div class="b">'+esc(match.home_name||'Heim')+' – '+esc(match.away_name||'Auswärts')+'</div><div class="s">Match-ID '+esc(match.match_id)+' · Competition '+esc(match.competition_id)+'</div></div>'+ 
@@ -90,7 +132,11 @@ document.getElementById('go').onclick=async function(){
         '<div class="m"><div class="s">Neutrale Signale</div><div class="b">'+esc(top.neutral_count)+'</div></div>'+ 
         '<div class="m"><div class="s">Verfügbare Signale</div><div class="b">'+esc(top.available_signal_count)+'</div></div>'+ 
         '<div class="m"><div class="s">Netto-Evidenz</div><div class="b">'+esc(top.net_evidence)+'</div></div>'+ 
-      '</div><p><b>Auswertung:</b> '+esc(d.recommendation)+'</p><p class="s">'+esc(d.recommendation_reason)+'</p><p class="s">Das ist eine Auswertung der gelieferten FootyStats-Daten nach SPEC v1.1. Es wird nicht behauptet, dass FootyStats selbst diese Wett-Empfehlung veröffentlicht.</p></div>'+ 
+        '<div class="m"><div class="s">Quellen-Netto</div><div class="b">'+esc(signed(topMarket.source_net_evidence))+'</div></div>'+
+        '<div class="m"><div class="s">Bestätigende Hauptquellen</div><div class="b">'+esc((topMarket.central_support_sources||[]).length)+'/5</div></div>'+
+      '</div><h4 style="margin-bottom:4px">Zentrale Quellen</h4>'+sourcesHtml+
+      '<div class="qsum"><b>Quellenbilanz:</b> '+esc(sourceBalanceText)+'</div>'+rankContext+
+      '<p><b>Auswertung:</b> '+esc(d.recommendation)+'</p><p class="s">'+esc(d.recommendation_reason)+'</p><p class="s">Das ist eine Auswertung der gelieferten FootyStats-Daten nach SPEC v1.1. Es wird nicht behauptet, dass FootyStats selbst diese Wett-Empfehlung veröffentlicht.</p></div>'+ 
       '<div class="c"><h3>4. Marktvergleich</h3><table><tr><th>#</th><th>Markt</th><th>+</th><th>−</th><th>Neutral</th><th>verfügbar</th><th>Netto</th></tr>'+markets+'</table><p class="s">Keine versteckten Gewichte und keine Modellwahrscheinlichkeit. Die Rangfolge basiert auf der Richtung der tatsächlich verfügbaren SPEC-v1.1-Signale.</p></div>'+ 
       '<div class="c"><h3>5. Signal-Audit</h3><p class="s">Jeden Markt öffnen, um die verwendeten FootyStats-Signalblöcke und ihre Begründung zu sehen.</p></div>'+ 
       details+
