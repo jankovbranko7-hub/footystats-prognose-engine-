@@ -142,8 +142,8 @@ def apply_patch(legacy: Any) -> Any:
     legacy.INDEX_HTML = legacy.INDEX_HTML.replace("Engine v1.1.5", "Engine v1.1.6")
     legacy.INDEX_HTML = legacy.INDEX_HTML.replace("Build 1.1.5-draw-parity", "Build 1.1.6-cross-market-normalized")
     legacy.INDEX_HTML = legacy.INDEX_HTML.replace(
-        "esc((topMarket.central_support_sources||[]).length)+'/5'",
-        "esc((topMarket.central_support_sources||[]).length)+'/'+esc((topMarket.available_central_sources||[]).length)+' aktiv'"
+        "esc((topMarket.central_support_sources||[]).length)+'/5</div>",
+        "esc((topMarket.central_support_sources||[]).length)+'/'+esc((topMarket.available_central_sources||[]).length)+' aktiv</div>"
     )
     legacy.INDEX_HTML = legacy.INDEX_HTML.replace(
         "V1.1.5 rankt primär nach unabhängiger Quellenrichtung und Quellenbilanz; die Roh-Netto-Evidenz ist nachrangig und entscheidet nicht allein.",
