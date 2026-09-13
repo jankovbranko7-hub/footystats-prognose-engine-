@@ -11,4 +11,7 @@ assert '/api/predict-bundle' in html
 assert 'expected_input_file_count: 5' in html
 assert 'input_files_complete: inputs.length === 5' in html
 assert 'technical_audit: lastAudit' in html
+assert 'available_central_sources' in html
+assert "+'/'+esc((topMarket.available_central_sources||[]).length)+' aktiv" in html
+assert "central_support_sources||[]).length)+'/5</div>" not in html
 print('SPEC v1.1 / Engine v1.1.6 backtest report download UI OK')
