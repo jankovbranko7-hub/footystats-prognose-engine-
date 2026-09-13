@@ -19,6 +19,7 @@ are not used as primary cross-market advantages.
 from __future__ import annotations
 
 from typing import Any, Dict, List
+import time
 
 import spec11_strongest_market_engine as engine
 import spec11_strongest_market_patch as surface
@@ -159,9 +160,38 @@ def apply_patch(legacy: Any) -> Any:
         "ENGINE-v1.1.6_BACKTEST.json"
     )
 
+    app.router.routes = [r for r in app.router.routes if getattr(r, "path", None) != "/api/health"]
+
+    def health() -> Dict[str, Any]:
+        return {
+            "ok": True,
+            "production": True,
+            "engine": ENGINE_NAME,
+            "version": ENGINE_VERSION,
+            "spec_version": "1.1",
+            "architecture": "SPEC_V1_1_FULL_SIGNAL_COMPARISON",
+            "analysis_type": "STRONGEST_MARKET",
+            "decision_engine": "NONE",
+            "probability_core": "NONE",
+            "v043_used": False,
+            "v042_used": False,
+            "fallback": "NONE",
+            "odds_used": False,
+            "cold_start_supported": True,
+            "low_sample_supported": True,
+            "player_analysis_scope": "TARGET_HOME_AWAY_ONLY",
+            "league_player_pages_role": "RETRIEVAL_COMPLETENESS_AND_AUDIT_ONLY",
+            "other_league_players_market_evidence": False,
+            "ranking_consistency_guard": True,
+            "clear_requires_positive_total_evidence": True,
+            "draw_parity_guard": True,
+            "generic_strength_parity_is_draw_evidence": False,
+            "cross_market_normalization": True,
+            "cross_market_primary_metric": "NORMALIZED_APPLICABLE_SOURCE_BALANCE",
+            "shortcut_capture_unix": int(time.time()),
+        }
+
+    app.add_api_route("/api/health", health, methods=["GET"])
     app.version = ENGINE_VERSION
     app.title = "FootyStats SPEC v1.1 · Engine v1.1.6"
-
-    # Existing draw-parity health route closes over draw.ENGINE_VERSION, which
-    # was updated above; all other health semantics remain untouched.
     return app
