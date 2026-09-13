@@ -150,6 +150,13 @@ def apply_patch(legacy: Any) -> Any:
         "V1.1.6 vergleicht Marktfamilien über normalisierte Quellenkonsistenz; absolute Quellensummen und Roh-Netto-Evidenz bleiben Auditwerte und entscheiden nicht allein."
     )
     legacy.INDEX_HTML = legacy.INDEX_HTML.replace(
+        " · Quellen-Netto '+esc(signed(topMarket.source_net_evidence))+' · Roh-Netto ",
+        " · Norm-Quellen '+esc(Number(topMarket.source_balance||0).toFixed(2))+' · Quellen-Netto '+esc(signed(topMarket.source_net_evidence))+' · Roh-Netto "
+    ).replace(
+        " · Quellen-Netto '+esc(signed(second.source_net_evidence))+' · Roh-Netto ",
+        " · Norm-Quellen '+esc(Number(second.source_balance||0).toFixed(2))+' · Quellen-Netto '+esc(signed(second.source_net_evidence))+' · Roh-Netto "
+    )
+    legacy.INDEX_HTML = legacy.INDEX_HTML.replace(
         "SPEC_V1_1_ENGINE_V1_1_5_BACKTEST_REPORT",
         "SPEC_V1_1_ENGINE_V1_1_6_BACKTEST_REPORT"
     ).replace(
