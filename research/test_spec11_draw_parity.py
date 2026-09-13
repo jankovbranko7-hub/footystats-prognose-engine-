@@ -1,4 +1,4 @@
-"""Regression tests for SPEC v1.1 / Engine v1.1.5 draw-parity semantics."""
+"""Regression tests for SPEC v1.1 / Engine v1.1.6 cross-market-normalized semantics."""
 import app  # applies production patch stack
 import spec11_strongest_market_engine as engine
 from spec11_draw_parity_patch import _neutralize_generic_draw_parity
@@ -55,9 +55,9 @@ assert sample[1]["status"] == SUPPORT
 assert sample[2]["status"] == NEUTRAL
 
 health = next(r.endpoint for r in app.app.router.routes if getattr(r, "path", None) == "/api/health")()
-assert app.app.version == "1.1.5-draw-parity"
-assert engine.ENGINE_VERSION == "1.1.5-draw-parity"
+assert app.app.version == "1.1.6-cross-market-normalized"
+assert engine.ENGINE_VERSION == "1.1.6-cross-market-normalized"
 assert health["draw_parity_guard"] is True
 assert health["generic_strength_parity_is_draw_evidence"] is False
 
-print("SPEC v1.1 / Engine v1.1.5 draw-parity regression OK")
+print("SPEC v1.1 / Engine v1.1.6 draw-parity regression OK")
