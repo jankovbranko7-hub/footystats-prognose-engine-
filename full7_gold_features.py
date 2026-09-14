@@ -41,6 +41,25 @@ MANAGER_METRICS = (
     "over25_overall", "over25_home", "over25_away",
 )
 
+LEAGUE_CONTEXT_FIELDS = (
+    "totalMatches", "matchesCompleted", "xg_avg",
+    "seasonAVG_overall", "seasonAVG_home", "seasonAVG_away",
+    "seasonBTTSPercentage", "seasonOver15Percentage_overall",
+    "seasonOver25Percentage_overall", "seasonOver35Percentage_overall",
+    "seasonCSPercentage", "homeWinPercentage", "awayWinPercentage", "drawPercentage",
+    "homeAttackAdvantagePercentage", "homeDefenceAdvantagePercentage",
+    "shotsAVG_overall", "shotsAVG_home", "shotsAVG_away",
+    "cornersAVG_overall", "cornersAVG_home", "cornersAVG_away",
+    "cardsAVG_overall", "cardsAVG_home", "cardsAVG_away",
+    "foulsAVG_overall", "foulsAVG_home", "foulsAVG_away",
+    "offsidesAVG_overall", "offsidesAVG_home", "offsidesAVG_away",
+)
+
+FORM_BASE_METRICS = tuple(
+    metric[:-8] if metric.endswith("_overall") else metric
+    for metric in FORM_METRICS
+)
+
 
 def num(v: Any) -> Optional[float]:
     if v is None or isinstance(v, bool): return None
@@ -139,6 +158,18 @@ def match_block(match: Dict[str, Any]) -> Dict[str, Any]:
     return block_result("match_prematch",f,["Odds, actual/live statistics and provider narrative are excluded."])
 
 
+def provider_potential_block(match: Dict[str, Any]) -> Dict[str, Any]:
+    f: Dict[str, float] = {}
+    for key, value in match.items():
+        if "potential" in key.lower():
+            put(f, f"provider_{key}", value)
+    return block_result(
+        "provider_potentials_research",
+        f,
+        ["Provider-derived only; isolated from core evidence and requires forward-OOS ablation before activation."],
+    )
+
+
 def league_blocks(league: Dict[str, Any], home_id: int, away_id: int) -> List[Dict[str, Any]]:
     teams=team_rows(league); h=by_id(teams,home_id); a=by_id(teams,away_id)
     f: Dict[str,float]={}; rel: Dict[str,float]={}; samples: Dict[str,float]={}
@@ -154,6 +185,20 @@ def league_blocks(league: Dict[str, Any], home_id: int, away_id: int) -> List[Di
         hv=team_metric(h,metric,"home"); av=team_metric(a,metric,"away")
         add_diff(rel,f"venue_{metric}_home_minus_away",hv,av)
     return [block_result("league_team_profiles",f),block_result("league_relative",rel),block_result("sample_exposure",samples)]
+
+
+def league_context_block(league: Dict[str, Any]) -> Dict[str, Any]:
+    wrapper = league.get("league") if isinstance(league, dict) else None
+    row = api_data(wrapper)
+    row = row if isinstance(row, dict) else {}
+    f: Dict[str, float] = {}
+    for key in LEAGUE_CONTEXT_FIELDS:
+        put(f, f"league_{key}", row.get(key))
+    return block_result(
+        "league_context",
+        f,
+        ["League-level base rates and home/away environment from the same strict pre-match snapshot."],
+    )
 
 
 def form_records(form: Dict[str, Any], side: str, team_id: int) -> Dict[int,Dict[str,Any]]:
@@ -192,6 +237,56 @@ def form_blocks(form: Dict[str,Any], home_id:int, away_id:int) -> List[Dict[str,
     return [block_result("form_windows",f),block_result("form_deltas",d),block_result("form_exposure",exposure)]
 
 
+def form_match_venue_blocks(form: Dict[str, Any], home_id: int, away_id: int) -> List[Dict[str, Any]]:
+    f: Dict[str, float] = {}
+    d: Dict[str, float] = {}
+    exposure: Dict[str, float] = {}
+    home_records = form_records(form, "home", home_id)
+    away_records = form_records(form, "away", away_id)
+
+    for side, recs, venue in (("home", home_records, "home"), ("away", away_records, "away")):
+        for n in (5, 6, 10):
+            row = recs.get(n)
+            st = stats(row)
+            sample = num(st.get(f"seasonMatchesPlayed_{venue}")) if row else None
+            put(exposure, f"{side}_last{n}_{venue}_matches", sample)
+            if row and sample is not None and sample > 0:
+                for base in FORM_BASE_METRICS:
+                    put(f, f"{side}_last{n}_{venue}_{base}", st.get(f"{base}_{venue}"))
+
+        short = recs.get(5)
+        long = recs.get(10) or recs.get(6)
+        if short and long:
+            ss, ls = stats(short), stats(long)
+            short_sample = num(ss.get(f"seasonMatchesPlayed_{venue}"))
+            long_sample = num(ls.get(f"seasonMatchesPlayed_{venue}"))
+            if short_sample and long_sample:
+                for base in FORM_BASE_METRICS:
+                    a = num(ss.get(f"{base}_{venue}"))
+                    b = num(ls.get(f"{base}_{venue}"))
+                    if a is not None and b is not None:
+                        d[f"{side}_matchvenue_form_delta_{base}"] = a - b
+
+    for n in (5, 6, 10):
+        hr, ar = home_records.get(n), away_records.get(n)
+        if hr and ar:
+            hs, ass = stats(hr), stats(ar)
+            hsample = num(hs.get("seasonMatchesPlayed_home"))
+            asample = num(ass.get("seasonMatchesPlayed_away"))
+            if hsample and asample:
+                for base in FORM_BASE_METRICS:
+                    hv = num(hs.get(f"{base}_home"))
+                    av = num(ass.get(f"{base}_away"))
+                    if hv is not None and av is not None:
+                        d[f"form_last{n}_matchvenue_{base}_home_minus_away"] = hv - av
+
+    return [
+        block_result("form_match_venue", f),
+        block_result("form_match_venue_deltas", d),
+        block_result("form_match_venue_exposure", exposure),
+    ]
+
+
 def table_rows(table: Dict[str,Any], key:str) -> List[Dict[str,Any]]:
     d=api_data(table)
     if not isinstance(d,dict): return []
@@ -225,6 +320,9 @@ def table_block(table:Dict[str,Any],home_id:int,away_id:int)->Dict[str,Any]:
     for split in ("overall","home","away"):
         add_diff(f,f"table_{split}_ppg_diff",f.get(f"home_table_{split}_ppg"),f.get(f"away_table_{split}_ppg"))
         add_diff(f,f"table_{split}_rank_pct_diff",f.get(f"home_table_{split}_rank_percentile"),f.get(f"away_table_{split}_rank_percentile"))
+    add_diff(f,"table_matchvenue_ppg_diff",f.get("home_table_home_ppg"),f.get("away_table_away_ppg"))
+    add_diff(f,"table_matchvenue_rank_pct_diff",f.get("home_table_home_rank_percentile"),f.get("away_table_away_rank_percentile"))
+    add_diff(f,"table_matchvenue_goal_difference_diff",f.get("home_table_home_goal_difference"),f.get("away_table_away_goal_difference"))
     return block_result("table_relative_strength",f)
 
 
@@ -259,7 +357,13 @@ def player_block(player:Dict[str,Any],home_id:int,away_id:int)->Dict[str,Any]:
     rows=player_rows(player); f:Dict[str,float]={}
     for side,tid in (("home",home_id),("away",away_id)):
         ps=player_team(rows,tid); mins=[num(p.get("minutes_played_overall")) or 0 for p in ps]
+        active_minutes=[m for m in mins if m > 0]
         put(f,f"{side}_players_found",len(ps)); put(f,f"{side}_player_minutes_total",sum(mins)); put(f,f"{side}_player_minutes_mean",sum(mins)/len(mins) if mins else None)
+        put(f,f"{side}_active_players",len(active_minutes))
+        put(f,f"{side}_active_player_share",len(active_minutes)/len(ps) if ps else None)
+        put(f,f"{side}_active_minutes_min",min(active_minutes) if active_minutes else None)
+        put(f,f"{side}_active_minutes_median",median(active_minutes) if active_minutes else None)
+        put(f,f"{side}_active_minutes_max",max(active_minutes) if active_minutes else None)
         put(f,f"{side}_goals_per90_minutes_weighted",weighted_player_rate(ps,"goals_per_90_overall")); put(f,f"{side}_assists_per90_minutes_weighted",weighted_player_rate(ps,"assists_per_90_overall")); put(f,f"{side}_involvement_per90_minutes_weighted",weighted_player_rate(ps,"goals_involved_per_90_overall"))
         for key,label in (("goals_overall","goal"),("assists_overall","assist")):
             s=shares(ps,key)
@@ -269,7 +373,7 @@ def player_block(player:Dict[str,Any],home_id:int,away_id:int)->Dict[str,Any]:
         for n,v in zip((1,2,3),s): put(f,f"{side}_top{n}_involvement_share",v)
         for pos in ("Goalkeeper","Defender","Midfielder","Forward"):
             pp=[p for p in ps if p.get("position")==pos]; put(f,f"{side}_{pos.lower()}_count",len(pp)); put(f,f"{side}_{pos.lower()}_minutes",sum(num(p.get("minutes_played_overall")) or 0 for p in pp))
-    for metric in ("players_found","player_minutes_total","player_minutes_mean","goals_per90_minutes_weighted","assists_per90_minutes_weighted","involvement_per90_minutes_weighted","top1_goal_share","top2_goal_share","top3_goal_share","top1_involvement_share","top2_involvement_share","top3_involvement_share"):
+    for metric in ("players_found","active_players","active_player_share","active_minutes_min","active_minutes_median","active_minutes_max","player_minutes_total","player_minutes_mean","goals_per90_minutes_weighted","assists_per90_minutes_weighted","involvement_per90_minutes_weighted","top1_goal_share","top2_goal_share","top3_goal_share","top1_involvement_share","top2_involvement_share","top3_involvement_share"):
         add_diff(f,f"player_{metric}_home_minus_away",f.get(f"home_{metric}"),f.get(f"away_{metric}"))
     return block_result("player_depth_quality_concentration",f,["Player stats are aggregated; no injury or lineup inference is made."])
 
@@ -279,9 +383,35 @@ def h2h_block(match:Dict[str,Any])->Dict[str,Any]:
     if not isinstance(h,dict):return block_result("h2h_secondary",f,["H2H absent"])
     prev=h.get("previous_matches_results") or {}; bet=h.get("betting_stats") or {}
     for out,k in (("matches","totalMatches"),("home_team_win_pct","team_a_win_percent"),("away_team_win_pct","team_b_win_percent")): put(f,out,prev.get(k))
-    for k in ("avg_goals","over15Percentage","over25Percentage","over35Percentage","clubACSPercentage","clubBCSPercentage"):
+    for k in ("avg_goals","bttsPercentage","over05Percentage","over15Percentage","over25Percentage","over35Percentage","clubACSPercentage","clubBCSPercentage"):
         put(f,k,bet.get(k))
-    return block_result("h2h_secondary",f,["Secondary only; sample size is retained and H2H is never a standalone core vote."])
+
+    history = [r for r in (h.get("previous_matches_ids") or []) if isinstance(r, dict)]
+    kickoff = num(match.get("date_unix"))
+    dated = [r for r in history if num(r.get("date_unix")) is not None and (kickoff is None or num(r.get("date_unix")) < kickoff)]
+    put(f, "history_record_count", len(dated))
+    if dated and kickoff is not None:
+        dates = [num(r.get("date_unix")) for r in dated]
+        put(f, "latest_match_age_days", (kickoff - max(dates)) / 86400.0)
+        put(f, "oldest_match_age_days", (kickoff - min(dates)) / 86400.0)
+
+    home_id, away_id = intv(match.get("homeID")), intv(match.get("awayID"))
+    same_orientation = [
+        r for r in dated
+        if intv(r.get("team_a_id")) == home_id and intv(r.get("team_b_id")) == away_id
+    ]
+    put(f, "same_venue_orientation_count", len(same_orientation))
+    scored = []
+    for r in same_orientation:
+        hg, ag = num(r.get("team_a_goals")), num(r.get("team_b_goals"))
+        if hg is not None and ag is not None:
+            scored.append((hg, ag))
+    if scored:
+        totals = [a+b for a,b in scored]
+        put(f, "same_venue_avg_goals", sum(totals)/len(totals))
+        put(f, "same_venue_btts_pct", 100.0*sum(1 for a,b in scored if a>0 and b>0)/len(scored))
+        put(f, "same_venue_over25_pct", 100.0*sum(1 for t in totals if t>2.5)/len(totals))
+    return block_result("h2h_secondary",f,["Secondary diagnostics only; sample size, age and same-venue orientation retained. H2H is never a standalone core vote."])
 
 
 def referee_block(referee:Dict[str,Any],referee_id:Optional[int])->Dict[str,Any]:
@@ -338,8 +468,11 @@ def build_gold_features(gold:Dict[str,Any])->Dict[str,Any]:
     match=api_data(ns.get("match")); match=match if isinstance(match,dict) else {}
     blocks=[]
     blocks.append(match_block(match))
+    blocks.append(provider_potential_block(match))
     blocks.extend(league_blocks(ns.get("league") or {},ident["home_id"],ident["away_id"]))
+    blocks.append(league_context_block(ns.get("league") or {}))
     blocks.extend(form_blocks(ns.get("form") or {},ident["home_id"],ident["away_id"]))
+    blocks.extend(form_match_venue_blocks(ns.get("form") or {},ident["home_id"],ident["away_id"]))
     blocks.append(table_block(ns.get("table") or {},ident["home_id"],ident["away_id"]))
     blocks.append(player_block(ns.get("player") or {},ident["home_id"],ident["away_id"]))
     blocks.append(h2h_block(match))
@@ -351,7 +484,7 @@ def build_gold_features(gold:Dict[str,Any])->Dict[str,Any]:
             if k in flat: raise ValueError(f"duplicate gold feature: {k}")
             flat[k]=v; owners[k]=b["name"]
     return {
-        "feature_builder_version":"0.1.0",
+        "feature_builder_version":"0.2.0",
         "identity":ident,
         "feature_count":len(flat),
         "available_block_count":sum(1 for b in blocks if b["available"]),
@@ -364,5 +497,7 @@ def build_gold_features(gold:Dict[str,Any])->Dict[str,Any]:
             "table_overlap":"relative table features preferred; result totals are not independent evidence",
             "player_interpretation":"aggregate production/depth only; no injury or lineup inference",
             "referee_manager":"sample exposure retained; later shrinkage/OOS validation required",
+            "provider_potentials":"research-only isolated block; no core evidence vote before forward-OOS ablation",
+            "league_context":"league base rates retained as contextual anchors, not duplicate team votes",
         },
     }
