@@ -38,6 +38,6 @@ class T(unittest.TestCase):
         self.assertEqual(classify_path("match","data.winningTeam",-1)["status"],"TARGET_ONLY")
         self.assertEqual(classify_path("match","data.odds_ft_1",1.8)["status"],"ODDS_BLOCKED")
         self.assertEqual(classify_path("match","data.team_a_xg",0)["status"],"POST_MATCH_BLOCKED")
-        self.assertEqual(classify_path("match","data.team_a_xg_prematch",1.4)["status"],"PREMATCH_CANDIDATE")
+        self.assertEqual(classify_path("match","data.team_a_xg_prematch",1.4)["status"],"CANDIDATE_DIRECT")
 
 if __name__=="__main__": unittest.main()
