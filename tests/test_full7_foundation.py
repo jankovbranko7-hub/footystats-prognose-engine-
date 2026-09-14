@@ -40,4 +40,22 @@ class T(unittest.TestCase):
         self.assertEqual(classify_path("match","data.team_a_xg",0)["status"],"POST_MATCH_BLOCKED")
         self.assertEqual(classify_path("match","data.team_a_xg_prematch",1.4)["status"],"CANDIDATE_DIRECT")
 
+    def test_explicit_unassigned_referee_and_manager_fallback_are_valid(self):
+        x=files()
+        x[0]["data"]["payload"]["data"]["refereeID"]=None
+        x[0]["data"]["payload"]["data"]["coach_a_ID"]=-1
+        x[0]["data"]["payload"]["data"]["coach_b_ID"]=-1
+        x[5]["data"]["_footystats_meta"]["target_referee_id"]=""
+        x[5]["data"]["payload"]["data"]=[]
+        x[6]["data"]["_footystats_meta"]["home_manager_id"]="-1"
+        x[6]["data"]["_footystats_meta"]["away_manager_id"]="-1"
+        x[6]["data"]["payload"]={
+            "home":{"source":"fallback","available":"false"},
+            "away":{"source":"fallback","available":"false"},
+        }
+        result=process_full7(x)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["stage"],"GOLD_READY")
+        self.assertEqual(result["audit"]["warning_count"],0)
+
 if __name__=="__main__": unittest.main()
