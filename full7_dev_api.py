@@ -12,6 +12,7 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 
 from full7_foundation import process_full7, inventory_gold
 from full7_gold_features import build_gold_features
+from full7_signal_groups import audit_signal_groups
 
 APP_VERSION = "0.1.0-full7-validation"
 app = FastAPI(title="FootyStats FULL-7 Validation", version=APP_VERSION)
@@ -45,6 +46,19 @@ async def validate_uploads(files: List[UploadFile]) -> Dict[str, Any]:
         gold = result["gold"]
         registry = inventory_gold(gold)
         gold_features = build_gold_features(gold)
+        signal_groups = audit_signal_groups(gold_features)
+        result["signal_groups"] = {
+            "signal_group_version": signal_groups.get("signal_group_version"),
+            "feature_count": signal_groups.get("feature_count"),
+            "assigned_feature_count": signal_groups.get("assigned_feature_count"),
+            "unassigned_feature_count": signal_groups.get("unassigned_feature_count"),
+            "forbidden_odds_feature_count": signal_groups.get("forbidden_odds_feature_count"),
+            "available_group_count": signal_groups.get("available_group_count"),
+            "available_evidence_cluster_count": signal_groups.get("available_evidence_cluster_count"),
+            "available_evidence_clusters": signal_groups.get("available_evidence_clusters"),
+            "groups": signal_groups.get("groups"),
+            "policy": signal_groups.get("policy"),
+        }
         result["gold_features"] = {
             "feature_builder_version": gold_features.get("feature_builder_version"),
             "feature_count": gold_features.get("feature_count"),
