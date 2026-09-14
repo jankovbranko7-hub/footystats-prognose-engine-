@@ -43,6 +43,23 @@ class JointCoreTest(unittest.TestCase):
         self.assertEqual(uncertainty_action("under_2_5")[0], "BEOBACHTEN")
         self.assertEqual(uncertainty_action("home_win")[0], "AUSLASSEN")
 
+    def test_full_five_file_bundle_uses_joint_core(self):
+        import app
+        from research.test_spec11_native_engine import build_bundle
+
+        result = app.legacy._analyze_bundle(build_bundle(8, 8))
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["engine_version"], "1.1.6-joint-core-rc1")
+        self.assertEqual(result["method"]["probability_core"], "JOINT_POISSON_SCORE_MATRIX_EMPIRICAL_BAYES")
+        self.assertEqual(result["method"]["legacy_signal_ranking_role"], "DIAGNOSTIC_ONLY")
+        self.assertEqual(len(result["joint_outcome"]["probabilities"]), 7)
+        p = result["joint_outcome"]["probabilities"]
+        self.assertAlmostEqual(p["home_win"] + p["draw"] + p["away_win"], 1.0, places=6)
+        self.assertAlmostEqual(p["btts_yes"] + p["btts_no"], 1.0, places=6)
+        self.assertAlmostEqual(p["over_2_5"] + p["under_2_5"], 1.0, places=6)
+        self.assertIn(result["decision"], {"SPIELEN", "BEOBACHTEN", "AUSLASSEN"})
+        self.assertIn("strongest_market", result["evidence_diagnostic"])
+
 
 if __name__ == "__main__":
     unittest.main()
