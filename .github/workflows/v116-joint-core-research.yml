@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - research/v116-joint-core
+      - fix/joint-outcome-ui
+      - main
   workflow_dispatch:
 
 jobs:
