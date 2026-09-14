@@ -131,9 +131,14 @@ def _has_id(v: Any, wanted: int) -> bool:
 
 
 def _player_count(v: Any, wanted: int) -> int:
+    """Count only the primary club assignment for deterministic team mapping.
+
+    FootyStats documents club_team_2_id as a secondary loan/transfer club.
+    It is retained for diagnostics but never used as a silent primary join.
+    """
     n = 0
     for row in _dicts(v):
-        if wanted in [x for x in (_int(row.get("club_team_id")), _int(row.get("club_team_2_id"))) if x is not None]:
+        if _int(row.get("club_team_id")) == wanted:
             if "id" in row and ("minutes_played_overall" in row or "position" in row): n += 1
     return n
 
