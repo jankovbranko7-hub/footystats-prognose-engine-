@@ -1,8 +1,8 @@
 """Joint Outcome Core for SPEC v1.1 / Engine v1.1.6.
 
-This patch preserves the complete qualitative evidence analysis as diagnostics,
-then replaces its final market ranking with one coherent score distribution.
-The qualitative V1.1.6 evidence layer remains diagnostic-only.
+This patch fuses the complete five-source pre-match evidence into one coherent
+score distribution. Every available MATCH, LEAGUE, FORM, TABLE and PLAYER block
+updates the normalized score matrix without inventing missing values.
 """
 from __future__ import annotations
 
@@ -13,8 +13,8 @@ from typing import Any, Dict, List, Tuple
 import spec11_cross_market_normalization_patch as current
 import spec11_native_engine as native
 
-ENGINE_NAME = "FOOTYSTATS_SPEC_V1_1_JOINT_OUTCOME"
-ENGINE_VERSION = "1.1.6-joint-outcome"
+ENGINE_NAME = "FOOTYSTATS_SPEC_V1_1_FULL5_JOINT_OUTCOME"
+ENGINE_VERSION = "1.1.6-full5-joint-outcome"
 MARKETS = ("home_win", "draw", "away_win", "btts_yes", "btts_no", "over_2_5", "under_2_5")
 LABELS = {
     "home_win": "Sieg Heim", "draw": "Unentschieden", "away_win": "Sieg Auswärts",
@@ -134,6 +134,103 @@ def score_probabilities(home_lambda: float, away_lambda: float, cap: int = 14) -
     return result
 
 
+CENTRAL_EVIDENCE_SOURCES = ("MATCH", "LEAGUE", "FORM", "TABLE", "PLAYER")
+_STATUS_VALUE = {
+    native.SUPPORT: 1.0,
+    native.CONTRADICT: -1.0,
+    native.NEUTRAL: 0.0,
+}
+
+
+def full5_evidence_tilts(evidence: Dict[str, Any]):
+    """Convert every available central source into coherent score-matrix tilts.
+
+    Each source contributes at most one averaged vote per market. Dividing by
+    the five expected sources makes missing data reduce impact continuously and
+    prevents sources with more raw fields from dominating.
+    """
+    market_rows = {row.get("key"): row for row in evidence.get("markets", [])}
+    market_scores: Dict[str, float] = {}
+    source_audit: Dict[str, Any] = {}
+
+    for market in MARKETS:
+        signals = market_rows.get(market, {}).get("signals") or []
+        by_source: Dict[str, List[float]] = {source: [] for source in CENTRAL_EVIDENCE_SOURCES}
+        for signal in signals:
+            source = signal.get("source")
+            value = _STATUS_VALUE.get(signal.get("status"))
+            if source in by_source and value is not None:
+                by_source[source].append(value)
+
+        per_source = {
+            source: (sum(values) / len(values))
+            for source, values in by_source.items()
+            if values
+        }
+        # Five-source denominator is intentional: unavailable sources contribute
+        # no invented value and reduce the evidence impact rather than becoming 0-strength.
+        score = sum(per_source.values()) / len(CENTRAL_EVIDENCE_SOURCES)
+        market_scores[market] = score
+        source_audit[market] = {
+            "per_source": {source: round(value, 8) for source, value in per_source.items()},
+            "available_sources": sorted(per_source),
+            "available_source_count": len(per_source),
+            "five_source_score": round(score, 8),
+        }
+
+    result_mean = sum(market_scores[m] for m in ("home_win", "draw", "away_win")) / 3.0
+    btts_contrast = (market_scores["btts_yes"] - market_scores["btts_no"]) / 2.0
+    goals_contrast = (market_scores["over_2_5"] - market_scores["under_2_5"]) / 2.0
+    theta = {
+        "home_win": market_scores["home_win"] - result_mean,
+        "draw": market_scores["draw"] - result_mean,
+        "away_win": market_scores["away_win"] - result_mean,
+        "btts_yes": btts_contrast,
+        "btts_no": -btts_contrast,
+        "over_2_5": goals_contrast,
+        "under_2_5": -goals_contrast,
+    }
+    return theta, {
+        "sources": list(CENTRAL_EVIDENCE_SOURCES),
+        "market_scores": {key: round(value, 8) for key, value in market_scores.items()},
+        "source_detail": source_audit,
+        "method": "ONE_AVERAGED_VOTE_PER_SOURCE_THEN_EXPONENTIAL_SCORE_MATRIX_TILT",
+        "missing_policy": "NO_IMPUTATION; missing source lowers five-source evidence magnitude",
+    }
+
+
+def tilted_score_probabilities(home_lambda: float, away_lambda: float, theta: Dict[str, float], cap: int = 14):
+    """Exponentially tilt score states, preserving one normalized joint distribution."""
+    home = [math.exp(-home_lambda) * home_lambda ** i / math.factorial(i) for i in range(cap + 1)]
+    away = [math.exp(-away_lambda) * away_lambda ** j / math.factorial(j) for j in range(cap + 1)]
+    weighted: List[Tuple[int, int, float]] = []
+    for i, hp in enumerate(home):
+        for j, ap in enumerate(away):
+            result_market = "home_win" if i > j else ("draw" if i == j else "away_win")
+            btts_market = "btts_yes" if i > 0 and j > 0 else "btts_no"
+            goals_market = "over_2_5" if i + j >= 3 else "under_2_5"
+            log_tilt = theta[result_market] + theta[btts_market] + theta[goals_market]
+            weighted.append((i, j, hp * ap * math.exp(log_tilt)))
+
+    mass = sum(value for _, _, value in weighted)
+    result = {market: 0.0 for market in MARKETS}
+    for i, j, value in weighted:
+        probability = value / mass
+        if i > j:
+            result["home_win"] += probability
+        elif i == j:
+            result["draw"] += probability
+        else:
+            result["away_win"] += probability
+        if i > 0 and j > 0:
+            result["btts_yes"] += probability
+        if i + j >= 3:
+            result["over_2_5"] += probability
+    result["btts_no"] = 1.0 - result["btts_yes"]
+    result["under_2_5"] = 1.0 - result["over_2_5"]
+    return result
+
+
 def average_markets(variant_probabilities: Dict[str, Dict[str, float]]) -> Dict[str, float]:
     return {
         market: sum(row[market] for row in variant_probabilities.values()) / len(variant_probabilities)
@@ -196,7 +293,13 @@ def apply_patch(legacy: Any) -> Any:
                 "fallback_used": False, "evidence_diagnostic": evidence,
             }
 
-        variants = {name: score_probabilities(*values) for name, values in lambdas.items()}
+        base_variants = {name: score_probabilities(*values) for name, values in lambdas.items()}
+        base_probabilities = average_markets(base_variants)
+        evidence_tilts, evidence_fusion = full5_evidence_tilts(evidence)
+        variants = {
+            name: tilted_score_probabilities(*values, evidence_tilts)
+            for name, values in lambdas.items()
+        }
         probabilities = average_markets(variants)
         selected = max(MARKETS, key=lambda market: probabilities[market])
         action, action_reason = uncertainty_action(selected)
@@ -219,7 +322,7 @@ def apply_patch(legacy: Any) -> Any:
         result.update({
             "engine": ENGINE_NAME,
             "engine_version": ENGINE_VERSION,
-            "analysis_type": "SPEC_V1_1_JOINT_OUTCOME",
+            "analysis_type": "SPEC_V1_1_FULL5_JOINT_OUTCOME",
             "decision": action,
             "recommendation": LABELS[selected] if action != "AUSLASSEN" else "KEIN BET",
             "recommendation_reason": f"{LABELS[selected]} ist Rang 1 der gemeinsamen Ergebnismatrix. {action_reason}",
@@ -230,6 +333,13 @@ def apply_patch(legacy: Any) -> Any:
                 "action": action,
                 "action_reason": action_reason,
                 "probabilities": {key: round(value, 8) for key, value in probabilities.items()},
+                "base_probabilities_before_full5": {
+                    key: round(value, 8) for key, value in base_probabilities.items()
+                },
+                "full5_evidence_tilts": {
+                    key: round(value, 8) for key, value in evidence_tilts.items()
+                },
+                "full5_evidence_fusion": evidence_fusion,
                 "ranked_markets": ranked,
                 "variant_lambdas": {
                     name: {"home": round(values[0], 8), "away": round(values[1], 8)}
@@ -247,26 +357,27 @@ def apply_patch(legacy: Any) -> Any:
             },
         })
         result.setdefault("method", {}).update({
-            "architecture": "SPEC_V1_1_JOINT_OUTCOME",
-            "probability_core": "JOINT_POISSON_SCORE_MATRIX_EMPIRICAL_BAYES",
+            "architecture": "SPEC_V1_1_FULL5_JOINT_OUTCOME",
+            "probability_core": "JOINT_POISSON_EMPIRICAL_BAYES_FULL5_EXPONENTIAL_TILT",
             "market_selector": "MAXIMUM_COHERENT_JOINT_PROBABILITY",
             "decision_engine": "MARKET_CONDITIONAL_CONSERVATIVE_RANK",
             "manual_probability_threshold": False,
             "historical_residual_layer": False,
             "ml_reranker": False,
-            "legacy_signal_ranking_role": "DIAGNOSTIC_ONLY",
+            "legacy_signal_ranking_role": "LATENT_SCORE_MATRIX_UPDATE",
+            "full5_evidence_in_final_probabilities": True,
             "research_only": False,
         })
         result.setdefault("notes", []).append(
-            "Finaler Markt und Entscheidung kommen aus der gemeinsamen Score-Matrix; das frühere V1.1.6-Signalranking bleibt nur Diagnose."
+            "Alle fünf zentralen Pre-Match-Quellen aktualisieren die gemeinsame Score-Matrix; das frühere Ranking ist kein separater Entscheider."
         )
         return result
 
     legacy._analyze_bundle = analyze_joint
     ui_replacements = {
         "SPEC v1.1 · Engine v1.1.6": "SPEC v1.1 · Joint-Outcome Engine",
-        "FootyStats 5-Dateien-Auswertung · Build 1.1.6-cross-market-normalized": "FootyStats 5-Dateien-Auswertung · Build 1.1.6-joint-outcome",
-        "5 Dateien · vollständige sinnvolle SPEC-v1.1-Signalbreite · verwandte Felder als Evidenzblöcke · unabhängige Quellen zuerst · COLD START/LOW SAMPLE erlaubt · kein V0.4.x · kein Fallback · keine Odds · keine Decision Engine.": "5 Dateien · gemeinsame Ergebnismatrix · Empirical-Bayes-Shrinkage · 7 konsistente Märkte · aktive Marktneuauswahl · SPIELEN/BEOBACHTEN/AUSLASSEN · keine Odds · kein V0.4.x-Fallback.",
+        "FootyStats 5-Dateien-Auswertung · Build 1.1.6-cross-market-normalized": "FootyStats 5-Dateien-Auswertung · Build 1.1.6-full5-joint-outcome",
+        "5 Dateien · vollständige sinnvolle SPEC-v1.1-Signalbreite · verwandte Felder als Evidenzblöcke · unabhängige Quellen zuerst · COLD START/LOW SAMPLE erlaubt · kein V0.4.x · kein Fallback · keine Odds · keine Decision Engine.": "Alle 5 Quellen wirken auf die gemeinsame Ergebnismatrix: Match · League · Form · Table · Player · Empirical-Bayes-Shrinkage · 7 konsistente Märkte · SPIELEN/BEOBACHTEN/AUSLASSEN · keine Odds.",
         "SPEC v1.1 / Engine v1.1.6 auswerten": "Joint-Outcome V1.1.6 auswerten",
     }
     for old_text, new_text in ui_replacements.items():
@@ -278,16 +389,17 @@ def apply_patch(legacy: Any) -> Any:
         return {
             "ok": True, "production": True, "research_only": False,
             "engine": ENGINE_NAME, "version": ENGINE_VERSION, "spec_version": "1.1",
-            "architecture": "SPEC_V1_1_JOINT_OUTCOME",
-            "probability_core": "JOINT_POISSON_SCORE_MATRIX_EMPIRICAL_BAYES",
+            "architecture": "SPEC_V1_1_FULL5_JOINT_OUTCOME",
+            "probability_core": "JOINT_POISSON_EMPIRICAL_BAYES_FULL5_EXPONENTIAL_TILT",
             "decision_engine": "MARKET_CONDITIONAL_CONSERVATIVE_RANK",
             "manual_probability_threshold": False,
-            "legacy_signal_ranking_role": "DIAGNOSTIC_ONLY",
+            "legacy_signal_ranking_role": "LATENT_SCORE_MATRIX_UPDATE",
+            "full5_evidence_in_final_probabilities": True,
             "render_deployment_authorized": True,
             "shortcut_capture_unix": int(time.time()),
         }
 
     app.add_api_route("/api/health", health, methods=["GET"])
     app.version = ENGINE_VERSION
-    app.title = "FootyStats V1.1.6 Joint-Outcome"
+    app.title = "FootyStats V1.1.6 Full-5 Joint-Outcome"
     return app

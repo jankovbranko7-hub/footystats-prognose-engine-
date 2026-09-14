@@ -3,7 +3,8 @@ import unittest
 
 from spec11_joint_core_patch import (
     MARKETS, average_markets, conservative_market_ranking,
-    empirical_bayes_rate, score_probabilities, uncertainty_action,
+    empirical_bayes_rate, full5_evidence_tilts, score_probabilities,
+    tilted_score_probabilities, uncertainty_action,
 )
 
 
@@ -27,6 +28,30 @@ class JointCoreTest(unittest.TestCase):
         self.assertAlmostEqual(p["btts_yes"] + p["btts_no"], 1.0, places=10)
         self.assertAlmostEqual(p["over_2_5"] + p["under_2_5"], 1.0, places=10)
 
+    def test_full5_tilt_changes_probability_but_remains_coherent(self):
+        sources = ("MATCH", "LEAGUE", "FORM", "TABLE", "PLAYER")
+        preferred = {"home_win", "btts_yes", "over_2_5"}
+        evidence = {"markets": []}
+        for market in MARKETS:
+            status = "BESTÄTIGEND" if market in preferred else "WIDERSPRUCH"
+            evidence["markets"].append({
+                "key": market,
+                "signals": [
+                    {"source": source, "status": status}
+                    for source in sources
+                ],
+            })
+        theta, audit = full5_evidence_tilts(evidence)
+        base = score_probabilities(1.4, 1.2)
+        fused = tilted_score_probabilities(1.4, 1.2, theta)
+        self.assertGreater(fused["home_win"], base["home_win"])
+        self.assertGreater(fused["btts_yes"], base["btts_yes"])
+        self.assertGreater(fused["over_2_5"], base["over_2_5"])
+        self.assertAlmostEqual(fused["home_win"] + fused["draw"] + fused["away_win"], 1.0, places=10)
+        self.assertAlmostEqual(fused["btts_yes"] + fused["btts_no"], 1.0, places=10)
+        self.assertAlmostEqual(fused["over_2_5"] + fused["under_2_5"], 1.0, places=10)
+        self.assertEqual(audit["sources"], list(sources))
+
     def test_empirical_bayes_shrinks_toward_league(self):
         rows = [(1.0, 10), (1.5, 10), (2.0, 10), (1.4, 10)]
         low = empirical_bayes_rate(3.0, 2, rows)
@@ -47,7 +72,7 @@ class JointCoreTest(unittest.TestCase):
         import app
 
         html = app.legacy.INDEX_HTML
-        self.assertIn("Build 1.1.6-joint-outcome", html)
+        self.assertIn("Build 1.1.6-full5-joint-outcome", html)
         self.assertIn("Joint-Outcome Engine", html)
         self.assertIn("Joint-Outcome V1.1.6 auswerten", html)
         self.assertNotIn("Build 1.1.6-cross-market-normalized", html)
@@ -59,11 +84,23 @@ class JointCoreTest(unittest.TestCase):
 
         result = app.legacy._analyze_bundle(build_bundle(8, 8))
         self.assertTrue(result["ok"], result)
-        self.assertEqual(result["engine_version"], "1.1.6-joint-outcome")
-        self.assertEqual(result["method"]["probability_core"], "JOINT_POISSON_SCORE_MATRIX_EMPIRICAL_BAYES")
-        self.assertEqual(result["method"]["legacy_signal_ranking_role"], "DIAGNOSTIC_ONLY")
+        self.assertEqual(result["engine_version"], "1.1.6-full5-joint-outcome")
+        self.assertEqual(result["method"]["probability_core"], "JOINT_POISSON_EMPIRICAL_BAYES_FULL5_EXPONENTIAL_TILT")
+        self.assertEqual(result["method"]["legacy_signal_ranking_role"], "LATENT_SCORE_MATRIX_UPDATE")
+        self.assertTrue(result["method"]["full5_evidence_in_final_probabilities"])
         self.assertFalse(result["method"]["research_only"])
         self.assertEqual(len(result["joint_outcome"]["probabilities"]), 7)
+        fusion = result["joint_outcome"]["full5_evidence_fusion"]
+        used_sources = {
+            source
+            for detail in fusion["source_detail"].values()
+            for source in detail["available_sources"]
+        }
+        self.assertEqual(used_sources, {"MATCH", "LEAGUE", "FORM", "TABLE", "PLAYER"})
+        self.assertNotEqual(
+            result["joint_outcome"]["probabilities"],
+            result["joint_outcome"]["base_probabilities_before_full5"],
+        )
         p = result["joint_outcome"]["probabilities"]
         self.assertAlmostEqual(p["home_win"] + p["draw"] + p["away_win"], 1.0, places=6)
         self.assertAlmostEqual(p["btts_yes"] + p["btts_no"], 1.0, places=6)
