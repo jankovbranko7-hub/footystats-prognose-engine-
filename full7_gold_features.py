@@ -456,9 +456,11 @@ def referee_block(referee:Dict[str,Any],referee_id:Optional[int])->Dict[str,Any]
 
 def manager_rows(side_payload:Any)->List[Dict[str,Any]]:
     if isinstance(side_payload,dict):
+        if side_payload.get("available") in (False, "false", "False", 0, "0"):
+            return []
         d=api_data(side_payload)
         if isinstance(d,list):return [x for x in d if isinstance(x,dict)]
-        if isinstance(d,dict):return [d]
+        if isinstance(d,dict) and ("competition_id" in d or "id" in d):return [d]
     if isinstance(side_payload,list):return [x for x in side_payload if isinstance(x,dict)]
     return []
 
@@ -489,7 +491,8 @@ def manager_block(manager:Dict[str,Any],home_id:int,away_id:int,season_id:int)->
     for side,tid in (("home",home_id),("away",away_id)):
         rows=manager_rows(manager.get(side) if isinstance(manager,dict) else None)
         ambiguous=manager_ambiguous_rows(rows,tid,season_id)
-        put(f,f"{side}_manager_ambiguous_team_change_rows",len(ambiguous))
+        if rows:
+            put(f,f"{side}_manager_ambiguous_team_change_rows",len(ambiguous))
         row=manager_pick(rows,tid,season_id)
         if not row:
             if ambiguous:
