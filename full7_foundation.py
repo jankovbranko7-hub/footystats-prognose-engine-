@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import copy, hashlib, json, math
+from dataclasses import asdict
+from full7_feature_registry import build_registry, classify as registry_classify
 from typing import Any, Dict, Iterable, Mapping, Optional, Sequence, Tuple
 
 KINDS = ("match", "league", "form", "table", "player", "referee", "manager")
@@ -224,66 +226,11 @@ def process_full7(files: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
     return out
 
 
-def _family(path: str, source: str) -> Optional[str]:
-    p = path.lower()
-    if source in ("referee", "manager"): return source
-    if "h2h" in p: return "h2h"
-    if any(x in p for x in ("xg_for", "xg_against", "xg_prematch", "total_xg_prematch")): return "expected_goals_xga"
-    if any(x in p for x in ("shots", "shotson", "shotsoff", "conversion")): return "shots_chance_creation"
-    if any(x in p for x in ("fhg", "_ht", "ht_", "2hg", "2h_", "firsthalf", "2ndhalf")): return "first_second_half"
-    if any(x in p for x in ("btts", "over25", "under25", "seasoncs", "seasonfts")): return "btts_ou_profile"
-    if source == "form": return "form"
-    if source == "table": return "table_strength"
-    if source == "player":
-        if any(x in p for x in ("minutes", "appearances", "position")): return "player_depth"
-        if any(x in p for x in ("rank_in_club_top", "goals_overall", "assists_overall")): return "player_concentration"
-        return "player_quality"
-    if source == "league":
-        if any(x in p for x in ("seasonppg", "winpercentage")): return "venue"
-        if any(x in p for x in ("scoredavg", "concededavg", "seasongoals", "seasonconceded")): return "goals_defence"
-        return "league_context"
-    return "venue" if any(x in p for x in ("pre_match_home_ppg", "pre_match_away_ppg")) else "league_context"
-
-
 def classify_path(source: str, path: str, value: Any) -> Dict[str, Any]:
-    key = path.rsplit(".", 1)[-1].replace("[]", ""); lower = path.lower(); family = _family(path, source)
-    if key in IDENTITY: status, reason, family = "ENTITY_KEY", "Join/lineage only", None
-    elif key in TARGETS: status, reason, family = "TARGET_ONLY", "Outcome field", None
-    elif source == "match" and key in ACTUAL_MATCH: status, reason, family = "POST_MATCH_BLOCKED", "Actual/live match measurement", None
-    elif key.startswith("odds_") or "odds_comparison" in lower: status, reason, family = "ODDS_BLOCKED", "Odds excluded from Probability Mode", None
-    elif key in {"gpt_en", "gpt_int", "trends", "tv_stations"} or "trends[]" in lower: status, reason, family = "TEXT_BLOCKED", "Narrative/provider text", None
-    elif "potential" in key.lower(): status, reason = "PROVIDER_DERIVED", "Provider-derived; OOS ablation required"
-    elif key in {"last_match_timestamp", "matches_completed_minimum", "last_x_match_num"}: status, reason, family = "QUALITY_SIGNAL", "Exposure/freshness/sample", "data_quality"
-    elif any(x in lower for x in ("season", "xg_", "ppg", "shots", "goals_per_90", "assists_per_90", "goals_involved_per_90", "minutes_played", "appearances", "clean_sheets", "conceded_per_90", "rank_in_", "matches", "points", "position", "homewins", "awaywins", "draws", "btts", "over", "under")):
-        status, reason = "PREMATCH_CANDIDATE", "Requires semantic/coverage/redundancy/OOS validation"
-    else: status, reason = "REVIEW_REQUIRED", "Blocked until explicitly reviewed"
-    return {"source": source, "path": path, "status": status, "signal_family": family, "reason": reason, "sample_value_type": type(value).__name__}
-
-
-def _leaves(v: Any, prefix: str = "") -> Iterable[Tuple[str, Any]]:
-    if isinstance(v, dict):
-        for k, x in v.items(): yield from _leaves(x, f"{prefix}.{k}" if prefix else str(k))
-    elif isinstance(v, list):
-        p = f"{prefix}[]" if prefix else "[]"
-        if not v: yield p, []
-        else:
-            for x in v:
-                if isinstance(x, (dict, list)): yield from _leaves(x, p)
-                else: yield p, x
-    else: yield prefix, v
+    """Compatibility wrapper around the single semantic registry."""
+    return asdict(registry_classify(source, path, value))
 
 
 def inventory_gold(gold: Dict[str, Any]) -> Dict[str, Any]:
-    rows = []
-    for source in KINDS:
-        seen = {}
-        for path, value in _leaves(gold["namespaces"].get(source)):
-            if path not in seen: seen[path] = classify_path(source, path, value)
-        rows.extend(seen.values())
-    counts: Dict[str, int] = {}; families: Dict[str, int] = {}; sources: Dict[str, int] = {}
-    for r in rows:
-        counts[r["status"]] = counts.get(r["status"], 0) + 1
-        sources[r["source"]] = sources.get(r["source"], 0) + 1
-        if r["signal_family"]: families[r["signal_family"]] = families.get(r["signal_family"], 0) + 1
-    return {"field_count": len(rows), "status_counts": counts, "signal_family_counts": families, "source_counts": sources, "rows": rows,
-            "activation_policy": "Only explicit USED_DIRECT/USED_DERIVED entries may enter models; PREMATCH_CANDIDATE alone is not active."}
+    """Inventory Gold using the single authoritative FULL-7 feature registry."""
+    return build_registry(gold["namespaces"])
