@@ -336,7 +336,16 @@ def player_rows(player:Dict[str,Any])->List[Dict[str,Any]]:
 
 
 def player_team(rows:List[Dict[str,Any]],tid:int)->List[Dict[str,Any]]:
-    return [r for r in rows if tid in [x for x in (intv(r.get("club_team_id")),intv(r.get("club_team_2_id"))) if x is not None]]
+    # Primary club only. club_team_2_id is loan/transfer metadata and is not
+    # allowed to silently create a second team membership in model features.
+    return [r for r in rows if intv(r.get("club_team_id")) == tid]
+
+
+def player_secondary_affiliations(rows:List[Dict[str,Any]],tid:int)->List[Dict[str,Any]]:
+    return [
+        r for r in rows
+        if intv(r.get("club_team_2_id")) == tid and intv(r.get("club_team_id")) != tid
+    ]
 
 
 def weighted_player_rate(players:List[Dict[str,Any]],key:str)->Optional[float]:
@@ -357,7 +366,9 @@ def player_block(player:Dict[str,Any],home_id:int,away_id:int)->Dict[str,Any]:
     rows=player_rows(player); f:Dict[str,float]={}
     for side,tid in (("home",home_id),("away",away_id)):
         ps=player_team(rows,tid); mins=[num(p.get("minutes_played_overall")) or 0 for p in ps]
+        secondary=player_secondary_affiliations(rows,tid)
         active_minutes=[m for m in mins if m > 0]
+        put(f,f"{side}_secondary_affiliation_count",len(secondary))
         put(f,f"{side}_players_found",len(ps)); put(f,f"{side}_player_minutes_total",sum(mins)); put(f,f"{side}_player_minutes_mean",sum(mins)/len(mins) if mins else None)
         put(f,f"{side}_active_players",len(active_minutes))
         put(f,f"{side}_active_player_share",len(active_minutes)/len(ps) if ps else None)
