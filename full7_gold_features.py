@@ -336,15 +336,22 @@ def player_rows(player:Dict[str,Any])->List[Dict[str,Any]]:
 
 
 def player_team(rows:List[Dict[str,Any]],tid:int)->List[Dict[str,Any]]:
-    # Primary club only. club_team_2_id is loan/transfer metadata and is not
-    # allowed to silently create a second team membership in model features.
-    return [r for r in rows if intv(r.get("club_team_id")) == tid]
+    # Only unambiguous primary-club rows enter team production aggregates.
+    # A positive club_team_2_id signals loan/transfer ambiguity and is excluded
+    # until FootyStats provides club-split production for that player row.
+    return [
+        r for r in rows
+        if intv(r.get("club_team_id")) == tid
+        and (intv(r.get("club_team_2_id")) is None or intv(r.get("club_team_2_id")) <= 0)
+    ]
 
 
 def player_secondary_affiliations(rows:List[Dict[str,Any]],tid:int)->List[Dict[str,Any]]:
     return [
         r for r in rows
-        if intv(r.get("club_team_2_id")) == tid and intv(r.get("club_team_id")) != tid
+        if intv(r.get("club_team_2_id")) is not None
+        and intv(r.get("club_team_2_id")) > 0
+        and tid in (intv(r.get("club_team_id")), intv(r.get("club_team_2_id")))
     ]
 
 
@@ -457,16 +464,39 @@ def manager_rows(side_payload:Any)->List[Dict[str,Any]]:
 
 
 def manager_pick(rows:List[Dict[str,Any]],team_id:int,season_id:int)->Optional[Dict[str,Any]]:
-    exact=[r for r in rows if intv(r.get("competition_id"))==season_id and team_id in [x for x in (intv(r.get("club_team_id")),intv(r.get("club_team_2_id"))) if x is not None]]
+    exact=[
+        r for r in rows
+        if intv(r.get("competition_id"))==season_id
+        and intv(r.get("club_team_id"))==team_id
+        and (intv(r.get("club_team_2_id")) is None or intv(r.get("club_team_2_id")) <= 0)
+    ]
     if exact:return max(exact,key=lambda r:num(r.get("appearances_overall")) or 0)
     return None
+
+
+def manager_ambiguous_rows(rows:List[Dict[str,Any]],team_id:int,season_id:int)->List[Dict[str,Any]]:
+    return [
+        r for r in rows
+        if intv(r.get("competition_id"))==season_id
+        and intv(r.get("club_team_2_id")) is not None
+        and intv(r.get("club_team_2_id")) > 0
+        and team_id in (intv(r.get("club_team_id")), intv(r.get("club_team_2_id")))
+    ]
 
 
 def manager_block(manager:Dict[str,Any],home_id:int,away_id:int,season_id:int)->Dict[str,Any]:
     f:Dict[str,float]={}; notes=[]
     for side,tid in (("home",home_id),("away",away_id)):
-        rows=manager_rows(manager.get(side) if isinstance(manager,dict) else None); row=manager_pick(rows,tid,season_id)
-        if not row: notes.append(f"{side} manager season/team row unavailable"); continue
+        rows=manager_rows(manager.get(side) if isinstance(manager,dict) else None)
+        ambiguous=manager_ambiguous_rows(rows,tid,season_id)
+        put(f,f"{side}_manager_ambiguous_team_change_rows",len(ambiguous))
+        row=manager_pick(rows,tid,season_id)
+        if not row:
+            if ambiguous:
+                notes.append(f"{side} manager row excluded because club_team_2_id indicates a same-season team change")
+            else:
+                notes.append(f"{side} manager season/team row unavailable")
+            continue
         put(f,f"{side}_manager_appearances_overall",row.get("appearances_overall")); put(f,f"{side}_manager_total_matches_managed",row.get("total_matches_managed")); put(f,f"{side}_manager_last_match_timestamp",row.get("last_match_timestamp"))
         for metric in MANAGER_METRICS: put(f,f"{side}_manager_{metric}",row.get(metric))
     for metric in MANAGER_METRICS:
