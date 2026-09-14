@@ -26,6 +26,15 @@ class T(unittest.TestCase):
         x=files(); x[3]["data"]["_footystats_meta"]["captured_at_unix"]=KO; self.assertFalse(process_full7(x)["ok"])
     def test_max_time_after_kickoff(self):
         x=files(); x[4]["data"]["_footystats_meta"]["max_time"]=KO; self.assertFalse(process_full7(x)["ok"])
+    def test_player_secondary_club_does_not_satisfy_primary_team_mapping(self):
+        x=files()
+        rows=x[4]["data"]["payload"]["pages"][0]["data"]
+        rows[0]["club_team_id"]=999
+        rows[0]["club_team_2_id"]=HOME
+        result=process_full7(x)
+        self.assertFalse(result["ok"])
+        self.assertTrue(any(i["code"]=="PLAYER_HOME_TEAM_MISSING" for i in result["issues"]))
+
     def test_pagination(self):
         x=files(); x[4]["data"]["_footystats_meta"]["pagination_complete"]=False; x[4]["data"]["payload"]["pages"][0]["pager"]={"current_page":1,"max_page":2}; self.assertFalse(process_full7(x)["ok"])
     def test_minus_one_preserved(self):
