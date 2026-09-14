@@ -27,6 +27,24 @@ class GoldFeatureTests(unittest.TestCase):
         self.assertEqual(b["features"]["referee_btts_percentage"],60)
         self.assertEqual(b["features"]["referee_btts_percentage_vs_league_median"],10)
 
+    def test_manager_team_change_row_is_excluded(self):
+        m={
+            "home":{"data":[{"id":1,"competition_id":9,"club_team_id":101,"club_team_2_id":303,"appearances_overall":8,"wins_per_overall":75}]},
+            "away":{"source":"fallback","available":"false"},
+        }
+        b=manager_block(m,101,202,9)
+        self.assertNotIn("home_manager_wins_per_overall",b["features"])
+        self.assertEqual(b["features"]["home_manager_ambiguous_team_change_rows"],1)
+
+    def test_manager_fallback_does_not_make_block_available(self):
+        m={
+            "home":{"source":"fallback","available":"false"},
+            "away":{"source":"fallback","available":"false"},
+        }
+        b=manager_block(m,101,202,9)
+        self.assertFalse(b["available"])
+        self.assertEqual(b["feature_count"],0)
+
     def test_manager_requires_team_and_competition(self):
         m={
             "home":{"data":[{"id":1,"competition_id":9,"club_team_id":101,"appearances_overall":5,"wins_per_overall":60}]},
