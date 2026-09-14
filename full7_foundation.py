@@ -1,0 +1,289 @@
+"""FULL-7 Bronze/Silver/Gold input foundation (development only)."""
+from __future__ import annotations
+
+import copy, hashlib, json, math
+from typing import Any, Dict, Iterable, Mapping, Optional, Sequence, Tuple
+
+KINDS = ("match", "league", "form", "table", "player", "referee", "manager")
+SPECS = {
+    "match": ("matchdaten", {"/match"}, False),
+    "league": ("leaguedaten", {"/league-season", "/league-teams"}, True),
+    "form": ("formdaten", {"/lastx"}, False),
+    "table": ("tabledaten", {"/league-tables"}, True),
+    "player": ("playerdaten", {"/league-players"}, True),
+    "referee": ("refereedaten", {"/league-referees"}, True),
+    "manager": ("managerdaten", {"/manager"}, False),
+}
+SIGNAL_FAMILIES = (
+    "expected_goals_xga", "goals_defence", "venue", "form", "league_context",
+    "table_strength", "shots_chance_creation", "first_second_half",
+    "btts_ou_profile", "player_depth", "player_quality", "player_concentration",
+    "h2h", "referee", "manager", "data_quality",
+)
+TARGETS = {"winningTeam", "homeGoalCount", "awayGoalCount", "totalGoalCount", "HTGoalCount", "GoalCount_2hg", "overallGoalCount"}
+ACTUAL_MATCH = {
+    "team_a_xg", "team_b_xg", "total_xg", "team_a_possession", "team_b_possession",
+    "team_a_shots", "team_b_shots", "team_a_shotsOnTarget", "team_b_shotsOnTarget",
+    "team_a_shotsOffTarget", "team_b_shotsOffTarget", "team_a_corners", "team_b_corners",
+    "totalCornerCount", "team_a_fouls", "team_b_fouls", "team_a_offsides", "team_b_offsides",
+    "team_a_yellow_cards", "team_b_yellow_cards", "team_a_red_cards", "team_b_red_cards",
+    "team_a_attacks", "team_b_attacks", "team_a_dangerous_attacks", "team_b_dangerous_attacks",
+}
+IDENTITY = {"id", "homeID", "awayID", "competition_id", "date_unix", "season", "home_name", "away_name", "roundID", "game_week"}
+
+
+def _num(v: Any) -> Optional[float]:
+    if v is None or isinstance(v, bool): return None
+    try: x = float(v)
+    except (TypeError, ValueError): return None
+    return x if math.isfinite(x) else None
+
+
+def _int(v: Any) -> Optional[int]:
+    x = _num(v); return int(x) if x is not None else None
+
+
+def _hash(v: Any) -> str:
+    raw = json.dumps(v, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+    return hashlib.sha256(raw).hexdigest()
+
+
+def _meta(raw: Any) -> Dict[str, Any]:
+    return copy.deepcopy(raw.get("_footystats_meta") or {}) if isinstance(raw, dict) else {}
+
+
+def _endpoint(raw: Any) -> Optional[str]:
+    v = _meta(raw).get("endpoint"); return str(v).strip().lower() if v not in (None, "") else None
+
+
+def _kind(name: str, raw: Dict[str, Any]) -> Tuple[Optional[str], Optional[str]]:
+    n = (name or "").lower().replace(" ", "")
+    f = [k for k, (marker, _, _) in SPECS.items() if marker in n]
+    e = _endpoint(raw)
+    ep = [k for k, (_, endpoints, _) in SPECS.items() if e in endpoints] if e else []
+    fk = f[0] if len(f) == 1 else None; ek = ep[0] if len(ep) == 1 else None
+    if fk and ek and fk != ek: return None, "SOURCE_FILENAME_ENDPOINT_MISMATCH"
+    k = fk or ek
+    return (k, None) if k else (None, "UNKNOWN_SOURCE")
+
+
+def _issue(code: str, source: Optional[str] = None, critical: bool = True, **extra: Any) -> Dict[str, Any]:
+    return {"code": code, "source": source, "critical": critical, **extra}
+
+
+def build_bronze(files: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
+    issues, artifacts, seen = [], {}, {}
+    if len(files) != 7: issues.append(_issue("FILE_COUNT_MISMATCH", received=len(files)))
+    for item in files:
+        name, raw = str(item.get("name") or ""), item.get("data")
+        if not isinstance(raw, dict):
+            issues.append(_issue("INVALID_JSON_ROOT", name=name)); continue
+        raw = copy.deepcopy(raw)
+        kind, error = _kind(name, raw)
+        if error: issues.append(_issue(error, name=name)); continue
+        seen[kind] = seen.get(kind, 0) + 1
+        if seen[kind] > 1:
+            issues.append(_issue("DUPLICATE_SOURCE", kind)); continue
+        artifacts[kind] = {"name": name, "raw": raw, "meta": _meta(raw), "sha256": _hash(raw)}
+    for k in KINDS:
+        if k not in artifacts: issues.append(_issue("MISSING_SOURCE", k))
+    return {"artifacts": artifacts, "issues": issues}
+
+
+def _payload(a: Dict[str, Any]) -> Any:
+    raw = a["raw"]; return raw.get("payload") if "payload" in raw else raw
+
+
+def _data(v: Any) -> Any:
+    return v.get("data") if isinstance(v, dict) and "data" in v else v
+
+
+def _identity(a: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    m = _data(_payload(a)); m = m if isinstance(m, dict) else {}
+    out = {
+        "match_id": _int(m.get("id")), "home_id": _int(m.get("homeID")),
+        "away_id": _int(m.get("awayID")), "season_id": _int(m.get("competition_id")),
+        "kickoff_unix": _int(m.get("date_unix")), "referee_id": _int(m.get("refereeID")),
+    }
+    return None if any(out[k] is None for k in ("match_id", "home_id", "away_id", "season_id", "kickoff_unix")) else out
+
+
+def _dicts(v: Any) -> Iterable[Dict[str, Any]]:
+    if isinstance(v, dict):
+        yield v
+        for x in v.values(): yield from _dicts(x)
+    elif isinstance(v, list):
+        for x in v: yield from _dicts(x)
+
+
+def _has_id(v: Any, wanted: int) -> bool:
+    for row in _dicts(v):
+        for key in ("id", "team_id", "teamID", "club_team_id", "club_team_2_id"):
+            if _int(row.get(key)) == wanted: return True
+    return False
+
+
+def _player_count(v: Any, wanted: int) -> int:
+    n = 0
+    for row in _dicts(v):
+        if wanted in [x for x in (_int(row.get("club_team_id")), _int(row.get("club_team_2_id"))) if x is not None]:
+            if "id" in row and ("minutes_played_overall" in row or "position" in row): n += 1
+    return n
+
+
+def _player_pages_ok(a: Dict[str, Any]) -> bool:
+    explicit = a["meta"].get("pagination_complete")
+    if explicit is True or (isinstance(explicit, str) and explicit.lower() == "true"): return True
+    p = _payload(a); pages = p.get("pages") if isinstance(p, dict) else None
+    if not isinstance(pages, list) or not pages: return False
+    current, maxima = set(), []
+    for page in pages:
+        pager = page.get("pager") if isinstance(page, dict) else None
+        if isinstance(pager, dict):
+            cp, mp = _int(pager.get("current_page")), _int(pager.get("max_page"))
+            if cp is not None: current.add(cp)
+            if mp is not None: maxima.append(mp)
+    return bool(maxima) and current >= set(range(1, max(maxima) + 1))
+
+
+def build_silver(bronze: Dict[str, Any]) -> Dict[str, Any]:
+    artifacts, issues = bronze["artifacts"], list(bronze["issues"])
+    ident = _identity(artifacts["match"]) if "match" in artifacts else None
+    if "match" in artifacts and ident is None: issues.append(_issue("MATCH_IDENTITY_MISSING", "match"))
+    if ident:
+        ko = ident["kickoff_unix"]
+        for k, a in artifacts.items():
+            meta = a["meta"]
+            if not meta:
+                issues.append(_issue("MISSING_METADATA", k)); continue
+            cap = _int(meta.get("captured_at_unix"))
+            if cap is None: issues.append(_issue("MISSING_CAPTURE_TIME", k))
+            elif cap >= ko: issues.append(_issue("CAPTURE_NOT_PREMATCH", k, captured_at_unix=cap, kickoff_unix=ko))
+            max_time = _int(meta.get("max_time")); require_max = SPECS[k][2]
+            if require_max and max_time is None: issues.append(_issue("MISSING_REQUIRED_MAX_TIME", k))
+            if max_time is not None and max_time >= ko: issues.append(_issue("MAX_TIME_NOT_PREMATCH", k, max_time=max_time, kickoff_unix=ko))
+            if k != "match":
+                sid = _int(meta.get("season_id"))
+                if sid is None: issues.append(_issue("SEASON_ID_NOT_DECLARED", k, False))
+                elif sid != ident["season_id"]: issues.append(_issue("SEASON_ID_MISMATCH", k, season_id=sid, expected=ident["season_id"]))
+        mm = _int(artifacts["match"]["meta"].get("match_id"))
+        if mm is not None and mm != ident["match_id"]: issues.append(_issue("MATCH_META_ID_MISMATCH", "match"))
+        for k in ("league", "form", "table"):
+            if k in artifacts:
+                p = _payload(artifacts[k])
+                if not _has_id(p, ident["home_id"]): issues.append(_issue(f"{k.upper()}_HOME_TEAM_MISSING", k))
+                if not _has_id(p, ident["away_id"]): issues.append(_issue(f"{k.upper()}_AWAY_TEAM_MISSING", k))
+        if "player" in artifacts:
+            p = _payload(artifacts["player"])
+            if _player_count(p, ident["home_id"]) <= 0: issues.append(_issue("PLAYER_HOME_TEAM_MISSING", "player"))
+            if _player_count(p, ident["away_id"]) <= 0: issues.append(_issue("PLAYER_AWAY_TEAM_MISSING", "player"))
+            if not _player_pages_ok(artifacts["player"]): issues.append(_issue("PLAYER_PAGINATION_INCOMPLETE", "player"))
+        if "referee" in artifacts:
+            ref = artifacts["referee"]; available = ref["meta"].get("available")
+            if ident["referee_id"] is None and available not in (False, "false", "False", 0, "0"):
+                issues.append(_issue("REFEREE_UNASSIGNED_NOT_EXPLICIT", "referee", False))
+            elif ident["referee_id"] is not None and not _has_id(_payload(ref), ident["referee_id"]):
+                issues.append(_issue("REFEREE_ID_NOT_FOUND", "referee", False))
+        if "manager" in artifacts:
+            meta = artifacts["manager"]["meta"]
+            for side in ("home", "away"):
+                if _int(meta.get(f"{side}_manager_id")) is None and meta.get(f"{side}_manager_available") not in (False, "false", "False", 0, "0"):
+                    issues.append(_issue("MANAGER_ID_NOT_DECLARED", "manager", False, side=side))
+    critical = [x for x in issues if x["critical"]]
+    return {
+        "valid": ident is not None and not critical, "identity": ident,
+        "normalized": {k: copy.deepcopy(_payload(a)) for k, a in artifacts.items()},
+        "issues": issues,
+        "audit": {
+            "architecture": "FULL7_BRONZE_SILVER_GOLD", "expected_file_count": 7,
+            "received_file_count": len(artifacts), "identity": ident,
+            "critical_issue_count": len(critical), "warning_count": len(issues)-len(critical),
+            "strict_pre_match": ident is not None and not any(x["critical"] and x["code"] in {
+                "MISSING_METADATA", "MISSING_CAPTURE_TIME", "CAPTURE_NOT_PREMATCH", "MISSING_REQUIRED_MAX_TIME", "MAX_TIME_NOT_PREMATCH"} for x in issues),
+            "sentinel_policy": "NO_GLOBAL_CONVERSION; field-specific semantics only",
+            "post_match_leakage_policy": "BLOCK_BY_FEATURE_REGISTRY; no generic flatten-to-model",
+        },
+    }
+
+
+def build_gold(bronze: Dict[str, Any], silver: Dict[str, Any]) -> Dict[str, Any]:
+    if not silver["valid"]: raise ValueError("Gold requires valid Silver")
+    return {
+        "identity": copy.deepcopy(silver["identity"]),
+        "namespaces": {k: copy.deepcopy(silver["normalized"][k]) for k in KINDS},
+        "quality": {"status": "VALID", "signal_families": list(SIGNAL_FAMILIES), "no_imputation": True, "no_global_sentinel_conversion": True},
+        "lineage": {k: {"filename": bronze["artifacts"][k]["name"], "sha256": bronze["artifacts"][k]["sha256"], "endpoint": _endpoint(bronze["artifacts"][k]["raw"]), "captured_at_unix": _int(bronze["artifacts"][k]["meta"].get("captured_at_unix")), "max_time": _int(bronze["artifacts"][k]["meta"].get("max_time"))} for k in KINDS},
+    }
+
+
+def process_full7(files: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
+    bronze = build_bronze(files); silver = build_silver(bronze)
+    out = {"ok": silver["valid"], "stage": "VALIDATION_FAILED", "audit": silver["audit"], "issues": silver["issues"], "gold": None}
+    if silver["valid"]:
+        out["stage"] = "GOLD_READY"; out["gold"] = build_gold(bronze, silver)
+    return out
+
+
+def _family(path: str, source: str) -> Optional[str]:
+    p = path.lower()
+    if source in ("referee", "manager"): return source
+    if "h2h" in p: return "h2h"
+    if any(x in p for x in ("xg_for", "xg_against", "xg_prematch", "total_xg_prematch")): return "expected_goals_xga"
+    if any(x in p for x in ("shots", "shotson", "shotsoff", "conversion")): return "shots_chance_creation"
+    if any(x in p for x in ("fhg", "_ht", "ht_", "2hg", "2h_", "firsthalf", "2ndhalf")): return "first_second_half"
+    if any(x in p for x in ("btts", "over25", "under25", "seasoncs", "seasonfts")): return "btts_ou_profile"
+    if source == "form": return "form"
+    if source == "table": return "table_strength"
+    if source == "player":
+        if any(x in p for x in ("minutes", "appearances", "position")): return "player_depth"
+        if any(x in p for x in ("rank_in_club_top", "goals_overall", "assists_overall")): return "player_concentration"
+        return "player_quality"
+    if source == "league":
+        if any(x in p for x in ("seasonppg", "winpercentage")): return "venue"
+        if any(x in p for x in ("scoredavg", "concededavg", "seasongoals", "seasonconceded")): return "goals_defence"
+        return "league_context"
+    return "venue" if any(x in p for x in ("pre_match_home_ppg", "pre_match_away_ppg")) else "league_context"
+
+
+def classify_path(source: str, path: str, value: Any) -> Dict[str, Any]:
+    key = path.rsplit(".", 1)[-1].replace("[]", ""); lower = path.lower(); family = _family(path, source)
+    if key in IDENTITY: status, reason, family = "ENTITY_KEY", "Join/lineage only", None
+    elif key in TARGETS: status, reason, family = "TARGET_ONLY", "Outcome field", None
+    elif source == "match" and key in ACTUAL_MATCH: status, reason, family = "POST_MATCH_BLOCKED", "Actual/live match measurement", None
+    elif key.startswith("odds_") or "odds_comparison" in lower: status, reason, family = "ODDS_BLOCKED", "Odds excluded from Probability Mode", None
+    elif key in {"gpt_en", "gpt_int", "trends", "tv_stations"} or "trends[]" in lower: status, reason, family = "TEXT_BLOCKED", "Narrative/provider text", None
+    elif "potential" in key.lower(): status, reason = "PROVIDER_DERIVED", "Provider-derived; OOS ablation required"
+    elif key in {"last_match_timestamp", "matches_completed_minimum", "last_x_match_num"}: status, reason, family = "QUALITY_SIGNAL", "Exposure/freshness/sample", "data_quality"
+    elif any(x in lower for x in ("season", "xg_", "ppg", "shots", "goals_per_90", "assists_per_90", "goals_involved_per_90", "minutes_played", "appearances", "clean_sheets", "conceded_per_90", "rank_in_", "matches", "points", "position", "homewins", "awaywins", "draws", "btts", "over", "under")):
+        status, reason = "PREMATCH_CANDIDATE", "Requires semantic/coverage/redundancy/OOS validation"
+    else: status, reason = "REVIEW_REQUIRED", "Blocked until explicitly reviewed"
+    return {"source": source, "path": path, "status": status, "signal_family": family, "reason": reason, "sample_value_type": type(value).__name__}
+
+
+def _leaves(v: Any, prefix: str = "") -> Iterable[Tuple[str, Any]]:
+    if isinstance(v, dict):
+        for k, x in v.items(): yield from _leaves(x, f"{prefix}.{k}" if prefix else str(k))
+    elif isinstance(v, list):
+        p = f"{prefix}[]" if prefix else "[]"
+        if not v: yield p, []
+        else:
+            for x in v:
+                if isinstance(x, (dict, list)): yield from _leaves(x, p)
+                else: yield p, x
+    else: yield prefix, v
+
+
+def inventory_gold(gold: Dict[str, Any]) -> Dict[str, Any]:
+    rows = []
+    for source in KINDS:
+        seen = {}
+        for path, value in _leaves(gold["namespaces"].get(source)):
+            if path not in seen: seen[path] = classify_path(source, path, value)
+        rows.extend(seen.values())
+    counts: Dict[str, int] = {}; families: Dict[str, int] = {}; sources: Dict[str, int] = {}
+    for r in rows:
+        counts[r["status"]] = counts.get(r["status"], 0) + 1
+        sources[r["source"]] = sources.get(r["source"], 0) + 1
+        if r["signal_family"]: families[r["signal_family"]] = families.get(r["signal_family"], 0) + 1
+    return {"field_count": len(rows), "status_counts": counts, "signal_family_counts": families, "source_counts": sources, "rows": rows,
+            "activation_policy": "Only explicit USED_DIRECT/USED_DERIVED entries may enter models; PREMATCH_CANDIDATE alone is not active."}
