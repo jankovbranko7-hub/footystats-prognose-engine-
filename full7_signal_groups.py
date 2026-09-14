@@ -147,6 +147,8 @@ def classify_gold_feature(name: str, owner: str) -> str:
         return "LEAGUE_CONTEXT"
 
     if owner == "player_depth_quality_concentration":
+        if "secondary_affiliation" in low:
+            return "DATA_QUALITY"
         if any(token in low for token in (
             "players_found", "active_players", "active_player_share",
             "player_minutes", "active_minutes",
