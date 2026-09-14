@@ -43,6 +43,16 @@ class JointCoreTest(unittest.TestCase):
         self.assertEqual(uncertainty_action("under_2_5")[0], "BEOBACHTEN")
         self.assertEqual(uncertainty_action("home_win")[0], "AUSLASSEN")
 
+    def test_ui_identifies_joint_outcome_engine(self):
+        import app
+
+        html = app.legacy.INDEX_HTML
+        self.assertIn("Build 1.1.6-joint-outcome", html)
+        self.assertIn("Joint-Outcome Engine", html)
+        self.assertIn("Joint-Outcome V1.1.6 auswerten", html)
+        self.assertNotIn("Build 1.1.6-cross-market-normalized", html)
+        self.assertNotIn("keine Decision Engine", html)
+
     def test_full_five_file_bundle_uses_joint_core(self):
         import app
         from research.test_spec11_native_engine import build_bundle

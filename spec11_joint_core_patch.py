@@ -263,10 +263,14 @@ def apply_patch(legacy: Any) -> Any:
         return result
 
     legacy._analyze_bundle = analyze_joint
-    legacy.INDEX_HTML = legacy.INDEX_HTML.replace(
-        "FootyStats SPEC v1.1 · Engine v1.1.6",
-        "FootyStats V1.1.6 · JOINT-OUTCOME",
-    )
+    ui_replacements = {
+        "SPEC v1.1 · Engine v1.1.6": "SPEC v1.1 · Joint-Outcome Engine",
+        "FootyStats 5-Dateien-Auswertung · Build 1.1.6-cross-market-normalized": "FootyStats 5-Dateien-Auswertung · Build 1.1.6-joint-outcome",
+        "5 Dateien · vollständige sinnvolle SPEC-v1.1-Signalbreite · verwandte Felder als Evidenzblöcke · unabhängige Quellen zuerst · COLD START/LOW SAMPLE erlaubt · kein V0.4.x · kein Fallback · keine Odds · keine Decision Engine.": "5 Dateien · gemeinsame Ergebnismatrix · Empirical-Bayes-Shrinkage · 7 konsistente Märkte · aktive Marktneuauswahl · SPIELEN/BEOBACHTEN/AUSLASSEN · keine Odds · kein V0.4.x-Fallback.",
+        "SPEC v1.1 / Engine v1.1.6 auswerten": "Joint-Outcome V1.1.6 auswerten",
+    }
+    for old_text, new_text in ui_replacements.items():
+        legacy.INDEX_HTML = legacy.INDEX_HTML.replace(old_text, new_text)
 
     app.router.routes = [route for route in app.router.routes if getattr(route, "path", None) != "/api/health"]
 
