@@ -6,6 +6,7 @@ on:
       - research/v116-joint-core
       - fix/joint-outcome-ui
       - main
+      - release/v116-full5-joint
   workflow_dispatch:
 
 jobs:
@@ -25,16 +26,17 @@ jobs:
         run: |
           python - <<'PY'
           import app
-          assert app.app.version == "1.1.6-joint-outcome"
+          assert app.app.version == "1.1.6-full5-joint-outcome"
           routes = {route.path for route in app.app.routes}
           assert "/api/health" in routes
           health = next(route.endpoint for route in app.app.routes if route.path == "/api/health")()
           assert health["production"] is True
           assert health["research_only"] is False
-          assert health["probability_core"] == "JOINT_POISSON_SCORE_MATRIX_EMPIRICAL_BAYES"
+          assert health["probability_core"] == "JOINT_POISSON_EMPIRICAL_BAYES_FULL5_EXPONENTIAL_TILT"
           assert health["decision_engine"] == "MARKET_CONDITIONAL_CONSERVATIVE_RANK"
           assert health["manual_probability_threshold"] is False
-          assert health["legacy_signal_ranking_role"] == "DIAGNOSTIC_ONLY"
+          assert health["legacy_signal_ranking_role"] == "LATENT_SCORE_MATRIX_UPDATE"
+          assert health["full5_evidence_in_final_probabilities"] is True
           assert health["render_deployment_authorized"] is True
           print(health)
           PY
