@@ -1,8 +1,8 @@
 """Joint Outcome Core for SPEC v1.1 / Engine v1.1.6.
 
-This patch preserves the complete qualitative evidence analysis as diagnostics,
-then replaces its final market ranking with one coherent score distribution.
-The qualitative V1.1.6 evidence layer remains diagnostic-only.
+This patch fuses the complete five-source pre-match evidence into one coherent
+score distribution. Every available MATCH, LEAGUE, FORM, TABLE and PLAYER block
+updates the normalized score matrix without inventing missing values.
 """
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Tuple
 import spec11_cross_market_normalization_patch as current
 import spec11_native_engine as native
 
-ENGINE_NAME = "FOOTYSTATS_SPEC_V1_1_JOINT_OUTCOME"
+ENGINE_NAME = "FOOTYSTATS_SPEC_V1_1_FULL5_JOINT_OUTCOME"
 ENGINE_VERSION = "1.1.6-full5-joint-outcome"
 MARKETS = ("home_win", "draw", "away_win", "btts_yes", "btts_no", "over_2_5", "under_2_5")
 LABELS = {
@@ -322,7 +322,7 @@ def apply_patch(legacy: Any) -> Any:
         result.update({
             "engine": ENGINE_NAME,
             "engine_version": ENGINE_VERSION,
-            "analysis_type": "SPEC_V1_1_JOINT_OUTCOME",
+            "analysis_type": "SPEC_V1_1_FULL5_JOINT_OUTCOME",
             "decision": action,
             "recommendation": LABELS[selected] if action != "AUSLASSEN" else "KEIN BET",
             "recommendation_reason": f"{LABELS[selected]} ist Rang 1 der gemeinsamen Ergebnismatrix. {action_reason}",
@@ -376,8 +376,8 @@ def apply_patch(legacy: Any) -> Any:
     legacy._analyze_bundle = analyze_joint
     ui_replacements = {
         "SPEC v1.1 · Engine v1.1.6": "SPEC v1.1 · Joint-Outcome Engine",
-        "FootyStats 5-Dateien-Auswertung · Build 1.1.6-cross-market-normalized": "FootyStats 5-Dateien-Auswertung · Build 1.1.6-joint-outcome",
-        "5 Dateien · vollständige sinnvolle SPEC-v1.1-Signalbreite · verwandte Felder als Evidenzblöcke · unabhängige Quellen zuerst · COLD START/LOW SAMPLE erlaubt · kein V0.4.x · kein Fallback · keine Odds · keine Decision Engine.": "5 Dateien · gemeinsame Ergebnismatrix · Empirical-Bayes-Shrinkage · 7 konsistente Märkte · aktive Marktneuauswahl · SPIELEN/BEOBACHTEN/AUSLASSEN · keine Odds · kein V0.4.x-Fallback.",
+        "FootyStats 5-Dateien-Auswertung · Build 1.1.6-cross-market-normalized": "FootyStats 5-Dateien-Auswertung · Build 1.1.6-full5-joint-outcome",
+        "5 Dateien · vollständige sinnvolle SPEC-v1.1-Signalbreite · verwandte Felder als Evidenzblöcke · unabhängige Quellen zuerst · COLD START/LOW SAMPLE erlaubt · kein V0.4.x · kein Fallback · keine Odds · keine Decision Engine.": "Alle 5 Quellen wirken auf die gemeinsame Ergebnismatrix: Match · League · Form · Table · Player · Empirical-Bayes-Shrinkage · 7 konsistente Märkte · SPIELEN/BEOBACHTEN/AUSLASSEN · keine Odds.",
         "SPEC v1.1 / Engine v1.1.6 auswerten": "Joint-Outcome V1.1.6 auswerten",
     }
     for old_text, new_text in ui_replacements.items():
