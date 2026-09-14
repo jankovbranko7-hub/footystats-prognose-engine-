@@ -11,6 +11,7 @@ from typing import Any, Dict, List
 from fastapi import FastAPI, File, HTTPException, UploadFile
 
 from full7_foundation import process_full7, inventory_gold
+from full7_gold_features import build_gold_features
 
 APP_VERSION = "0.1.0-full7-validation"
 app = FastAPI(title="FootyStats FULL-7 Validation", version=APP_VERSION)
@@ -43,6 +44,22 @@ async def validate_uploads(files: List[UploadFile]) -> Dict[str, Any]:
     if result.get("gold"):
         gold = result["gold"]
         registry = inventory_gold(gold)
+        gold_features = build_gold_features(gold)
+        result["gold_features"] = {
+            "feature_builder_version": gold_features.get("feature_builder_version"),
+            "feature_count": gold_features.get("feature_count"),
+            "available_block_count": gold_features.get("available_block_count"),
+            "blocks": [
+                {
+                    "name": block.get("name"),
+                    "available": block.get("available"),
+                    "feature_count": block.get("feature_count"),
+                    "notes": block.get("notes"),
+                }
+                for block in gold_features.get("blocks", [])
+            ],
+            "policies": gold_features.get("policies"),
+        }
         result["feature_registry"] = {
             "registry_version": registry.get("registry_version"),
             "field_count": registry.get("field_count"),
