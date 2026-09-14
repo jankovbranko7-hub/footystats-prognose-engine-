@@ -35,6 +35,16 @@ class GoldFeatureTests(unittest.TestCase):
         b=manager_block(m,101,202,9)
         self.assertEqual(b["features"]["manager_wins_per_overall_home_minus_away"],40)
 
+    def test_player_secondary_club_is_not_primary_membership(self):
+        p={"pages":[{"data":[
+            {"id":1,"club_team_id":999,"club_team_2_id":101,"position":"Forward","minutes_played_overall":90,"goals_per_90_overall":1,"assists_per_90_overall":0,"goals_involved_per_90_overall":1,"goals_overall":1,"assists_overall":0},
+            {"id":2,"club_team_id":101,"club_team_2_id":-1,"position":"Forward","minutes_played_overall":45,"goals_per_90_overall":0,"assists_per_90_overall":0,"goals_involved_per_90_overall":0,"goals_overall":0,"assists_overall":0},
+            {"id":3,"club_team_id":202,"club_team_2_id":-1,"position":"Forward","minutes_played_overall":45,"goals_per_90_overall":0,"assists_per_90_overall":0,"goals_involved_per_90_overall":0,"goals_overall":0,"assists_overall":0},
+        ]}]}
+        b=player_block(p,101,202)
+        self.assertEqual(b["features"]["home_players_found"],1)
+        self.assertEqual(b["features"]["home_secondary_affiliation_count"],1)
+
     def test_player_no_lineup_inference(self):
         p={"pages":[{"data":[
             {"id":1,"club_team_id":101,"position":"Forward","minutes_played_overall":90,"goals_per_90_overall":1,"assists_per_90_overall":0,"goals_involved_per_90_overall":1,"goals_overall":1,"assists_overall":0},
