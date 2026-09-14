@@ -10,7 +10,7 @@ from typing import Any, Dict, List
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 
-from full7_foundation import process_full7
+from full7_foundation import process_full7, inventory_gold
 
 APP_VERSION = "0.1.0-full7-validation"
 app = FastAPI(title="FootyStats FULL-7 Validation", version=APP_VERSION)
@@ -42,6 +42,21 @@ async def validate_uploads(files: List[UploadFile]) -> Dict[str, Any]:
     # only audit/lineage readiness. A later model endpoint may consume Gold internally.
     if result.get("gold"):
         gold = result["gold"]
+        registry = inventory_gold(gold)
+        result["feature_registry"] = {
+            "registry_version": registry.get("registry_version"),
+            "field_count": registry.get("field_count"),
+            "status_counts": registry.get("status_counts"),
+            "family_counts": registry.get("family_counts"),
+            "source_counts": registry.get("source_counts"),
+            "redundancy_group_count": registry.get("redundancy_group_count"),
+            "redundancy_groups_with_multiple_fields": registry.get("redundancy_groups_with_multiple_fields"),
+            "review_required_count": registry.get("review_required_count"),
+            "model_candidate_count": registry.get("model_candidate_count"),
+            "blocked_or_nonpredictive_count": registry.get("blocked_or_nonpredictive_count"),
+            "activation_policy": registry.get("activation_policy"),
+            "evidence_policy": registry.get("evidence_policy"),
+        }
         result["gold"] = {
             "identity": gold.get("identity"),
             "quality": gold.get("quality"),
