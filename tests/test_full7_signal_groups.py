@@ -44,6 +44,22 @@ class SignalGroupTests(unittest.TestCase):
             "FIRST_SECOND_HALF",
         )
 
+    def test_affiliation_ambiguity_is_data_quality(self):
+        self.assertEqual(
+            classify_gold_feature(
+                "home_secondary_affiliation_count",
+                "player_depth_quality_concentration",
+            ),
+            "DATA_QUALITY",
+        )
+        self.assertEqual(
+            classify_gold_feature(
+                "home_manager_ambiguous_team_change_rows",
+                "manager",
+            ),
+            "DATA_QUALITY",
+        )
+
     def test_provider_potential_not_evidence_eligible(self):
         gf={
             "features":{"provider_btts_potential":70.0},
