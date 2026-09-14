@@ -140,6 +140,8 @@ def classify_gold_feature(name: str, owner: str) -> str:
     if owner == "referee":
         return "REFEREE"
     if owner == "manager":
+        if "ambiguous_team_change" in low:
+            return "DATA_QUALITY"
         return "MANAGER"
     if owner in {"sample_exposure"}:
         return "DATA_QUALITY"
