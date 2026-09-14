@@ -6,6 +6,9 @@ from dataclasses import asdict
 from full7_feature_registry import build_registry, classify as registry_classify
 from typing import Any, Dict, Iterable, Mapping, Optional, Sequence, Tuple
 
+FOUNDATION_VERSION = "0.2.0"
+INPUT_CONTRACT_VERSION = "FULL7_INPUT_CONTRACT_0.2"
+
 KINDS = ("match", "league", "form", "table", "player", "referee", "manager")
 SPECS = {
     "match": ("matchdaten", {"/match"}, False),
@@ -212,7 +215,10 @@ def build_silver(bronze: Dict[str, Any]) -> Dict[str, Any]:
         "normalized": {k: copy.deepcopy(_payload(a)) for k, a in artifacts.items()},
         "issues": issues,
         "audit": {
-            "architecture": "FULL7_BRONZE_SILVER_GOLD", "expected_file_count": 7,
+            "architecture": "FULL7_BRONZE_SILVER_GOLD",
+            "foundation_version": FOUNDATION_VERSION,
+            "input_contract_version": INPUT_CONTRACT_VERSION,
+            "expected_file_count": 7,
             "received_file_count": len(artifacts), "identity": ident,
             "critical_issue_count": len(critical), "warning_count": len(issues)-len(critical),
             "strict_pre_match": ident is not None and not any(x["critical"] and x["code"] in {
