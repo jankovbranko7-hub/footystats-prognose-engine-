@@ -1,7 +1,6 @@
-"""Render entry point: FootyStats V1.1.6 Joint-Core research integration.
+"""Render entry point: FootyStats V1.1.6 Joint-Outcome production integration.
 
-The main production branch remains unchanged. This entry point is committed only
-to research/v116-joint-core until validation and explicit release authorization.
+This entry point activates the validated Joint-Outcome core for V1.1.6.
 """
 import app_v040 as legacy
 from spec11_joint_core_patch import apply_patch
