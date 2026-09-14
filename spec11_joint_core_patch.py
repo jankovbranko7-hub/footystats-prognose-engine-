@@ -1,8 +1,8 @@
-"""Joint Outcome Core research patch for SPEC v1.1 / Engine v1.1.6.
+"""Joint Outcome Core for SPEC v1.1 / Engine v1.1.6.
 
 This patch preserves the complete qualitative evidence analysis as diagnostics,
 then replaces its final market ranking with one coherent score distribution.
-It is intentionally research-only and does not alter the production branch.
+The qualitative V1.1.6 evidence layer remains diagnostic-only.
 """
 from __future__ import annotations
 
@@ -13,8 +13,8 @@ from typing import Any, Dict, List, Tuple
 import spec11_cross_market_normalization_patch as current
 import spec11_native_engine as native
 
-ENGINE_NAME = "FOOTYSTATS_SPEC_V1_1_JOINT_OUTCOME_RESEARCH"
-ENGINE_VERSION = "1.1.6-joint-core-rc1"
+ENGINE_NAME = "FOOTYSTATS_SPEC_V1_1_JOINT_OUTCOME"
+ENGINE_VERSION = "1.1.6-joint-outcome"
 MARKETS = ("home_win", "draw", "away_win", "btts_yes", "btts_no", "over_2_5", "under_2_5")
 LABELS = {
     "home_win": "Sieg Heim", "draw": "Unentschieden", "away_win": "Sieg Auswärts",
@@ -219,7 +219,7 @@ def apply_patch(legacy: Any) -> Any:
         result.update({
             "engine": ENGINE_NAME,
             "engine_version": ENGINE_VERSION,
-            "analysis_type": "SPEC_V1_1_JOINT_OUTCOME_RESEARCH",
+            "analysis_type": "SPEC_V1_1_JOINT_OUTCOME",
             "decision": action,
             "recommendation": LABELS[selected] if action != "AUSLASSEN" else "KEIN BET",
             "recommendation_reason": f"{LABELS[selected]} ist Rang 1 der gemeinsamen Ergebnismatrix. {action_reason}",
@@ -247,7 +247,7 @@ def apply_patch(legacy: Any) -> Any:
             },
         })
         result.setdefault("method", {}).update({
-            "architecture": "SPEC_V1_1_JOINT_OUTCOME_RESEARCH",
+            "architecture": "SPEC_V1_1_JOINT_OUTCOME",
             "probability_core": "JOINT_POISSON_SCORE_MATRIX_EMPIRICAL_BAYES",
             "market_selector": "MAXIMUM_COHERENT_JOINT_PROBABILITY",
             "decision_engine": "MARKET_CONDITIONAL_CONSERVATIVE_RANK",
@@ -255,35 +255,35 @@ def apply_patch(legacy: Any) -> Any:
             "historical_residual_layer": False,
             "ml_reranker": False,
             "legacy_signal_ranking_role": "DIAGNOSTIC_ONLY",
-            "research_only": True,
+            "research_only": False,
         })
         result.setdefault("notes", []).append(
-            "Research RC1: Finaler Markt kommt aus einer gemeinsamen Score-Matrix; das V1.1.6-Signalranking bleibt nur Diagnose."
+            "Finaler Markt und Entscheidung kommen aus der gemeinsamen Score-Matrix; das frühere V1.1.6-Signalranking bleibt nur Diagnose."
         )
         return result
 
     legacy._analyze_bundle = analyze_joint
     legacy.INDEX_HTML = legacy.INDEX_HTML.replace(
         "FootyStats SPEC v1.1 · Engine v1.1.6",
-        "FootyStats V1.1.6 JOINT-CORE · RESEARCH RC1",
+        "FootyStats V1.1.6 · JOINT-OUTCOME",
     )
 
     app.router.routes = [route for route in app.router.routes if getattr(route, "path", None) != "/api/health"]
 
     def health():
         return {
-            "ok": True, "production": False, "research_only": True,
+            "ok": True, "production": True, "research_only": False,
             "engine": ENGINE_NAME, "version": ENGINE_VERSION, "spec_version": "1.1",
-            "architecture": "SPEC_V1_1_JOINT_OUTCOME_RESEARCH",
+            "architecture": "SPEC_V1_1_JOINT_OUTCOME",
             "probability_core": "JOINT_POISSON_SCORE_MATRIX_EMPIRICAL_BAYES",
             "decision_engine": "MARKET_CONDITIONAL_CONSERVATIVE_RANK",
             "manual_probability_threshold": False,
             "legacy_signal_ranking_role": "DIAGNOSTIC_ONLY",
-            "render_deployment_authorized": False,
+            "render_deployment_authorized": True,
             "shortcut_capture_unix": int(time.time()),
         }
 
     app.add_api_route("/api/health", health, methods=["GET"])
     app.version = ENGINE_VERSION
-    app.title = "FootyStats V1.1.6 Joint-Core Research"
+    app.title = "FootyStats V1.1.6 Joint-Outcome"
     return app
