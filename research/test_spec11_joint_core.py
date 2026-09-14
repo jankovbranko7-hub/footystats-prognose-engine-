@@ -49,9 +49,10 @@ class JointCoreTest(unittest.TestCase):
 
         result = app.legacy._analyze_bundle(build_bundle(8, 8))
         self.assertTrue(result["ok"], result)
-        self.assertEqual(result["engine_version"], "1.1.6-joint-core-rc1")
+        self.assertEqual(result["engine_version"], "1.1.6-joint-outcome")
         self.assertEqual(result["method"]["probability_core"], "JOINT_POISSON_SCORE_MATRIX_EMPIRICAL_BAYES")
         self.assertEqual(result["method"]["legacy_signal_ranking_role"], "DIAGNOSTIC_ONLY")
+        self.assertFalse(result["method"]["research_only"])
         self.assertEqual(len(result["joint_outcome"]["probabilities"]), 7)
         p = result["joint_outcome"]["probabilities"]
         self.assertAlmostEqual(p["home_win"] + p["draw"] + p["away_win"], 1.0, places=6)
