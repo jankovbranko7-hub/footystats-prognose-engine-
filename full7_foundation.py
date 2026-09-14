@@ -45,6 +45,11 @@ def _int(v: Any) -> Optional[int]:
     x = _num(v); return int(x) if x is not None else None
 
 
+def _positive_int(v: Any) -> Optional[int]:
+    x = _int(v)
+    return x if x is not None and x > 0 else None
+
+
 def _hash(v: Any) -> str:
     raw = json.dumps(v, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
     return hashlib.sha256(raw).hexdigest()
@@ -105,7 +110,7 @@ def _identity(a: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     out = {
         "match_id": _int(m.get("id")), "home_id": _int(m.get("homeID")),
         "away_id": _int(m.get("awayID")), "season_id": _int(m.get("competition_id")),
-        "kickoff_unix": _int(m.get("date_unix")), "referee_id": _int(m.get("refereeID")),
+        "kickoff_unix": _int(m.get("date_unix")), "referee_id": _positive_int(m.get("refereeID")),
     }
     return None if any(out[k] is None for k in ("match_id", "home_id", "away_id", "season_id", "kickoff_unix")) else out
 
@@ -181,16 +186,21 @@ def build_silver(bronze: Dict[str, Any]) -> Dict[str, Any]:
             if _player_count(p, ident["away_id"]) <= 0: issues.append(_issue("PLAYER_AWAY_TEAM_MISSING", "player"))
             if not _player_pages_ok(artifacts["player"]): issues.append(_issue("PLAYER_PAGINATION_INCOMPLETE", "player"))
         if "referee" in artifacts:
-            ref = artifacts["referee"]; available = ref["meta"].get("available")
-            if ident["referee_id"] is None and available not in (False, "false", "False", 0, "0"):
-                issues.append(_issue("REFEREE_UNASSIGNED_NOT_EXPLICIT", "referee", False))
-            elif ident["referee_id"] is not None and not _has_id(_payload(ref), ident["referee_id"]):
+            ref = artifacts["referee"]
+            if ident["referee_id"] is not None and not _has_id(_payload(ref), ident["referee_id"]):
                 issues.append(_issue("REFEREE_ID_NOT_FOUND", "referee", False))
         if "manager" in artifacts:
             meta = artifacts["manager"]["meta"]
+            payload = _payload(artifacts["manager"])
             for side in ("home", "away"):
-                if _int(meta.get(f"{side}_manager_id")) is None and meta.get(f"{side}_manager_available") not in (False, "false", "False", 0, "0"):
-                    issues.append(_issue("MANAGER_ID_NOT_DECLARED", "manager", False, side=side))
+                manager_id = _positive_int(meta.get(f"{side}_manager_id"))
+                side_payload = payload.get(side) if isinstance(payload, dict) else None
+                explicitly_unavailable = (
+                    isinstance(side_payload, dict)
+                    and side_payload.get("available") in (False, "false", "False", 0, "0")
+                )
+                if manager_id is None and not explicitly_unavailable:
+                    issues.append(_issue("MANAGER_UNAVAILABLE_NOT_EXPLICIT", "manager", False, side=side))
     critical = [x for x in issues if x["critical"]]
     return {
         "valid": ident is not None and not critical, "identity": ident,
