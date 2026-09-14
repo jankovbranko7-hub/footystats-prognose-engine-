@@ -528,7 +528,7 @@ def build_gold_features(gold:Dict[str,Any])->Dict[str,Any]:
             if k in flat: raise ValueError(f"duplicate gold feature: {k}")
             flat[k]=v; owners[k]=b["name"]
     return {
-        "feature_builder_version":"0.2.0",
+        "feature_builder_version":"0.2.1",
         "identity":ident,
         "feature_count":len(flat),
         "available_block_count":sum(1 for b in blocks if b["available"]),
