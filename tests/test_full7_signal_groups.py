@@ -60,6 +60,12 @@ class SignalGroupTests(unittest.TestCase):
             "DATA_QUALITY",
         )
 
+    def test_derived_league_context_group(self):
+        self.assertEqual(
+            classify_gold_feature("league_derived_overall_xg_for_avg","league_derived_context"),
+            "LEAGUE_CONTEXT",
+        )
+
     def test_provider_potential_not_evidence_eligible(self):
         gf={
             "features":{"provider_btts_potential":70.0},
