@@ -14,7 +14,7 @@ from full7_foundation import process_full7, inventory_gold
 from full7_gold_features import build_gold_features
 from full7_signal_groups import audit_signal_groups
 
-APP_VERSION = "0.2.1-full7-validation"
+APP_VERSION = "0.3.0-full7-validation"
 app = FastAPI(title="FootyStats FULL-7 Validation", version=APP_VERSION)
 
 
