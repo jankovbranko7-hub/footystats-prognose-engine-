@@ -145,7 +145,7 @@ def classify_gold_feature(name: str, owner: str) -> str:
         return "MANAGER"
     if owner in {"sample_exposure"}:
         return "DATA_QUALITY"
-    if owner == "league_context":
+    if owner in {"league_context", "league_derived_context"}:
         return "LEAGUE_CONTEXT"
 
     if owner == "player_depth_quality_concentration":
