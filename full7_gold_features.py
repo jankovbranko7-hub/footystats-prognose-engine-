@@ -187,6 +187,31 @@ def league_blocks(league: Dict[str, Any], home_id: int, away_id: int) -> List[Di
     return [block_result("league_team_profiles",f),block_result("league_relative",rel),block_result("sample_exposure",samples)]
 
 
+def league_derived_context_block(league: Dict[str, Any]) -> Dict[str, Any]:
+    """Derive reproducible league anchors from /league-teams rows.
+
+    This block is available in both historical Base-5 archives and modern FULL-7
+    packages, unlike provider /league-season context that was not captured in
+    older archives.
+    """
+    teams = team_rows(league)
+    f: Dict[str, float] = {}
+    for split in ("overall", "home", "away"):
+        for metric in TEAM_METRICS:
+            put(f, f"league_derived_{split}_{metric}", league_mean(teams, metric, split))
+
+    for metric in TEAM_METRICS:
+        home = league_mean(teams, metric, "home")
+        away = league_mean(teams, metric, "away")
+        add_diff(f, f"league_derived_{metric}_home_minus_away", home, away)
+
+    return block_result(
+        "league_derived_context",
+        f,
+        ["Weighted league anchors derived only from strict pre-match /league-teams rows; reproducible in legacy and modern captures."],
+    )
+
+
 def league_context_block(league: Dict[str, Any]) -> Dict[str, Any]:
     wrapper = league.get("league") if isinstance(league, dict) else None
     row = api_data(wrapper)
@@ -514,6 +539,7 @@ def build_gold_features(gold:Dict[str,Any])->Dict[str,Any]:
     blocks.append(match_block(match))
     blocks.append(provider_potential_block(match))
     blocks.extend(league_blocks(ns.get("league") or {},ident["home_id"],ident["away_id"]))
+    blocks.append(league_derived_context_block(ns.get("league") or {}))
     blocks.append(league_context_block(ns.get("league") or {}))
     blocks.extend(form_blocks(ns.get("form") or {},ident["home_id"],ident["away_id"]))
     blocks.extend(form_match_venue_blocks(ns.get("form") or {},ident["home_id"],ident["away_id"]))
@@ -528,7 +554,7 @@ def build_gold_features(gold:Dict[str,Any])->Dict[str,Any]:
             if k in flat: raise ValueError(f"duplicate gold feature: {k}")
             flat[k]=v; owners[k]=b["name"]
     return {
-        "feature_builder_version":"0.2.1",
+        "feature_builder_version":"0.3.0",
         "identity":ident,
         "feature_count":len(flat),
         "available_block_count":sum(1 for b in blocks if b["available"]),
