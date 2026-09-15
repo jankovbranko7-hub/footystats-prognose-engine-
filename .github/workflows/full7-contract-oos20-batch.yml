@@ -1,0 +1,36 @@
+name: FULL-7 Contract OOS20 Batch Freeze
+
+on:
+  push:
+    branches:
+      - feat/full7-contract-implementation
+    paths:
+      - 'research/oos20_input/**'
+      - 'research/run_oos20_batch_contract.py'
+      - '.github/workflows/full7-contract-oos20-batch.yml'
+      - 'full7_contract_*.py'
+      - 'models/full7_contract_*'
+      - 'models/full7_evidence_reference.json.gz'
+  workflow_dispatch:
+
+jobs:
+  freeze-oos20-batch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install runtime dependencies
+        run: pip install -r requirements.txt
+      - name: Freeze outcome-blind FULL-7 batch
+        env:
+          PYTHONPATH: .
+        run: python research/run_oos20_batch_contract.py
+      - name: Upload frozen predictions
+        uses: actions/upload-artifact@v4
+        with:
+          name: full7-oos20-batch-frozen-predictions
+          path: research/oos20_output/*.json
+          if-no-files-found: error
+          retention-days: 7
