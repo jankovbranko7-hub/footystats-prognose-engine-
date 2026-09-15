@@ -61,7 +61,7 @@ GROUP_META: Dict[str, Dict[str, Any]] = {
         "cluster": "goal_pattern",
         "role": "CORE_CANDIDATE",
         "evidence_eligible": True,
-        "markets": ("btts_yes", "btts_no", "over_2_5", "under_2_5"),
+        "markets": ALL_MARKETS,
     },
     "PLAYER_DEPTH": {
         "cluster": "player",
