@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import tarfile
+from datetime import datetime, timezone
 import tempfile
 from pathlib import Path
 
@@ -108,11 +110,27 @@ def main() -> None:
             },
             "families": selected_summary,
             "markets": decision["markets"],
+            "evidence": evidence,
             "sample_security": decision["sample_security"],
             "data_quality_support": decision["data_quality_support"],
             "coherence": decision["coherence"],
             "contract_stage": decision["contract_stage"],
             "secondary_context": evidence["secondary_context"],
+        }
+
+        prediction_payload = json.dumps(
+            output,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+        output["prediction_payload_sha256"] = hashlib.sha256(prediction_payload).hexdigest()
+        output["freeze_audit"] = {
+            "frozen_before_result_join": True,
+            "result_joined": False,
+            "frozen_at_utc": datetime.now(timezone.utc).isoformat(),
+            "workflow_run_id": os.environ.get("GITHUB_RUN_ID"),
+            "workflow_head_sha": os.environ.get("GITHUB_SHA"),
         }
 
         out_path = Path("research/oos001_output.json")
