@@ -1,0 +1,33 @@
+name: FULL-7 Contract OOS #001 Freeze
+
+on:
+  push:
+    branches:
+      - feat/full7-contract-implementation
+    paths:
+      - 'research/oos001_input/**'
+      - 'research/run_oos001_contract.py'
+      - '.github/workflows/full7-contract-oos001.yml'
+      - 'full7_contract_*.py'
+      - 'models/full7_contract_*'
+      - 'models/full7_evidence_reference.json.gz'
+  workflow_dispatch:
+
+jobs:
+  freeze-oos001:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install runtime dependencies
+        run: pip install -r requirements.txt
+      - name: Run outcome-blind FULL-7 contract prediction
+        run: python research/run_oos001_contract.py
+      - name: Upload frozen prediction
+        uses: actions/upload-artifact@v4
+        with:
+          name: full7-oos001-frozen-prediction
+          path: research/oos001_output.json
+          if-no-files-found: error
