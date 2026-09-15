@@ -1,0 +1,70 @@
+{
+  "checkpoint": "FULL7_RESEARCH_STATE_0.3.0",
+  "branch": "feat/full7-bronze-silver-gold",
+  "foundation_version": "0.2.0",
+  "gold_builder_version": "0.3.0",
+  "signal_group_version": "0.1.0",
+  "dev_api_version": "0.3.0-full7-validation",
+  "historical_dataset": {
+    "physical_reports": 333,
+    "unique_match_ids": 322,
+    "strict_reports": 308,
+    "strict_unique_matches": 300,
+    "verified_targets": 300,
+    "date_start": "2026-08-28",
+    "date_end": "2026-09-07",
+    "provenance_mode": "LEGACY_ARCHIVE_STRICT",
+    "historical_sources": [
+      "match",
+      "league",
+      "form",
+      "table",
+      "player"
+    ],
+    "unavailable_historically": [
+      "referee",
+      "manager"
+    ]
+  },
+  "gold300": {
+    "processed": 300,
+    "errors": 0,
+    "feature_universe": 1000,
+    "core_feature_universe": 620,
+    "min_gold_coverage": 0.9466666666666667,
+    "min_core_coverage": 0.9633333333333334,
+    "full_coverage_features": 908
+  },
+  "research": {
+    "prequential_evaluation_n": 180,
+    "catboost": {
+      "one_x_two_logloss": 1.024093834692166,
+      "btts_logloss": 0.7464770773023797,
+      "o25_logloss": 0.7114234576953251
+    },
+    "rolling_prior": {
+      "one_x_two_logloss": 1.082412372677419,
+      "btts_logloss": 0.7032053546237617,
+      "o25_logloss": 0.6726695239884063
+    },
+    "poisson": {
+      "one_x_two_logloss": 1.0740381827193315,
+      "btts_logloss": 0.7106685159599069,
+      "o25_logloss": 0.7115931825715146
+    },
+    "calibration_ece": {
+      "one_x_two": 0.06705235909330141,
+      "btts": 0.15671343449058064,
+      "o25": 0.14001935665759335
+    }
+  },
+  "promotion": {
+    "one_x_two": "DEVELOPMENT_CANDIDATE",
+    "btts": "DO_NOT_PROMOTE_CURRENT_FORM",
+    "o25": "DO_NOT_PROMOTE_CURRENT_FORM",
+    "stacker": "RESEARCH_ONLY",
+    "reliability_gate": "DO_NOT_PROMOTE_CURRENT_FORM",
+    "production": false
+  },
+  "production_app_sha": "5852e4a476ac3f79aab3471623e1d914a0f7068e"
+}

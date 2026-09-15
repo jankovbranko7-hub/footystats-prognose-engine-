@@ -1,0 +1,62 @@
+{
+  "checkpoint": "FULL7_RESEARCH_STATE_0.4.0",
+  "dataset": {
+    "strict_matches": 300,
+    "verified_targets": 300,
+    "date_blocks": 10,
+    "prequential_seed_blocks": 4,
+    "evaluation_blocks": 6,
+    "evaluation_n": 180
+  },
+  "architecture": {
+    "gold_builder_version": "0.3.0",
+    "market_feature_set_version": "FULL7_MARKET_FEATURE_SETS_0.2",
+    "goal_probability_core": "POISSON_DIXON_COLES",
+    "rho_policy": "learned only from past calibration data inside each fold",
+    "manual_model_mix_weights": false,
+    "odds": false,
+    "provider_potentials_core": false,
+    "h2h_core": false
+  },
+  "metrics": {
+    "one_x_two": {
+      "expert": "direct_catboost_full_core",
+      "logloss": 1.024093834692166,
+      "rolling_prior_logloss": 1.082412372677419,
+      "bootstrap_delta_ci95": [
+        -0.08908400211711946,
+        -0.03495927926835754
+      ],
+      "bootstrap_probability_better": 1
+    },
+    "btts": {
+      "expert": "goal_intensity_dixon_coles",
+      "logloss": 0.6810281717795864,
+      "rolling_prior_logloss": 0.7032053546237617,
+      "bootstrap_delta_ci95": [
+        -0.08460646011301398,
+        0.033471949235294715
+      ],
+      "bootstrap_probability_better": 0.78145
+    },
+    "over_2_5": {
+      "expert": "none_promoted",
+      "best_learned_candidate": "total_goals_poisson",
+      "candidate_logloss": 0.6738204594758569,
+      "rolling_prior_logloss": 0.6726695239884063,
+      "bootstrap_delta_ci95": [
+        -0.033063164513102115,
+        0.036433271354099246
+      ],
+      "bootstrap_probability_better": 0.4762
+    }
+  },
+  "readiness": {
+    "1X2": "DEVELOPMENT_CANDIDATE_STRONG",
+    "BTTS": "DEVELOPMENT_CANDIDATE_NEEDS_NEW_OOS",
+    "TOTALS": "HOLD_NO_INCREMENTAL_SIGNAL_YET",
+    "DECISION_GATE": "HOLD",
+    "PRODUCTION": false
+  },
+  "production_app_sha": "5852e4a476ac3f79aab3471623e1d914a0f7068e"
+}

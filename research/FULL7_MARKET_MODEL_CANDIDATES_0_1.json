@@ -1,0 +1,24 @@
+{
+  "contract_version": "FULL7_MARKET_MODEL_CANDIDATES_0.1",
+  "one_x_two": {
+    "status": "DEVELOPMENT_CANDIDATE_STRONG",
+    "probability_source": "CATBOOST_FULL_CORE",
+    "feature_policy": "FULL7 outcome-blind core; many features but independent evidence clusters remain separate",
+    "calibration_required": true
+  },
+  "btts": {
+    "status": "DEVELOPMENT_CANDIDATE_NEEDS_NEW_OOS",
+    "probability_source": "LEARNED_HOME_AWAY_GOAL_INTENSITIES_PLUS_DIXON_COLES",
+    "rho": "temporal calibration only",
+    "calibration_required": true
+  },
+  "totals": {
+    "status": "HOLD_NO_INCREMENTAL_SIGNAL_YET",
+    "probability_source": null,
+    "reason": "No learned feature model beat the rolling base-rate benchmark robustly on inspected development blocks."
+  },
+  "decision_layer": {
+    "status": "HOLD",
+    "rule": "Do not hard-code probability thresholds from the inspected 300-match development corpus."
+  }
+}
