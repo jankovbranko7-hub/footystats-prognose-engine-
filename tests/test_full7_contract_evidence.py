@@ -18,11 +18,11 @@ class Full7ContractEvidenceTests(unittest.TestCase):
             set(MARKETS),
         )
         self.assertTrue(
-            all(value == "NO_DECISION_YET" for value in out["decision_layer"]["markets"].values())
+            all(value == "DECISION_COMPUTED_IN_DECISION_ENGINE" for value in out["decision_layer"]["markets"].values())
         )
         self.assertEqual(
             out["decision_layer"]["status"],
-            "LOCKED_PENDING_STEP5_EMPIRICAL_GATE",
+            "DELEGATED_TO_FULL7_CONTRACT_DECISION",
         )
 
     def test_reference_is_empirical_and_complete(self):
@@ -58,7 +58,7 @@ class Full7ContractEvidenceTests(unittest.TestCase):
         self.assertEqual(q["finite_core_feature_count"], 0)
         self.assertEqual(q["core_feature_coverage"], 0.0)
         self.assertIsNone(q["score"])
-        self.assertEqual(q["score_status"], "PENDING_EMPIRICAL_DECISION_GATE")
+        self.assertEqual(q["score_status"], "EMPIRICAL_SUPPORT_CHECK_ACTIVE")
 
     def test_coherence_is_checked_for_all_probability_families(self):
         out = build_evidence_engine({"features": {}, "feature_owners": {}})
