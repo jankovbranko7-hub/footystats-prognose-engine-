@@ -1,0 +1,21 @@
+name: FULL-7 Contract Final Release Gate
+
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  final-release-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install runtime dependencies
+        run: pip install -r requirements.txt
+      - name: Run FULL-7 regression suite
+        run: python -m unittest discover -s tests -p "test_full7_*.py" -v
+      - name: Require completed untouched Forward-OOS and final audits
+        run: python research/check_full7_release_gate.py --require-final
