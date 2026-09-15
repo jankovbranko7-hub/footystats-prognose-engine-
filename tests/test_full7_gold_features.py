@@ -3,6 +3,7 @@ from full7_gold_features import (
     form_match_venue_blocks,
     h2h_block,
     league_context_block,
+    league_derived_context_block,
     manager_block,
     match_block,
     player_block,
@@ -82,6 +83,15 @@ class GoldFeatureTests(unittest.TestCase):
         self.assertEqual(b["features"]["provider_btts_potential"],70)
         self.assertEqual(b["features"]["provider_o25_potential"],65)
         self.assertFalse(any("odds" in k for k in b["features"]))
+
+    def test_derived_league_context_from_team_rows(self):
+        league={"team_pages":{"data":[
+            {"id":1,"stats":{"seasonMatchesPlayed_overall":2,"seasonMatchesPlayed_home":1,"seasonMatchesPlayed_away":1,"xg_for_avg_overall":1.0,"xg_for_avg_home":1.2,"xg_for_avg_away":0.8,"seasonPPG_overall":1.0,"seasonPPG_home":2.0,"seasonPPG_away":0.0}},
+            {"id":2,"stats":{"seasonMatchesPlayed_overall":2,"seasonMatchesPlayed_home":1,"seasonMatchesPlayed_away":1,"xg_for_avg_overall":2.0,"xg_for_avg_home":2.2,"xg_for_avg_away":1.8,"seasonPPG_overall":2.0,"seasonPPG_home":3.0,"seasonPPG_away":1.0}},
+        ]}}
+        b=league_derived_context_block(league)
+        self.assertAlmostEqual(b["features"]["league_derived_overall_xg_for_avg"],1.5)
+        self.assertAlmostEqual(b["features"]["league_derived_seasonPPG_home_minus_away"],2.0)
 
     def test_league_context(self):
         b=league_context_block({"league":{"data":{"xg_avg":3.1,"seasonAVG_overall":2.7,"seasonBTTSPercentage":54,"totalMatches":100}}})
