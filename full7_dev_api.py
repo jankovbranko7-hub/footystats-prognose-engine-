@@ -16,7 +16,7 @@ from full7_signal_groups import audit_signal_groups
 from full7_feature_sets import build_feature_sets
 from full7_market_feature_sets import build_market_feature_sets
 
-APP_VERSION = "0.4.1-full7-validation"
+APP_VERSION = "1.0.0-full7-validation"
 router = APIRouter()
 app = FastAPI(title="FootyStats FULL-7 Validation", version=APP_VERSION)
 
@@ -57,11 +57,11 @@ async def validate_uploads(files: List[UploadFile]) -> Dict[str, Any]:
             "feature_counts": market_sets.get("feature_counts"),
             "family_counts": market_sets.get("family_counts"),
             "policy": market_sets.get("policy"),
-            "research_readiness": {
-                "1X2": "DEVELOPMENT_CANDIDATE_STRONG",
-                "BTTS": "DEVELOPMENT_CANDIDATE_NEEDS_NEW_OOS",
-                "TOTALS": "HOLD_NO_INCREMENTAL_SIGNAL_YET",
-                "production_recommendation": False,
+            "production_readiness": {
+                "1X2": "OOS_OBSERVE_ONLY",
+                "BTTS": "OOS_VALIDATED_SELECTIVE",
+                "TOTALS": "OOS_OBSERVE_ONLY",
+                "production_recommendation": "BTTS_ONLY",
             },
         }
         result["signal_groups"] = {
@@ -118,15 +118,16 @@ async def validate_uploads(files: List[UploadFile]) -> Dict[str, Any]:
 def full7_health() -> Dict[str, Any]:
     return {
         "ok": True,
-        "development_only": True,
+        "development_only": False,
         "version": APP_VERSION,
         "expected_files": 7,
-        "production_wired": False,
+        "production_wired": True,
         "market_model_readiness": {
-            "1X2": "DEVELOPMENT_CANDIDATE_STRONG",
-            "BTTS": "DEVELOPMENT_CANDIDATE_NEEDS_NEW_OOS",
-            "TOTALS": "HOLD_NO_INCREMENTAL_SIGNAL_YET",
+            "1X2": "OOS_OBSERVE_ONLY",
+            "BTTS": "OOS_VALIDATED_SELECTIVE",
+            "TOTALS": "OOS_OBSERVE_ONLY",
         },
+        "recommendation_family": "BTTS",
     }
 
 
