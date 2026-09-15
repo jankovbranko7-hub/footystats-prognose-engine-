@@ -81,6 +81,8 @@ _MODELS = {
 }
 _FEATURES = _load_json("full7_contract_feature_lists.json.gz")
 _META = _load_json("full7_contract_model_meta.json.gz")
+CORE_FEATURES = tuple(_FEATURES["core"])
+MODEL_META = dict(_META)
 
 
 def _finite(value: Any) -> float:
@@ -128,7 +130,7 @@ def contract_model_support(gold_features: Mapping[str, Any]) -> Dict[str, Any]:
     from saved temporal OOF predictions in the next contract stages.
     """
     features = gold_features.get("features") or {}
-    names = list(_FEATURES["core"])
+    names = list(CORE_FEATURES)
     if not names or len(names) != 620:
         raise RuntimeError("FULL-7 contract core feature list must contain 620 features")
     if any(list(_FEATURES[key]) != names for key in ("1X2", "BTTS", "TOTALS", "GOAL")):
