@@ -6,6 +6,7 @@ from full7_dataset import (
     derive_targets,
     join_results,
     materialize_matrix,
+    snapshot_captured_at,
     validate_target_coherence,
 )
 
@@ -78,6 +79,20 @@ class DatasetTests(unittest.TestCase):
 
     def test_matrix_target_required(self):
         self.assertRaises(ValueError,materialize_matrix,[row(1,1000,900,1)],require_targets=True)
+
+    def test_legacy_archive_snapshot_time_is_observed_fallback(self):
+        gold={
+            "lineage":{"match":{"captured_at_unix":None}},
+            "quality":{"provenance_mode":"LEGACY_ARCHIVE_STRICT","snapshot_captured_at_unix":900},
+        }
+        self.assertEqual(snapshot_captured_at(gold),900)
+
+    def test_nonlegacy_missing_source_times_do_not_fallback(self):
+        gold={
+            "lineage":{"match":{"captured_at_unix":None}},
+            "quality":{"snapshot_captured_at_unix":900},
+        }
+        self.assertIsNone(snapshot_captured_at(gold))
 
     def test_no_input_mutation(self):
         rows=[row(1,1000,900,1)]
