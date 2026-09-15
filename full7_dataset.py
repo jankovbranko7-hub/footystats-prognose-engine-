@@ -71,7 +71,17 @@ def snapshot_captured_at(gold: Mapping[str, Any]) -> Optional[int]:
         ts = _int(row.get("captured_at_unix"))
         if ts is not None:
             times.append(ts)
-    return max(times) if times else None
+    if times:
+        return max(times)
+
+    # Historical archive reports predate per-source capture metadata. Their
+    # archive.created_at timestamp is an observed report-level snapshot time,
+    # not a fabricated source timestamp. It is allowed only when the adapter
+    # explicitly marks LEGACY_ARCHIVE_STRICT provenance.
+    quality = gold.get("quality") or {}
+    if quality.get("provenance_mode") == "LEGACY_ARCHIVE_STRICT":
+        return _int(quality.get("snapshot_captured_at_unix"))
+    return None
 
 
 def make_model_row(
