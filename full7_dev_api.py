@@ -13,8 +13,10 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from full7_foundation import process_full7, inventory_gold
 from full7_gold_features import build_gold_features
 from full7_signal_groups import audit_signal_groups
+from full7_feature_sets import build_feature_sets
+from full7_market_feature_sets import build_market_feature_sets
 
-APP_VERSION = "0.3.0-full7-validation"
+APP_VERSION = "0.4.0-full7-validation"
 app = FastAPI(title="FootyStats FULL-7 Validation", version=APP_VERSION)
 
 
@@ -47,6 +49,20 @@ async def validate_uploads(files: List[UploadFile]) -> Dict[str, Any]:
         registry = inventory_gold(gold)
         gold_features = build_gold_features(gold)
         signal_groups = audit_signal_groups(gold_features)
+        feature_sets = build_feature_sets(gold_features)
+        market_sets = build_market_feature_sets(feature_sets.get("core_probability") or [])
+        result["market_feature_sets"] = {
+            "market_feature_set_version": market_sets.get("market_feature_set_version"),
+            "feature_counts": market_sets.get("feature_counts"),
+            "family_counts": market_sets.get("family_counts"),
+            "policy": market_sets.get("policy"),
+            "research_readiness": {
+                "1X2": "DEVELOPMENT_CANDIDATE_STRONG",
+                "BTTS": "DEVELOPMENT_CANDIDATE_NEEDS_NEW_OOS",
+                "TOTALS": "HOLD_NO_INCREMENTAL_SIGNAL_YET",
+                "production_recommendation": False,
+            },
+        }
         result["signal_groups"] = {
             "signal_group_version": signal_groups.get("signal_group_version"),
             "feature_count": signal_groups.get("feature_count"),
@@ -105,6 +121,11 @@ def full7_health() -> Dict[str, Any]:
         "version": APP_VERSION,
         "expected_files": 7,
         "production_wired": False,
+        "market_model_readiness": {
+            "1X2": "DEVELOPMENT_CANDIDATE_STRONG",
+            "BTTS": "DEVELOPMENT_CANDIDATE_NEEDS_NEW_OOS",
+            "TOTALS": "HOLD_NO_INCREMENTAL_SIGNAL_YET",
+        },
     }
 
 
