@@ -1,4 +1,4 @@
-name: SPEC v1.1 full-signal strongest-market production smoke
+name: Production smoke legacy + FULL-7 Gated
 
 on:
   push:
@@ -14,77 +14,70 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install -r requirements.txt
-      - name: Compile SPEC v1.1 full-signal production stack
+
+      - name: Compile current production stack
         run: |
-          python -m py_compile app_v040.py spec11_native_engine.py spec11_signal_expansion.py spec11_strongest_market_engine.py spec11_strongest_market_patch.py spec11_full_signal_patch.py spec11_target_player_scope_patch.py spec11_ui_cleanup_patch.py spec11_draw_parity_patch.py spec11_report_download_patch.py spec11_cross_market_normalization_patch.py research/test_spec11_native_engine.py research/test_spec11_strongest_market.py research/test_spec11_ranking_consistency.py research/test_spec11_draw_parity.py research/test_spec11_cross_market_normalization.py research/test_spec11_report_download.py app.py
-      - name: Run strongest-market and cold-start smoke
-        run: python -m research.test_spec11_strongest_market
-      - name: Run ranking-consistency regression
-        run: python -m research.test_spec11_ranking_consistency
-      - name: Run draw-parity regression
-        run: python -m research.test_spec11_draw_parity
-      - name: Run cross-market normalization regression
-        run: python -m research.test_spec11_cross_market_normalization
-      - name: Run backtest-report download regression
-        run: python -m research.test_spec11_report_download
-      - name: Assert production is full-signal comparison without decision engine
+          python -m py_compile             app.py app_v040.py spec11_joint_core_patch.py             full7_foundation.py full7_feature_registry.py full7_gold_features.py             full7_signal_groups.py full7_feature_sets.py full7_market_feature_sets.py             full7_goal_probability.py full7_probability_contract.py             full7_final_engine.py full7_final_api.py full7_dev_api.py
+
+      - name: Run FULL-7 regression suite
+        run: python -m unittest discover -s tests -p "test_full7_*.py" -v
+
+      - name: Assert legacy compatibility and FULL-7 gated production wiring
         run: |
           python - <<'PY'
           import app
-          import app_v040 as legacy
-          import spec11_strongest_market_engine as engine
-          from spec11_ui_cleanup_patch import _clean_h2h_wording
+          from full7_final_engine import (
+              ENGINE_VERSION,
+              MODEL_CONTRACT_VERSION,
+              BTTS_GATE_VERSION,
+              READINESS,
+          )
 
-          assert app.app.version == '1.1.6-cross-market-normalized'
-          assert engine.ENGINE_VERSION == '1.1.6-cross-market-normalized'
-          assert 'SPEC v1.1 · Engine v1.1.6' in legacy.INDEX_HTML
-          assert 'Build 1.1.6-cross-market-normalized' in legacy.INDEX_HTML
-          assert 'SPEC v1.1 / Engine v1.1.6 auswerten' in legacy.INDEX_HTML
-          assert 'vollständige sinnvolle SPEC-v1.1-Signalbreite' in legacy.INDEX_HTML
-          assert 'kein V0.4.x' in legacy.INDEX_HTML
-          assert 'kein Fallback' in legacy.INDEX_HTML
-          assert 'SPEC_V1_1_ENGINE_V1_1_6_BACKTEST_REPORT' in legacy.INDEX_HTML
-          assert 'Backtest-Bericht herunterladen' in legacy.INDEX_HTML
-          assert 'technical_audit: lastAudit' in legacy.INDEX_HTML
-
-          sample = {
-              'ok': True,
-              'markets': [{
-                  'signals': [{
-                      'source': 'H2H',
-                      'domain': 'H2H_RESULT',
-                      'reason': 'H2H ist ausschließlich sekundäre Evidenz und kann allein kein SPIELEN erzeugen.'
-                  }]
-              }]
+          paths = {
+              getattr(route, "path", None): route
+              for route in app.app.router.routes
+              if getattr(route, "path", None)
           }
-          cleaned = _clean_h2h_wording(sample)
-          reason = cleaned['markets'][0]['signals'][0]['reason']
-          assert 'SPIELEN' not in reason
-          assert 'keine klare Markt-Empfehlung' in reason
 
-          health = next(route.endpoint for route in app.app.router.routes if getattr(route,'path',None)=='/api/health')()
-          assert health['architecture'] == 'SPEC_V1_1_FULL_SIGNAL_COMPARISON'
-          assert health['analysis_type'] == 'STRONGEST_MARKET'
-          assert health['decision_engine'] == 'NONE'
-          assert health['probability_core'] == 'NONE'
-          assert health['v043_used'] is False
-          assert health['v042_used'] is False
-          assert health['fallback'] == 'NONE'
-          assert health['odds_used'] is False
-          assert health['cold_start_supported'] is True
-          assert health['low_sample_supported'] is True
-          assert health['player_analysis_scope'] == 'TARGET_HOME_AWAY_ONLY'
-          assert health['league_player_pages_role'] == 'RETRIEVAL_COMPLETENESS_AND_AUDIT_ONLY'
-          assert health['other_league_players_market_evidence'] is False
-          assert health['ranking_consistency_guard'] is True
-          assert health['clear_requires_positive_total_evidence'] is True
-          assert health['draw_parity_guard'] is True
-          assert health['generic_strength_parity_is_draw_evidence'] is False
-          assert health['cross_market_normalization'] is True
-          assert health['cross_market_primary_metric'] == 'NORMALIZED_APPLICABLE_SOURCE_BALANCE'
-          paths = {getattr(route,'path',None) for route in app.app.router.routes}
-          assert '/api/predict' not in paths
-          assert '/api/predict-files' not in paths
-          assert '/api/predict-bundle' in paths
-          print('SPEC v1.1 / Engine v1.1.6 cross-market-normalized + report-download smoke OK', health)
+          required = {
+              "/api/health",
+              "/api/predict-bundle",
+              "/api/full7/health",
+              "/api/full7/validate",
+              "/api/full7/engine-health",
+              "/api/full7/predict",
+          }
+          assert required.issubset(paths), required - set(paths)
+
+          legacy_health = paths["/api/health"].endpoint()
+          assert legacy_health.get("ok") is True
+
+          full7_health = paths["/api/full7/health"].endpoint()
+          assert full7_health["ok"] is True
+          assert full7_health["version"] == "1.0.0-full7-validation"
+          assert full7_health["expected_files"] == 7
+          assert full7_health["production_wired"] is True
+          assert full7_health["market_model_readiness"]["BTTS"] == "OOS_VALIDATED_SELECTIVE"
+          assert full7_health["recommendation_family"] == "BTTS"
+
+          engine_health = paths["/api/full7/engine-health"].endpoint()
+          assert engine_health["ok"] is True
+          assert engine_health["engine"] == "FOOTYSTATS_FULL7_GATED"
+          assert engine_health["engine_version"] == "FULL7_GATED_1.0.0"
+          assert engine_health["model_contract_version"] == "FULL7_MODEL_CONTRACT_1.0"
+          assert engine_health["decision_gate_version"] == "FULL7_BTTS_DECISION_GATE_0.1"
+          assert engine_health["expected_files"] == 7
+          assert engine_health["production_wired"] is True
+          assert engine_health["family_readiness"]["1X2"] == "OOS_OBSERVE_ONLY"
+          assert engine_health["family_readiness"]["BTTS"] == "OOS_VALIDATED_SELECTIVE"
+          assert engine_health["family_readiness"]["TOTALS"] == "OOS_OBSERVE_ONLY"
+          assert engine_health["recommendation_family"] == "BTTS"
+          assert engine_health["non_btts_recommendation"] is False
+
+          assert ENGINE_VERSION == "FULL7_GATED_1.0.0"
+          assert MODEL_CONTRACT_VERSION == "FULL7_MODEL_CONTRACT_1.0"
+          assert BTTS_GATE_VERSION == "FULL7_BTTS_DECISION_GATE_0.1"
+          assert READINESS["BTTS"] == "OOS_VALIDATED_SELECTIVE"
+
+          print("Legacy compatibility + FULL7_GATED_1.0.0 production smoke OK")
           PY
