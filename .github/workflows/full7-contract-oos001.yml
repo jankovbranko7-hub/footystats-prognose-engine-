@@ -24,6 +24,8 @@ jobs:
       - name: Install runtime dependencies
         run: pip install -r requirements.txt
       - name: Run outcome-blind FULL-7 contract prediction
+        env:
+          PYTHONPATH: .
         run: python research/run_oos001_contract.py
       - name: Upload frozen prediction
         uses: actions/upload-artifact@v4
