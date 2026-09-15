@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 import hashlib
 import json
 import tarfile
@@ -30,8 +29,7 @@ def main() -> None:
     if len(parts) != 8:
         raise RuntimeError(f"expected 8 OOS bundle parts, found {len(parts)}")
 
-    encoded = "".join(path.read_bytes().decode("ascii") for path in parts)
-    bundle = base64.b64decode(encoded, validate=True)
+    bundle = b"".join(path.read_bytes() for path in parts)
     actual_sha = hashlib.sha256(bundle).hexdigest()
     if actual_sha != EXPECTED_BUNDLE_SHA256:
         raise RuntimeError(f"OOS bundle SHA mismatch: {actual_sha}")
