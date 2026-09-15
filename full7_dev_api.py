@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, List
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import APIRouter, FastAPI, File, HTTPException, UploadFile
 
 from full7_foundation import process_full7, inventory_gold
 from full7_gold_features import build_gold_features
@@ -16,7 +16,8 @@ from full7_signal_groups import audit_signal_groups
 from full7_feature_sets import build_feature_sets
 from full7_market_feature_sets import build_market_feature_sets
 
-APP_VERSION = "0.4.0-full7-validation"
+APP_VERSION = "0.4.1-full7-validation"
+router = APIRouter()
 app = FastAPI(title="FootyStats FULL-7 Validation", version=APP_VERSION)
 
 
@@ -113,7 +114,7 @@ async def validate_uploads(files: List[UploadFile]) -> Dict[str, Any]:
     return result
 
 
-@app.get("/api/full7/health")
+@router.get("/api/full7/health")
 def full7_health() -> Dict[str, Any]:
     return {
         "ok": True,
@@ -129,7 +130,7 @@ def full7_health() -> Dict[str, Any]:
     }
 
 
-@app.post("/api/full7/validate")
+@router.post("/api/full7/validate")
 async def full7_validate(
     match_file: UploadFile = File(...),
     league_file: UploadFile = File(...),
@@ -148,3 +149,7 @@ async def full7_validate(
         referee_file,
         manager_file,
     ])
+
+
+# Standalone development app and production-shareable router use the same handlers.
+app.include_router(router)
