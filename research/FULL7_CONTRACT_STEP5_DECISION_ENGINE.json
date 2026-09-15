@@ -1,0 +1,102 @@
+{
+  "checkpoint": "FULL7_CONTRACT_STEP5_EMPIRICAL_DECISION_ENGINE",
+  "status": "DEVELOPMENT_ONLY_NEW_UNTOUCHED_OOS_REQUIRED",
+  "development_oof_rows": 180,
+  "prospective_validation_dates": [
+    "2026-09-05",
+    "2026-09-06",
+    "2026-09-07"
+  ],
+  "prospective_rows_per_family": 105,
+  "decision_rule": "Evidence-active candidates only; require prospective SPIELEN>=BEOBACHTEN>=AUSLASSEN and choose lowest prospective LogLoss.",
+  "families": {
+    "1X2": {
+      "strategy": "EVIDENCE_ADJUSTED",
+      "thresholds": {
+        "auslassen_to_beobachten": 0.45407335034241475,
+        "beobachten_to_spielen": 0.6787245913915928
+      },
+      "prospective": {
+        "SPIELEN": {
+          "hits": 9,
+          "n": 15,
+          "rate": 0.6
+        },
+        "BEOBACHTEN": {
+          "hits": 32,
+          "n": 59,
+          "rate": 0.5423728813559322
+        },
+        "AUSLASSEN": {
+          "hits": 10,
+          "n": 31,
+          "rate": 0.3225806451612903
+        },
+        "logloss": 0.6838716952995132,
+        "brier": 0.24574171249813623
+      }
+    },
+    "BTTS": {
+      "strategy": "EVIDENCE_DOWNGRADE",
+      "thresholds": {
+        "auslassen_to_beobachten": 0.5814200941930889,
+        "beobachten_to_spielen": 0.6298345464447379
+      },
+      "prospective": {
+        "SPIELEN": {
+          "hits": 10,
+          "n": 13,
+          "rate": 0.7692307692307693
+        },
+        "BEOBACHTEN": {
+          "hits": 11,
+          "n": 17,
+          "rate": 0.6470588235294118
+        },
+        "AUSLASSEN": {
+          "hits": 38,
+          "n": 75,
+          "rate": 0.5066666666666667
+        },
+        "logloss": 0.6750185463431855,
+        "brier": 0.2414006664899698
+      }
+    },
+    "TOTALS": {
+      "strategy": "EVIDENCE_DOWNGRADE",
+      "thresholds": {
+        "auslassen_to_beobachten": 0.5683940094221348,
+        "beobachten_to_spielen": 0.7577724475079729
+      },
+      "prospective": {
+        "SPIELEN": {
+          "hits": 10,
+          "n": 14,
+          "rate": 0.7142857142857143
+        },
+        "BEOBACHTEN": {
+          "hits": 29,
+          "n": 52,
+          "rate": 0.5576923076923077
+        },
+        "AUSLASSEN": {
+          "hits": 20,
+          "n": 39,
+          "rate": 0.5128205128205128
+        },
+        "logloss": 0.6717996342689112,
+        "brier": 0.2402064898713794
+      }
+    }
+  },
+  "coherence": "one selected active candidate per mutually exclusive market family; nonselected markets explicitly AUSLASSEN",
+  "sample_security": "development-relative q25/q75 exposure diagnostics",
+  "fail_closed": [
+    "coverage_below_development_min",
+    "ood_above_development_max",
+    "probability_coherence_fail",
+    "odds_feature_leakage"
+  ],
+  "next_required": "NEW_UNTOUCHED_FORWARD_OOS",
+  "production_changed": false
+}
