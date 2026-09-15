@@ -1,0 +1,32 @@
+{
+  "checkpoint": "FULL7_RESEARCH_STATE_0.4.1",
+  "dev_api_version": "0.4.0-full7-validation",
+  "market_feature_set_version": "FULL7_MARKET_FEATURE_SETS_0.2",
+  "probability_contract_version": "FULL7_PROBABILITY_CONTRACT_0.1",
+  "goal_probability_core": "POISSON_DIXON_COLES",
+  "temporal_calibration": {
+    "evaluation_n": 105,
+    "one_x_two": {
+      "raw_logloss": 1.0343499763952964,
+      "calibrated_logloss": 1.0470690244821725,
+      "raw_brier": 0.6215652484950305,
+      "calibrated_brier": 0.6295915244204003,
+      "promoted": false
+    },
+    "btts": {
+      "raw_logloss": 0.6714074593424334,
+      "calibrated_logloss": 0.6859671109532035,
+      "raw_brier": 0.23982995374449054,
+      "calibrated_brier": 0.24645679644928586,
+      "promoted": false
+    }
+  },
+  "readiness": {
+    "1X2": "DEVELOPMENT_CANDIDATE_STRONG",
+    "BTTS": "DEVELOPMENT_CANDIDATE_NEEDS_NEW_OOS",
+    "TOTALS": "HOLD_NO_INCREMENTAL_SIGNAL_YET",
+    "DECISION_LAYER": "HOLD",
+    "PRODUCTION": false
+  },
+  "production_app_sha": "5852e4a476ac3f79aab3471623e1d914a0f7068e"
+}
