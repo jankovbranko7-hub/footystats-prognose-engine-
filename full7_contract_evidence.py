@@ -471,12 +471,12 @@ def build_evidence_engine(
             "counters": counter,
             "strongest_counter": strongest_counter,
             "counterargument_test": {
-                "status": "MEASURED_PENDING_EMPIRICAL_DECISION_GATE",
+                "status": "MEASURED_EMPIRICAL_GATE_ACTIVE",
                 "counter_count": len(counter),
                 "strongest_counter": strongest_counter,
             },
             "robustness": {
-                "status": "MEASURED_PENDING_EMPIRICAL_DECISION_GATE",
+                "status": "MEASURED_EMPIRICAL_GATE_ACTIVE",
                 "family_preference_flip_count": len(flips),
                 "flip_clusters": flips,
                 "max_cluster_probability_move": max(moves) if moves else 0.0,
@@ -562,7 +562,7 @@ def build_evidence_engine(
             "forbidden_odds_feature_count": audit.get("forbidden_odds_feature_count"),
             "validation_quality": dict(validation_quality or {}),
             "score": None,
-            "score_status": "PENDING_EMPIRICAL_DECISION_GATE",
+            "score_status": "EMPIRICAL_SUPPORT_CHECK_ACTIVE",
         },
         "coherence_ood": {
             "probability_sums": base.get("coherence"),
@@ -581,14 +581,14 @@ def build_evidence_engine(
             "ood_feature_fraction_min_max": (
                 len(outside_min_max) / finite_count if finite_count else 1.0
             ),
-            "status": "MEASURED_PENDING_EMPIRICAL_DECISION_GATE",
+            "status": "MEASURED_EMPIRICAL_GATE_ACTIVE",
         },
         "decision_layer": {
-            "status": "LOCKED_PENDING_STEP5_EMPIRICAL_GATE",
+            "status": "DELEGATED_TO_FULL7_CONTRACT_DECISION",
             "markets": {
-                market: "NO_DECISION_YET"
+                market: "DECISION_COMPUTED_IN_DECISION_ENGINE"
                 for market in MARKETS
             },
-            "reason": "Evidence measurements are complete; SPIELEN/BEOBACHTEN/AUSLASSEN thresholds must be learned temporally rather than invented.",
+            "reason": "Evidence measurements feed the temporally learned FULL7_CONTRACT_DECISION_GATE_1.0; final market states are emitted by full7_contract_decision.",
         },
     }
