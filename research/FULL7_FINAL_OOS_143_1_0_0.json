@@ -1,0 +1,79 @@
+{
+  "release": "FULL7_GATED_1.0.0",
+  "development": {
+    "matches": 300,
+    "start": "2026-08-28",
+    "end": "2026-09-07"
+  },
+  "final_oos": {
+    "matches": 143,
+    "start": "2026-09-11",
+    "end": "2026-09-13",
+    "match_id_overlap": 0,
+    "gold_processed": 143,
+    "gold_errors": 0
+  },
+  "model": {
+    "contract": "FULL7_MODEL_CONTRACT_1.0",
+    "feature_counts": {
+      "core": 620,
+      "btts": 594,
+      "totals": 556
+    },
+    "rho": -0.2,
+    "bundle_sha256": "1e78d4d6db40f6c7cd66a0c189c40bd7cae31462c03cbc082e3dc04917647dd3"
+  },
+  "metrics": {
+    "1X2": {
+      "model_logloss": 1.0738,
+      "prior_logloss": 1.0799,
+      "model_accuracy": 0.399,
+      "prior_accuracy": 0.427,
+      "status": "OOS_OBSERVE_ONLY"
+    },
+    "BTTS": {
+      "model_logloss": 0.6597,
+      "prior_logloss": 0.6834,
+      "model_brier": 0.2338,
+      "prior_brier": 0.2451,
+      "status": "OOS_VALIDATED_SELECTIVE"
+    },
+    "TOTALS": {
+      "model_logloss": 0.6887,
+      "prior_logloss": 0.696,
+      "model_brier": 0.2475,
+      "prior_brier": 0.2513,
+      "status": "OOS_OBSERVE_ONLY"
+    }
+  },
+  "gate": {
+    "version": "FULL7_BTTS_DECISION_GATE_0.1",
+    "threshold": 0.632489,
+    "coverage_floor": 0.98989898989899,
+    "min_signal_families": 8,
+    "max_removal_direction_flips": 0,
+    "oos": {
+      "SPIELEN": {
+        "correct": 21,
+        "total": 30,
+        "rate": 0.7
+      },
+      "BEOBACHTEN": {
+        "correct": 38,
+        "total": 60,
+        "rate": 0.6333333333333333
+      },
+      "AUSLASSEN": {
+        "correct": 25,
+        "total": 53,
+        "rate": 0.4716981132075472
+      }
+    }
+  },
+  "historical_referee_manager_model_weighted": false,
+  "production_policy": {
+    "BTTS": "SELECTIVE_RECOMMENDATION",
+    "1X2": "PROBABILITY_ONLY",
+    "TOTALS": "PROBABILITY_ONLY"
+  }
+}
