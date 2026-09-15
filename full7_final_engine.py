@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import gzip
 import io
 import json
@@ -30,7 +31,7 @@ READINESS = {
 
 _BASE = Path(__file__).resolve().parent
 _MODEL_DIR = _BASE / "models"
-_BUNDLE_PART_PREFIX = "full7_bundle.part"
+_BUNDLE_B64_PREFIX = "full7_bundle_b64.part"
 _BUNDLE_SHA256 = "1e78d4d6db40f6c7cd66a0c189c40bd7cae31462c03cbc082e3dc04917647dd3"
 
 _MODEL_FILES = {
@@ -50,10 +51,14 @@ _FEATURE_LIST_SHA256 = "ff6afd34f6a9eb6bd270018a2a7fdd63f2f0deef7df08e8f396a3333
 
 
 def _load_bundle_members() -> Dict[str, bytes]:
-    parts = sorted(_MODEL_DIR.glob(f"{_BUNDLE_PART_PREFIX}*"))
+    parts = sorted(_MODEL_DIR.glob(f"{_BUNDLE_B64_PREFIX}*"))
     if not parts:
-        raise RuntimeError("FULL-7 model bundle parts are missing")
-    bundle = b"".join(path.read_bytes() for path in parts)
+        raise RuntimeError("FULL-7 model bundle Base64 parts are missing")
+    encoded = "".join(path.read_text(encoding="ascii").strip() for path in parts)
+    try:
+        bundle = base64.b64decode(encoded, validate=True)
+    except Exception as exc:
+        raise RuntimeError("FULL-7 model bundle Base64 decode failed") from exc
     if hashlib.sha256(bundle).hexdigest() != _BUNDLE_SHA256:
         raise RuntimeError("FULL-7 model bundle SHA-256 mismatch")
     members: Dict[str, bytes] = {}
