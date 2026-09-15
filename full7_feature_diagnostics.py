@@ -104,10 +104,13 @@ def feature_diagnostics(
         coverage_range=(max(finite_temporal)-min(finite_temporal)) if finite_temporal else None
 
         status="KEEP_FOR_OOS_REVIEW"
-        if present and len(unique)==1:
-            status="CONSTANT_REVIEW"
-        elif coverage<min_coverage_review:
+        # Coverage is evaluated before constancy. A single observed value in a
+        # sparse feature is evidence of low coverage, not evidence that the
+        # feature is truly constant in the population.
+        if coverage<min_coverage_review:
             status="LOW_COVERAGE_REVIEW"
+        elif present and len(unique)==1:
+            status="CONSTANT_REVIEW"
 
         stats.append({
             "feature":name,
