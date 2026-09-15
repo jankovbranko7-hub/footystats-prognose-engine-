@@ -88,19 +88,25 @@ def run_prequential_research(
     if len(dates)<=seed_date_blocks:
         raise ValueError("not enough date blocks for prequential evaluation")
 
-    # Build the deterministic core from the first row's Gold feature ownership.
-    # All rows must use the same frozen Gold/feature-set version in one run.
-    first={
-        "features":rows[0].get("features") or {},
-        "feature_owners":rows[0].get("feature_owners") or {},
-    }
-    sets=build_feature_sets(first)
-    core=list(sets["core_probability"])
+    # Prefer the exact frozen feature list carried by a dataset export. This
+    # prevents a research replay from silently reclassifying features when only
+    # partial owner metadata is present.
+    core=list(rows[0].get("core_features") or [])
     if not core:
-        # Dataset exports can carry the frozen core list directly.
-        core=list(rows[0].get("core_features") or [])
+        first={
+            "features":rows[0].get("features") or {},
+            "feature_owners":rows[0].get("feature_owners") or {},
+        }
+        sets=build_feature_sets(first)
+        core=list(sets["core_probability"])
     if not core:
         raise ValueError("no deterministic core feature set")
+
+    frozen=set(core)
+    for row in rows[1:]:
+        carried=row.get("core_features")
+        if carried is not None and set(carried)!=frozen:
+            raise ValueError("mixed frozen core feature sets in one research run")
 
     X=_matrix(rows,core)
     y1=np.array([_target_1x2(r) for r in rows],dtype=int)
