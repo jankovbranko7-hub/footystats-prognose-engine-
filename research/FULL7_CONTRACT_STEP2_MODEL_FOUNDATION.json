@@ -1,0 +1,70 @@
+{
+  "checkpoint": "FULL7_CONTRACT_STEP2_MODEL_FOUNDATION",
+  "status": "DEVELOPMENT_ONLY",
+  "corpus": {
+    "matches": 300,
+    "start": "2026-08-28",
+    "end": "2026-09-07",
+    "date_blocks": 10,
+    "seed_blocks": 4,
+    "oof_rows": 180,
+    "shuffle": false
+  },
+  "feature_contract": {
+    "feature_count": 620,
+    "same_broad_core_all_target_families": true,
+    "hard_market_domain_exclusions": false
+  },
+  "catboost": {
+    "1X2": {
+      "logloss": 1.0262874400996942,
+      "brier": 0.6160721928357831,
+      "accuracy": 0.4666666666666667
+    },
+    "BTTS": {
+      "logloss": 0.7463238882949115,
+      "brier": 0.26884264327328977,
+      "accuracy": 0.5666666666666667
+    },
+    "O25": {
+      "logloss": 0.6967809410020258,
+      "brier": 0.24890609862521304,
+      "accuracy": 0.6055555555555555
+    }
+  },
+  "goal_model": {
+    "1X2": {
+      "logloss": 1.0406464078365836,
+      "brier": 0.6245114103825754,
+      "accuracy": 0.4777777777777778
+    },
+    "BTTS": {
+      "logloss": 0.6805888179600433,
+      "brier": 0.24401676651409512,
+      "accuracy": 0.5666666666666667
+    },
+    "O25": {
+      "logloss": 0.6987703785534959,
+      "brier": 0.25235679555911744,
+      "accuracy": 0.5222222222222223
+    },
+    "rho_final": -0.275
+  },
+  "artifacts": {
+    "model_count": 5,
+    "bundle_bytes": 287049,
+    "bundle_sha256": "62dc5ff31fdb144d40c9c873ab2cd35de5b349a6497c2e50fe2c1ea3019a6187"
+  },
+  "next_required": [
+    "OOS_ENSEMBLE",
+    "CALIBRATION",
+    "EVIDENCE_ENGINE_ALL_7",
+    "COUNTERARGUMENTS",
+    "ROBUSTNESS",
+    "SAMPLE_SECURITY",
+    "DATA_QUALITY",
+    "COHERENCE_OOD",
+    "DECISION_ALL_7",
+    "NEW_UNTOUCHED_OOS"
+  ]
+}
