@@ -1,75 +1,28 @@
 {
   "oos_id": "OOS_001_8558326",
   "status": "SPENT_OOS",
-  "match_id": 8558326,
-  "match": "Falkirk vs Hearts",
-  "final_result": {
-    "home_goals": 2,
-    "away_goals": 1,
-    "score": "2-1",
-    "result": "HOME",
-    "btts": "YES",
-    "total_goals": 3,
-    "over_2_5": true
+  "identity": {"match_id":8558326,"home_id":1154,"away_id":32,"season_id":17148,"kickoff_unix":1789497900,"referee_id":null},
+  "frozen_prediction_sha256":"c2b736cd94f768fe89aa94c87ba0c3bff9710f861fe01fcd4740f05b7f73d411",
+  "frozen_bundle_sha256":"36c6b1592653c57d6f5bf275dff6c5533a3e30a7d1b01e917273ea2b0bd4f122",
+  "result":{"home_goals":2,"away_goals":1,"total_goals":3},
+  "targets":{"home_goals":2,"away_goals":1,"total_goals":3,"home_win":1,"draw":0,"away_win":0,"btts_yes":1,"btts_no":0,"over_2_5":1,"under_2_5":0},
+  "result_source":"Verified final result: Falkirk 2-1 Hearts",
+  "result_verified_at":"2026-09-15T22:10:00Z",
+  "source_details":{"sources":["FOX Sports match boxscore","ESPN post-match corroboration"]},
+  "markets":{
+    "home_win":{"probability":0.21646816176101843,"decision":"AUSLASSEN","decision_reason":"COHERENCE_NOT_SELECTED","selected_in_family":false,"target":1,"hit":true},
+    "draw":{"probability":0.2589203220751374,"decision":"AUSLASSEN","decision_reason":"COHERENCE_NOT_SELECTED","selected_in_family":false,"target":0,"hit":false},
+    "away_win":{"probability":0.5246115161638442,"decision":"BEOBACHTEN","decision_reason":"EMPIRICAL_GATE","selected_in_family":true,"target":0,"hit":false},
+    "btts_yes":{"probability":0.5192912208735917,"decision":"AUSLASSEN","decision_reason":"EMPIRICAL_GATE","selected_in_family":true,"target":1,"hit":true},
+    "btts_no":{"probability":0.4807087791264083,"decision":"AUSLASSEN","decision_reason":"COHERENCE_NOT_SELECTED","selected_in_family":false,"target":0,"hit":false},
+    "over_2_5":{"probability":0.6173236907005797,"decision":"BEOBACHTEN","decision_reason":"EMPIRICAL_GATE","selected_in_family":true,"target":1,"hit":true},
+    "under_2_5":{"probability":0.38267630929942026,"decision":"AUSLASSEN","decision_reason":"COHERENCE_NOT_SELECTED","selected_in_family":false,"target":0,"hit":false}
   },
-  "result_verification": {
-    "verified_date": "2026-09-15",
-    "sources": [
-      "FOX Sports match boxscore: Falkirk 2, Hearts 1; Falkirk defeats Hearts",
-      "ESPN match page / updated post-match standings corroboration"
-    ]
+  "families":{
+    "1X2":{"selected_market":"away_win","decision":"BEOBACHTEN","base_probability":0.5246115161638442,"reliability_score":0.5568697057618064,"hit":false},
+    "BTTS":{"selected_market":"btts_yes","decision":"AUSLASSEN","base_probability":0.5192912208735917,"reliability_score":0.5179376649803177,"hit":true},
+    "TOTALS":{"selected_market":"over_2_5","decision":"BEOBACHTEN","base_probability":0.6173236907005797,"reliability_score":0.5975424723836679,"hit":true}
   },
-  "frozen_prediction_reference": {
-    "workflow_run_id": "34982006329",
-    "workflow_head_sha": "848d6660010215b7b0d5aead4fdd2f75c7d5feb2",
-    "artifact_id": 10400849633,
-    "artifact_digest": "sha256:9e89d423a0767ceaed81d05afcacf28cdb9ab9fcabd36fd929ed47f7a9350648",
-    "bundle_sha256": "36c6b1592653c57d6f5bf275dff6c5533a3e30a7d1b01e917273ea2b0bd4f122",
-    "prediction_payload_sha256": "5ffdfd8aa7489763e7ed3ead852f95df377a6d1a62921cf6425b12ee783a1001",
-    "frozen_at_utc": "2026-09-15T14:29:48.050182+00:00",
-    "result_joined_at_freeze": false,
-    "frozen_prediction_unchanged": true
-  },
-  "frozen_probabilities": {
-    "home_win": 0.21646816176101843,
-    "draw": 0.2589203220751374,
-    "away_win": 0.5246115161638442,
-    "btts_yes": 0.5192912208735917,
-    "btts_no": 0.4807087791264083,
-    "over_2_5": 0.6173236907005797,
-    "under_2_5": 0.38267630929942026
-  },
-  "frozen_decisions": {
-    "home_win": "AUSLASSEN",
-    "draw": "AUSLASSEN",
-    "away_win": "BEOBACHTEN",
-    "btts_yes": "AUSLASSEN",
-    "btts_no": "AUSLASSEN",
-    "over_2_5": "BEOBACHTEN",
-    "under_2_5": "AUSLASSEN"
-  },
-  "market_evaluation": {
-    "home_win": {"actual": true, "probability": 0.21646816176101843, "decision": "AUSLASSEN", "outcome": "TRUE_OUTCOME_SKIPPED"},
-    "draw": {"actual": false, "probability": 0.2589203220751374, "decision": "AUSLASSEN", "outcome": "FALSE_OUTCOME_SKIPPED"},
-    "away_win": {"actual": false, "probability": 0.5246115161638442, "decision": "BEOBACHTEN", "outcome": "OBSERVED_PREDICTION_WRONG"},
-    "btts_yes": {"actual": true, "probability": 0.5192912208735917, "decision": "AUSLASSEN", "outcome": "TRUE_OUTCOME_SKIPPED"},
-    "btts_no": {"actual": false, "probability": 0.4807087791264083, "decision": "AUSLASSEN", "outcome": "FALSE_OUTCOME_SKIPPED"},
-    "over_2_5": {"actual": true, "probability": 0.6173236907005797, "decision": "BEOBACHTEN", "outcome": "OBSERVED_PREDICTION_CORRECT"},
-    "under_2_5": {"actual": false, "probability": 0.38267630929942026, "decision": "AUSLASSEN", "outcome": "FALSE_OUTCOME_SKIPPED"}
-  },
-  "decision_summary": {
-    "spielen_count": 0,
-    "beobachten_count": 2,
-    "auslassen_count": 5,
-    "spielen_bets_exposed": 0,
-    "beobachten_correct": 1,
-    "beobachten_wrong": 1,
-    "note": "Single untouched OOS match; no architecture or parameter changes are permitted from this result alone."
-  },
-  "release_gate": {
-    "status": "BLOCKED_PENDING_MORE_UNTOUCHED_FORWARD_OOS",
-    "reason": "OOS #001 is valid and spent, but one match is not a complete final Forward-OOS validation corpus. Additional genuine future FULL-7 pre-match snapshots must be frozen before their results and evaluated without reuse of development/previously inspected matches.",
-    "main_merge_allowed": false,
-    "render_deploy_allowed": false
-  }
+  "integrity":{"freeze_verified_before_join":true,"freeze_mutated":false,"all_seven_markets_evaluated":true,"architecture_change_allowed_from_single_oos":false},
+  "spent_oos_sha256":"b2208cbb055b4f0105000c18f754679f9ad91cfc0a18514abd7fb5cb6a244345"
 }
