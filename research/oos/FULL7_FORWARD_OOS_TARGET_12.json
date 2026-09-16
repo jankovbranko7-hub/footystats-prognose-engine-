@@ -1,0 +1,22 @@
+{
+  "schema_version": "FULL7_FORWARD_OOS_TARGET_1.0",
+  "status": "ACTIVE",
+  "target_valid_matches": 12,
+  "previous_target_valid_matches": 20,
+  "change_type": "EXPLICIT_USER_OVERRIDE",
+  "effective_date": "2026-09-17",
+  "current_valid_unique_forward_oos_count": 8,
+  "remaining_valid_matches": 4,
+  "rules_unchanged": {
+    "strict_pre_match_required": true,
+    "freeze_before_kickoff_required": true,
+    "result_join_only_after_final": true,
+    "no_prediction_mutation_after_freeze": true,
+    "full7_exact_seven_inputs_required": true,
+    "fail_closed_on_invalid_required_data": true,
+    "no_architecture_change": true,
+    "no_model_parameter_change": true
+  },
+  "release_condition": "Exactly 12 valid unique untouched FULL-7 Forward-OOS matches completed and final audits PASS.",
+  "note": "Only the required Forward-OOS sample target changed from 20 to 12 by explicit user instruction."
+}
