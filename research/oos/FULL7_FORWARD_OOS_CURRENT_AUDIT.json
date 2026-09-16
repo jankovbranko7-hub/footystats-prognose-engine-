@@ -1,23 +1,47 @@
 {
-  "schema_version": "FULL7_FORWARD_OOS_CURRENT_AUDIT_1.1",
-  "status": "BLOCKED",
+  "schema_version": "FULL7_FORWARD_OOS_CURRENT_AUDIT_1.2",
+  "status": "PENDING_RESULT_JOIN",
   "target_valid_matches": 12,
   "target_source": "research/oos/FULL7_FORWARD_OOS_TARGET_12.json",
   "previous_target_valid_matches": 20,
   "valid_unique_forward_oos_count": 8,
-  "remaining_to_locked_target": 4,
+  "remaining_to_locked_target": 0,
   "included": {
     "oos_001": 8558326,
-    "batch_a_spent_match_ids": [8408649, 8469622, 8544070, 8680643, 8548401, 8546510, 8554516]
+    "batch_a_spent_match_ids": [
+      8408649,
+      8469622,
+      8544070,
+      8680643,
+      8548401,
+      8546510,
+      8554516
+    ]
   },
   "excluded": {
-    "user_excluded_match_ids": [8432266],
-    "valid_prematch_but_not_frozen_before_kickoff": [8570349, 8570376, 8420411, 8554518],
+    "user_excluded_match_ids": [
+      8432266
+    ],
+    "valid_prematch_but_not_frozen_before_kickoff": [
+      8570349,
+      8570376,
+      8420411,
+      8554518
+    ],
     "full7_fail_closed_player_coverage_count": 7
   },
   "decision_performance": {
-    "SPIELEN": {"n": 0, "correct": 0, "hit_rate": null, "status": "NO_EXPOSURE"},
-    "BEOBACHTEN": {"n": 12, "correct": 7, "hit_rate": 0.5833333333333334}
+    "SPIELEN": {
+      "n": 0,
+      "correct": 0,
+      "hit_rate": null,
+      "status": "NO_EXPOSURE"
+    },
+    "BEOBACHTEN": {
+      "n": 12,
+      "correct": 7,
+      "hit_rate": 0.5833333333333334
+    }
   },
   "sample_note": "No SPIELEN exposure is currently present after the explicit Huachipato exclusion. This is reported as a limitation, not an additional release threshold.",
   "integrity": {
@@ -28,12 +52,30 @@
     "architecture_changed_during_validation": false,
     "parameters_changed_during_validation": false
   },
-  "blockers": ["LOCKED_FORWARD_OOS_TARGET_12_NOT_MET"],
-  "release_gate": {"main_merge_allowed": false, "render_deploy_allowed": false},
+  "blockers": [
+    "FOUR_FROZEN_OOS_MATCHES_PENDING_FINAL_RESULTS_AND_RESULT_JOIN"
+  ],
+  "release_gate": {
+    "main_merge_allowed": false,
+    "render_deploy_allowed": false
+  },
   "references": {
     "target_override": "research/oos/FULL7_FORWARD_OOS_TARGET_12.json",
     "oos001_spent": "research/oos/FULL7_OOS_001_8558326_SPENT.json",
     "batch_a_freeze_manifest": "research/oos/FULL7_OOS20_BATCH_A_FREEZE_MANIFEST.json",
-    "batch_a_spent": "research/oos/FULL7_OOS_BATCH_A_SPENT_7.json"
-  }
+    "batch_a_spent": "research/oos/FULL7_OOS_BATCH_A_SPENT_7.json",
+    "oos009": "research/oos/FULL7_OOS_009_8544082_FREEZE_MANIFEST.json",
+    "oos010": "research/oos/FULL7_OOS_010_8543960_FREEZE_MANIFEST.json",
+    "oos011": "research/oos/FULL7_OOS_011_8688013_FREEZE_MANIFEST.json",
+    "oos012": "research/oos/FULL7_OOS_012_8640495_FREEZE_MANIFEST.json"
+  },
+  "frozen_valid_unique_forward_oos_count": 12,
+  "spent_valid_unique_forward_oos_count": 8,
+  "pending_result_join_count": 4,
+  "newly_frozen_match_ids": [
+    8544082,
+    8543960,
+    8688013,
+    8640495
+  ]
 }
