@@ -18,4 +18,4 @@ jobs:
       - name: Run FULL-7 regression suite
         run: python -m unittest discover -s tests -p "test_full7_*.py" -v
       - name: Require completed untouched Forward-OOS and final audits
-        run: python research/check_full7_release_gate.py --require-final
+        run: python -m research.check_full7_release_gate --require-final
