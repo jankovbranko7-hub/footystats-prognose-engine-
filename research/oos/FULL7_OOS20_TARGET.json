@@ -1,1 +1,7 @@
-{"target_valid_matches":20,"status":"COLLECTING_UNTOUCHED_FORWARD_OOS"}
+{
+  "target_valid_matches": 20,
+  "status": "SUPERSEDED_BY_EXPLICIT_USER_OVERRIDE",
+  "superseded_by": "research/oos/FULL7_FORWARD_OOS_TARGET_12.json",
+  "effective_target_valid_matches": 12,
+  "preserved_for_audit_history": true
+}
