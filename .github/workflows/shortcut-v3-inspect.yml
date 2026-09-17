@@ -14,8 +14,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Download shortcut-sign
+      - name: Install shortcut-sign runtime
         run: |
+          sudo apt-get update
+          sudo apt-get install -y libplist-2.0-4
           curl -L --fail --silent --show-error \
             https://github.com/0xilis/shortcut-sign/releases/download/v1.0.0-beta.5/shortcut-sign-linux-x86_64 \
             -o /tmp/shortcut-sign
