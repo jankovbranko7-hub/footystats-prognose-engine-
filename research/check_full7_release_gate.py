@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Mapping
 
 from full7_forward_oos import SPENT_STATUS, verify_frozen_prediction
 
@@ -22,6 +22,41 @@ def _load(path: Path) -> Dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError(f"{path.name} must contain a JSON object")
     return value
+
+
+def evaluate_final_oos_release_constraints(audit: Mapping[str, Any]) -> Dict[str, Any]:
+    """Fail closed on explicit OOS release prohibitions and missing play exposure.
+
+    A historical/forward audit may be internally valid while still explicitly
+    forbidding promotion. Those authorization flags are release constraints and
+    must not be ignored by the final gate.
+    """
+    blockers = []
+
+    main_merge_allowed = audit.get("main_merge_allowed") is True
+    render_deploy_allowed = audit.get("render_deploy_allowed") is True
+
+    if not main_merge_allowed:
+        blockers.append("FORWARD_OOS_MAIN_MERGE_FORBIDDEN")
+    if not render_deploy_allowed:
+        blockers.append("FORWARD_OOS_RENDER_DEPLOY_FORBIDDEN")
+
+    spielen_row = ((audit.get("decision_performance") or {}).get("SPIELEN") or {})
+    try:
+        spielen_exposure = int(spielen_row.get("n") or 0)
+    except (TypeError, ValueError):
+        spielen_exposure = 0
+
+    if spielen_exposure <= 0:
+        blockers.append("FORWARD_OOS_NO_SPIELEN_EXPOSURE")
+
+    return {
+        "pass": not blockers,
+        "blockers": blockers,
+        "main_merge_allowed": main_merge_allowed,
+        "render_deploy_allowed": render_deploy_allowed,
+        "spielen_exposure": spielen_exposure,
+    }
 
 
 def current_gate_state() -> Dict[str, Any]:
@@ -91,7 +126,9 @@ def current_gate_state() -> Dict[str, Any]:
     ):
         try:
             audit = _load(path)
-            passed = audit.get("status") == "PASS" and all(audit.get(flag) is True for flag in required_flags)
+            passed = audit.get("status") == "PASS" and all(
+                audit.get(flag) is True for flag in required_flags
+            )
             checks[key] = {
                 "pass": passed,
                 "status": audit.get("status"),
@@ -99,12 +136,17 @@ def current_gate_state() -> Dict[str, Any]:
             }
             if not passed:
                 blockers.append(key.upper() + "_NOT_PASS")
+
+            if key == "forward_oos_final_audit":
+                constraints = evaluate_final_oos_release_constraints(audit)
+                checks[key]["release_constraints"] = constraints
+                blockers.extend(constraints["blockers"])
         except Exception as exc:
             checks[key] = {"pass": False, "error": str(exc)}
             blockers.append(key.upper() + "_MISSING")
 
     return {
-        "release_gate_version": "FULL7_CONTRACT_RELEASE_GATE_1.0",
+        "release_gate_version": "FULL7_CONTRACT_RELEASE_GATE_2.0",
         "status": "PASS" if not blockers else "BLOCKED",
         "blockers": blockers,
         "checks": checks,

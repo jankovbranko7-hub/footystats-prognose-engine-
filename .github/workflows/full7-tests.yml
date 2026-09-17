@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [ main ]
   push:
-    branches: [ feat/full7-bronze-silver-gold, main ]
+    branches: [ feat/full7-bronze-silver-gold, feat/full7-v2-seven-market-heads, main ]
 
 jobs:
   test:
