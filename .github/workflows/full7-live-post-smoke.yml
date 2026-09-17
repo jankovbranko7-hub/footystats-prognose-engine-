@@ -1,0 +1,95 @@
+name: FULL-7 Live POST Smoke
+
+on:
+  push:
+    branches:
+      - smoke/full7-contract-live-post
+    paths:
+      - '.github/workflows/full7-live-post-smoke.yml'
+  workflow_dispatch:
+
+jobs:
+  live-post:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reconstruct frozen OOS001 seven-file package
+        run: |
+          cat research/oos001_input/oos001.part*.b64 > /tmp/oos001.tar.gz
+          mkdir -p /tmp/oos001
+          tar -xzf /tmp/oos001.tar.gz -C /tmp/oos001
+          test -f /tmp/oos001/8558326_MatchDaten.json
+          test -f /tmp/oos001/17148_LeagueDaten.json
+          test -f /tmp/oos001/8558326_FormDaten.json
+          test -f /tmp/oos001/8558326_TableDaten.json
+          test -f /tmp/oos001/8558326_PlayerDaten.json
+          test -f /tmp/oos001/8558326_RefereeDaten.json
+          test -f /tmp/oos001/8558326_ManagerDaten.json
+      - name: Verify production health
+        run: |
+          curl --fail --silent --show-error \
+            https://footystats-prognose-engine.onrender.com/api/full7/engine-health \
+            -o /tmp/health.json
+          python - <<'PY'
+          import json
+          d=json.load(open('/tmp/health.json'))
+          required={'home_win','draw','away_win','btts_yes','btts_no','over_2_5','under_2_5'}
+          assert d['ok'] is True
+          assert d['production_mounted'] is True
+          assert d['engine_version']=='FULL7_CONTRACT_1.0.0'
+          assert d['expected_files']==7
+          assert set(d['markets'])==required
+          assert d['all_markets_decision_enabled'] is True
+          assert d['probability_mode_no_odds'] is True
+          print('ENGINE_HEALTH_PASS', json.dumps(d, sort_keys=True))
+          PY
+      - name: POST seven frozen files to live production
+        run: |
+          code=$(curl --silent --show-error \
+            -o /tmp/predict.json \
+            -w '%{http_code}' \
+            -F 'match_file=@/tmp/oos001/8558326_MatchDaten.json;type=application/json' \
+            -F 'league_file=@/tmp/oos001/17148_LeagueDaten.json;type=application/json' \
+            -F 'form_file=@/tmp/oos001/8558326_FormDaten.json;type=application/json' \
+            -F 'table_file=@/tmp/oos001/8558326_TableDaten.json;type=application/json' \
+            -F 'player_file=@/tmp/oos001/8558326_PlayerDaten.json;type=application/json' \
+            -F 'referee_file=@/tmp/oos001/8558326_RefereeDaten.json;type=application/json' \
+            -F 'manager_file=@/tmp/oos001/8558326_ManagerDaten.json;type=application/json' \
+            https://footystats-prognose-engine.onrender.com/api/full7/predict)
+          echo "HTTP_STATUS=$code"
+          cat /tmp/predict.json
+          test "$code" = "200"
+      - name: Verify all seven markets have probability evidence and decision
+        run: |
+          python - <<'PY'
+          import json
+          d=json.load(open('/tmp/predict.json'))
+          required={'home_win','draw','away_win','btts_yes','btts_no','over_2_5','under_2_5'}
+          assert d['ok'] is True
+          assert d['contract']['engine_version']=='FULL7_CONTRACT_1.0.0'
+          assert d['contract']['expected_files']==7
+          assert set(d['contract']['markets'])==required
+          assert d['contract']['all_markets_decision_enabled'] is True
+          assert d['contract']['probability_mode_no_odds'] is True
+          engine=d['engine']
+          assert set(engine['probabilities'])==required
+          assert set(engine['markets'])==required
+          assert set(engine['evidence']['market_evidence'])==required
+          for m in required:
+              p=engine['probabilities'][m]
+              assert isinstance(p,(int,float)) and 0 <= p <= 1, (m,p)
+              row=engine['markets'][m]
+              assert row['decision'] in {'SPIELEN','BEOBACHTEN','AUSLASSEN'}, (m,row)
+              assert engine['evidence']['market_evidence'][m] is not None
+          print('LIVE_POST_PASS')
+          print('IDENTITY', json.dumps(d.get('identity'), ensure_ascii=False, sort_keys=True))
+          print('PROBABILITIES', json.dumps(engine['probabilities'], sort_keys=True))
+          print('DECISIONS', json.dumps({m:engine['markets'][m]['decision'] for m in sorted(required)}, sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: full7-live-post-smoke-response
+          path: |
+            /tmp/health.json
+            /tmp/predict.json
+          retention-days: 7
