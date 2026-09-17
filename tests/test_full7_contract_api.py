@@ -30,6 +30,37 @@ class Full7ContractPreviewApiTests(unittest.TestCase):
         self.assertNotIn("/api/full7/contract-preview", paths)
         self.assertNotIn("/api/full7/contract-preview/health", paths)
 
+    def test_production_full7_predict_is_backed_by_contract_engine(self):
+        matching = [
+            route
+            for route in production_entry.app.routes
+            if getattr(route, "path", None) == "/api/full7/predict"
+        ]
+        self.assertEqual(len(matching), 1)
+        self.assertEqual(matching[0].endpoint.__module__, "full7_contract_api")
+        self.assertEqual(matching[0].endpoint.__name__, "production_predict")
+
+    def test_production_full7_health_is_backed_by_contract_engine(self):
+        matching = [
+            route
+            for route in production_entry.app.routes
+            if getattr(route, "path", None) == "/api/full7/engine-health"
+        ]
+        self.assertEqual(len(matching), 1)
+        self.assertEqual(matching[0].endpoint.__module__, "full7_contract_api")
+        self.assertEqual(matching[0].endpoint.__name__, "production_health")
+
+    def test_production_health_declares_final_contract_release(self):
+        out = full7_contract_api.production_health()
+        self.assertTrue(out["ok"])
+        self.assertTrue(out["production_mounted"])
+        self.assertEqual(out["engine"], "FOOTYSTATS_FULL7_CONTRACT")
+        self.assertEqual(out["engine_version"], "FULL7_CONTRACT_1.0.0")
+        self.assertEqual(out["expected_files"], 7)
+        self.assertEqual(len(out["markets"]), 7)
+        self.assertTrue(out["all_markets_decision_enabled"])
+        self.assertTrue(out["probability_mode_no_odds"])
+
 
 if __name__ == "__main__":
     unittest.main()
