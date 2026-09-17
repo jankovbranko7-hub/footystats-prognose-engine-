@@ -30,6 +30,26 @@ class Full7ContractPreviewApiTests(unittest.TestCase):
         self.assertNotIn("/api/full7/contract-preview", paths)
         self.assertNotIn("/api/full7/contract-preview/health", paths)
 
+    def test_production_full7_predict_is_backed_by_contract_engine(self):
+        matching = [
+            route
+            for route in production_entry.app.routes
+            if getattr(route, "path", None) == "/api/full7/predict"
+        ]
+        self.assertEqual(len(matching), 1)
+        self.assertEqual(matching[0].endpoint.__module__, "full7_contract_api")
+        self.assertEqual(matching[0].endpoint.__name__, "production_predict")
+
+    def test_production_full7_health_is_backed_by_contract_engine(self):
+        matching = [
+            route
+            for route in production_entry.app.routes
+            if getattr(route, "path", None) == "/api/full7/engine-health"
+        ]
+        self.assertEqual(len(matching), 1)
+        self.assertEqual(matching[0].endpoint.__module__, "full7_contract_api")
+        self.assertEqual(matching[0].endpoint.__name__, "production_health")
+
 
 if __name__ == "__main__":
     unittest.main()
