@@ -1,6 +1,6 @@
 """Put the FULL-7 7-file contract on the Render homepage.
 
-The SPEC v1.1 Joint-Outcome card stays below as legacy. This patch must run
+The SPEC v1.1 Joint-Outcome card is removed from the homepage. This patch must run
 after spec11_joint_core_patch.apply_patch so it sees the live INDEX_HTML.
 """
 from __future__ import annotations
@@ -53,6 +53,21 @@ function renderCards(items, emptyText){
       '<div class="s">'+escapeHtml(pct(item.probability))+' · '+escapeHtml(item.reason||"")+'</div></div>';
   }).join("")+'</div>';
 }
+(function hideLegacySpecCard(){
+  const go=document.getElementById("go");
+  if(go){
+    const card=go.closest(".c");
+    if(card && card.id!=="full7-card") card.remove();
+  }
+  ["bundleFiles","folderFiles"].forEach(function(id){
+    const el=document.getElementById(id);
+    if(el){
+      const card=el.closest(".c");
+      if(card && card.id!=="full7-card") card.remove();
+      else el.remove();
+    }
+  });
+})();
 const full7Input=document.getElementById("full7Files");
 const full7Pick=document.getElementById("full7Pick");
 if(full7Input&&full7Pick){
@@ -120,6 +135,12 @@ def apply_full7_homepage(legacy: Any) -> Any:
             html = html.replace("<div class=\"w\">", "<div class=\"w\">" + FULL7_CARD, 1)
         if "</script>" in html:
             html = html.replace("</script>", FULL7_SCRIPT + "\n</script>", 1)
+    if "<style>" in html and "#go,.c:has(#go)" not in html:
+        html = html.replace(
+            "<style>",
+            "<style>\n#go,.c:has(#go){display:none!important}\n",
+            1,
+        )
     html = html.replace(
         "<title>FootyStats SPEC v1.1 · Joint-Outcome Engine</title>",
         "<title>FULL-7 Contract · FootyStats</title>",
