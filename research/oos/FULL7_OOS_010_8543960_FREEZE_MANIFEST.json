@@ -1,0 +1,67 @@
+{
+  "schema_version": "FULL7_OOS_SINGLE_FREEZE_MANIFEST_1.0",
+  "oos_id": "OOS_010_8543960",
+  "status": "PREDICTION_FROZEN_BEFORE_RESULT_JOIN",
+  "match_id": 8543960,
+  "home": "La Equidad",
+  "away": "Atlético Nacional",
+  "season_id": 16614,
+  "kickoff_unix": 1789608000,
+  "source_capture_unix": 1789598886,
+  "strict_pre_match": true,
+  "gold_ready": true,
+  "received_file_count": 7,
+  "feature_count": 1031,
+  "available_block_count": 16,
+  "source_zip_sha256": "ce35b3fb8e414a05fb2e84f14c8dc78552debf6443c47ab9f090969383df9ff1",
+  "full_frozen_artifact_sha256": "0f52c968b24ce76d971d6a3749d45202f21008bb2f237f639c431bc5d04f5912",
+  "full_frozen_artifact_size_bytes": 117136,
+  "prediction_payload_sha256": "05e58889b6ab80d6a6ba0a1ff457d8bc586e981e37d43a45001737cfa6b8c9a3",
+  "model_bundle_sha256": "62dc5ff31fdb144d40c9c873ab2cd35de5b349a6497c2e50fe2c1ea3019a6187",
+  "repo_snapshot_commit": "a6f8f381be47ab0c7652a59dbb7eca4dee41d6fb",
+  "probabilities": {
+    "home_win": 0.31605832706250253,
+    "draw": 0.27109250359852594,
+    "away_win": 0.41284916933897164,
+    "btts_yes": 0.6297936635511907,
+    "btts_no": 0.3702063364488093,
+    "over_2_5": 0.6749654012565242,
+    "under_2_5": 0.3250345987434759
+  },
+  "decisions": {
+    "home_win": "AUSLASSEN",
+    "draw": "AUSLASSEN",
+    "away_win": "AUSLASSEN",
+    "btts_yes": "BEOBACHTEN",
+    "btts_no": "AUSLASSEN",
+    "over_2_5": "BEOBACHTEN",
+    "under_2_5": "AUSLASSEN"
+  },
+  "freeze_audit": {
+    "frozen_before_result_join": true,
+    "result_joined": false,
+    "freeze_started_at_utc": "2026-09-16T23:06:53.991506+00:00",
+    "frozen_at_utc": "2026-09-16T23:06:54.433048+00:00",
+    "frozen_at_unix": 1789600014,
+    "kickoff_unix": 1789608000,
+    "seconds_before_kickoff": 7986,
+    "prediction_mutated_after_freeze": false
+  },
+  "file_sha256": {
+    "8543960_MatchDaten.json": "6c1d8cfb82104a610b4be43908f5e21122d49d66c35d52b5689962a17ac56228",
+    "16614_LeagueDaten.json": "028c54f053f62aef0f77c85105f19ffd796f7ac07aeab1b9eae334b82a014eee",
+    "8543960_FormDaten.json": "be74fe241dfe6b0c931a9014ad93130cec117443b21a58d4964f9ee903db840c",
+    "8543960_TableDaten.json": "664214a0076e31447f463c6c3f17b0793b4cfb06729f8df0c156aa505a754d73",
+    "8543960_PlayerDaten.json": "2158e178299ff112f2ade97dbd453b255cbb5b7850ff7bcd3dfb81bc02df732b",
+    "8543960_RefereeDaten.json": "53c63d2ae9f2cba283a22fe6f3f1d72bf6d2edc347c3720f2859d961e16fefc8",
+    "8543960_ManagerDaten.json": "cf2d3d22b82026aac4924a91cc73e983f4e5e8f34d826f6570d8e4989f70708e"
+  },
+  "contract_flags": {
+    "all_seven_markets_present": true,
+    "complete_decision_layer_present": true,
+    "data_quality_pass": true,
+    "probability_mode_no_odds": true,
+    "result_joined": false,
+    "frozen_before_kickoff": true
+  }
+}

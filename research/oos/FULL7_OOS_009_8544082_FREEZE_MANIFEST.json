@@ -1,0 +1,65 @@
+{
+  "schema_version": "FULL7_OOS_SINGLE_FREEZE_MANIFEST_1.0",
+  "oos_id": "OOS_009_8544082",
+  "status": "PREDICTION_FROZEN_BEFORE_RESULT_JOIN",
+  "match_id": 8544082,
+  "home": "Once Caldas",
+  "away": "Deportes Tolima",
+  "season_id": 16614,
+  "kickoff_unix": 1789600500,
+  "source_capture_unix": 1789598659,
+  "strict_pre_match": true,
+  "gold_ready": true,
+  "received_file_count": 7,
+  "feature_count": 1031,
+  "available_block_count": 16,
+  "source_zip_sha256": "a4a955e51b23304922f2b770ef39903eb5578222074dfaf898b72ed1670e015c",
+  "full_frozen_artifact_sha256": "baf43b7daaa729c2ba1c81042ede0f76984a64a181b5523bbda72c61d4f5f90c",
+  "full_frozen_artifact_size_bytes": 116431,
+  "prediction_payload_sha256": "b942141debd892633aafa43e0fc45d205cf2fca8e3fceae844083fdf88b902db",
+  "model_bundle_sha256": "62dc5ff31fdb144d40c9c873ab2cd35de5b349a6497c2e50fe2c1ea3019a6187",
+  "repo_snapshot_commit": "a6f8f381be47ab0c7652a59dbb7eca4dee41d6fb",
+  "probabilities": {
+    "home_win": 0.4783643008890195,
+    "draw": 0.265531728468256,
+    "away_win": 0.25610397064272455,
+    "btts_yes": 0.5381822416262402,
+    "btts_no": 0.4618177583737598,
+    "over_2_5": 0.6433504792302706,
+    "under_2_5": 0.3566495207697294
+  },
+  "decisions": {
+    "home_win": "BEOBACHTEN",
+    "draw": "AUSLASSEN",
+    "away_win": "AUSLASSEN",
+    "btts_yes": "AUSLASSEN",
+    "btts_no": "AUSLASSEN",
+    "over_2_5": "BEOBACHTEN",
+    "under_2_5": "AUSLASSEN"
+  },
+  "freeze_audit": {
+    "freeze_started_at_utc": "2026-09-16T23:01:29.087934+00:00",
+    "frozen_at_utc": "2026-09-16T23:01:29.301917+00:00",
+    "frozen_at_unix": 1789599689,
+    "seconds_before_kickoff": 811,
+    "result_joined": false,
+    "prediction_mutated_after_freeze": false
+  },
+  "file_sha256": {
+    "8544082_MatchDaten.json": "228fa4458174bb17dd2085b3415cc27e7681160207c81b987ab4e7f21ba9a963",
+    "16614_LeagueDaten.json": "7dc6a3bfe34a59438bb6f66939a1938e5518336faf1b0a64d6daf2bafb947b1c",
+    "8544082_FormDaten.json": "36986a1e76c7b4584aff011971779baab75314c19a0f653bcdcdf8cecf4df407",
+    "8544082_TableDaten.json": "bf96719da87e4b6867b7a7617b6fa3edbfbffbd2117e058215c25c030f3267ba",
+    "8544082_PlayerDaten.json": "14514b91fad039d68e3db226d8b1a00b8411d84fc82ab5b823218671cb7f73d3",
+    "8544082_RefereeDaten.json": "093bb0afe03e8817d95140c51183a5b118391e3053dd76ec5bf27072e58d1d41",
+    "8544082_ManagerDaten.json": "443fb5b748a1c24259fd0c9a075b981c8052da4988ccc335917251986964ffbb"
+  },
+  "contract_flags": {
+    "all_seven_markets_present": true,
+    "complete_decision_layer_present": true,
+    "data_quality_pass": true,
+    "probability_mode_no_odds": true,
+    "result_joined": false,
+    "frozen_before_kickoff": true
+  }
+}

@@ -1,0 +1,23 @@
+name: FULL7 Repo Snapshot Export
+on:
+  push:
+    branches:
+      - feat/full7-contract-implementation
+    paths:
+      - '.github/workflows/full7-repo-snapshot-export.yml'
+  workflow_dispatch:
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Package repository
+        run: |
+          tar -czf /tmp/full7-repo-snapshot.tgz --exclude=.git .
+      - name: Upload snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: full7-repo-snapshot
+          path: /tmp/full7-repo-snapshot.tgz
+          retention-days: 1

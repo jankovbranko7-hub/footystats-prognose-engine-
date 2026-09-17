@@ -1,0 +1,66 @@
+{
+  "schema_version": "FULL7_OOS_SINGLE_FREEZE_MANIFEST_1.0",
+  "oos_id": "OOS_012_8640495",
+  "status": "PREDICTION_FROZEN_BEFORE_RESULT_JOIN",
+  "match_id": 8640495,
+  "home": "Blooming",
+  "away": "Universitario de Vinto",
+  "season_id": 16927,
+  "kickoff_unix": 1789605000,
+  "source_capture_unix": 1789598906,
+  "strict_pre_match": true,
+  "gold_ready": true,
+  "received_file_count": 7,
+  "feature_count": 1031,
+  "available_block_count": 16,
+  "source_zip_sha256": "dcb6ed334aaa8a2145a9dee9b91030869d791a88c0ea63a9a2a1432d1a28ef90",
+  "full_frozen_artifact_sha256": "f0c57c6cc700e1d11379b87fd588c823002f00232131fd8760c749973151aa8f",
+  "full_frozen_artifact_size_bytes": 114736,
+  "prediction_payload_sha256": "2ce7f68db3486965f2122759b671390b23e445e7446293d52a668e3be2bd0860",
+  "model_bundle_sha256": "62dc5ff31fdb144d40c9c873ab2cd35de5b349a6497c2e50fe2c1ea3019a6187",
+  "repo_snapshot_commit": "a6f8f381be47ab0c7652a59dbb7eca4dee41d6fb",
+  "probabilities": {
+    "home_win": 0.4878443678178738,
+    "draw": 0.24104981291700847,
+    "away_win": 0.27110581926511773,
+    "btts_yes": 0.5653216800664687,
+    "btts_no": 0.43467831993353134,
+    "over_2_5": 0.5694677153302935,
+    "under_2_5": 0.4305322846697065
+  },
+  "decisions": {
+    "home_win": "BEOBACHTEN",
+    "draw": "AUSLASSEN",
+    "away_win": "AUSLASSEN",
+    "btts_yes": "AUSLASSEN",
+    "btts_no": "AUSLASSEN",
+    "over_2_5": "AUSLASSEN",
+    "under_2_5": "AUSLASSEN"
+  },
+  "freeze_audit": {
+    "frozen_before_result_join": true,
+    "result_joined": false,
+    "frozen_at_utc": "2026-09-16T23:06:55.130987+00:00",
+    "frozen_at_unix": 1789600015,
+    "kickoff_unix": 1789605000,
+    "seconds_before_kickoff": 4985,
+    "prediction_mutated_after_freeze": false
+  },
+  "file_sha256": {
+    "8640495_MatchDaten.json": "ee35bce40db089eb5725ece2e37dacbea5b8d0827d52f7bf0e54fac6fa4bfb53",
+    "16927_LeagueDaten.json": "d87b737a9e06bd55c391c67089e3b7783f399dead0909eb5a0ccfa2f2b3f4ad3",
+    "8640495_FormDaten.json": "2d12e5cd924f0e7fa5ac3e2fd46a1bbe76833f918842d9a42d76a35c97dc5d8a",
+    "8640495_TableDaten.json": "13b553c5c749fd7869ec3c4480275b20c7880da4505138686bc4aa32635b2c2c",
+    "8640495_PlayerDaten.json": "4e898b821039f29d3b8abe834625f853e01ade1df8955882ed409aa13d893295",
+    "8640495_RefereeDaten.json": "868a12371d5d182d8734e9f78fddcf90b87e3f5aeb4c6959171813a97f6ec137",
+    "8640495_ManagerDaten.json": "414ce40474f000ff664c40c9438108c6f615fedb9827468618e057727d2d235c"
+  },
+  "contract_flags": {
+    "all_seven_markets_present": true,
+    "complete_decision_layer_present": true,
+    "data_quality_pass": true,
+    "probability_mode_no_odds": true,
+    "result_joined": false,
+    "frozen_before_kickoff": true
+  }
+}

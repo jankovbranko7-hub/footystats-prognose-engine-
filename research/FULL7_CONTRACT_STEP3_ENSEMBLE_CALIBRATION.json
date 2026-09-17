@@ -1,0 +1,62 @@
+{
+  "checkpoint": "FULL7_CONTRACT_STEP3_ENSEMBLE_CALIBRATION",
+  "status": "DEVELOPMENT_ONLY",
+  "prospective_rows": 126,
+  "ensemble": {
+    "1X2": {
+      "candidates": {
+        "catboost_logloss": 1.0409452498741303,
+        "goal_logloss": 1.0645148840130088,
+        "temporal_blend_logloss": 1.0467326144312057
+      },
+      "selected": "CATBOOST_ONLY",
+      "catboost_weight": 1,
+      "goal_weight": 0
+    },
+    "BTTS": {
+      "candidates": {
+        "catboost_logloss": 0.730476311920253,
+        "goal_logloss": 0.6821684793789001,
+        "temporal_blend_logloss": 0.6826483812038825
+      },
+      "selected": "GOAL_ONLY",
+      "catboost_weight": 0,
+      "goal_weight": 1
+    },
+    "TOTALS": {
+      "candidates": {
+        "catboost_logloss": 0.6849355137988937,
+        "goal_logloss": 0.6997856925728586,
+        "temporal_blend_logloss": 0.6819501784950016
+      },
+      "selected": "LEARNED_BLEND",
+      "catboost_weight": 0.5317803953799852,
+      "goal_weight": 0.4682196046200148,
+      "oof_180_refit_logloss": 0.6760082574344933
+    }
+  },
+  "calibration": {
+    "1X2": {
+      "method": "IDENTITY",
+      "ensemble_logloss": 1.0467326144312057,
+      "selected_calibrator_logloss": 1.0711681580398404
+    },
+    "BTTS": {
+      "method": "IDENTITY",
+      "ensemble_logloss": 0.6826483812038825,
+      "selected_calibrator_logloss": 0.6850359677166065
+    },
+    "TOTALS": {
+      "method": "IDENTITY",
+      "ensemble_logloss": 0.6819501784950016,
+      "selected_calibrator_logloss": 0.6871355992836181
+    }
+  },
+  "policy": {
+    "manual_mix_weights": false,
+    "both_model_sources_still_computed": true,
+    "zero_weight_is_not_structural_exclusion": true,
+    "calibration_layer_explicit": true,
+    "decision_layer_not_added_yet": true
+  }
+}

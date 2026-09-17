@@ -1,0 +1,28 @@
+{
+  "oos_id": "OOS_011_8688013",
+  "status": "SPENT_OOS",
+  "identity": {"match_id": 8688013, "home_id": 624, "away_id": 709, "season_id": 16556, "kickoff_unix": 1789605000, "referee_id": null},
+  "frozen_prediction_sha256": "ef16de44e9c3bf997655b197466b9fb1ca0c55d99197eb8fd4299c5f079baa73",
+  "frozen_artifact_sha256": "7d46bff5fcc805b5e5997e4fbbc8da366126f6f97b4b7cf71ea38dfc720c9962",
+  "result": {"home_goals": 0, "away_goals": 1, "total_goals": 1},
+  "targets": {"home_goals": 0, "away_goals": 1, "total_goals": 1, "home_win": 0, "draw": 0, "away_win": 1, "btts_yes": 0, "btts_no": 1, "over_2_5": 0, "under_2_5": 1},
+  "result_source": "Verified final result: Corinthians 0-1 Estudiantes",
+  "result_verified_at": "2026-09-17T06:06:00Z",
+  "source_details": {"sources": [{"name": "UOL", "url": "https://www.uol.com.br/esporte/futebol/ultimas-noticias/2026/09/16/corinthians-x-estudiantes---libertadores.ghtm"}]},
+  "markets": {
+    "home_win": {"probability": 0.45200489109497155, "decision": "AUSLASSEN", "selected_in_family": true, "target": 0, "hit": false, "decision_correct": null},
+    "draw": {"probability": 0.30329061495585385, "decision": "AUSLASSEN", "selected_in_family": false, "target": 0, "hit": false, "decision_correct": null},
+    "away_win": {"probability": 0.24470449394917465, "decision": "AUSLASSEN", "selected_in_family": false, "target": 1, "hit": true, "decision_correct": null},
+    "btts_yes": {"probability": 0.43828946597456714, "decision": "AUSLASSEN", "selected_in_family": false, "target": 0, "hit": false, "decision_correct": null},
+    "btts_no": {"probability": 0.5617105340254329, "decision": "AUSLASSEN", "selected_in_family": true, "target": 1, "hit": true, "decision_correct": null},
+    "over_2_5": {"probability": 0.42529436474815097, "decision": "AUSLASSEN", "selected_in_family": false, "target": 0, "hit": false, "decision_correct": null},
+    "under_2_5": {"probability": 0.574705635251849, "decision": "AUSLASSEN", "selected_in_family": true, "target": 1, "hit": true, "decision_correct": null}
+  },
+  "families": {
+    "1X2": {"selected_market": "home_win", "decision": "AUSLASSEN", "base_probability": 0.45200489109497155, "hit": false},
+    "BTTS": {"selected_market": "btts_no", "decision": "AUSLASSEN", "base_probability": 0.5617105340254329, "hit": true},
+    "TOTALS": {"selected_market": "under_2_5", "decision": "AUSLASSEN", "base_probability": 0.574705635251849, "hit": true}
+  },
+  "integrity": {"freeze_verified_before_join": true, "freeze_mutated": false, "all_seven_markets_evaluated": true, "architecture_change_allowed_from_single_oos": false},
+  "spent_oos_sha256": "5c88a690f682cc6d27f7f1207e0b3e65f3fa84e0d44cdc5c22e16cbae13fc82b"
+}

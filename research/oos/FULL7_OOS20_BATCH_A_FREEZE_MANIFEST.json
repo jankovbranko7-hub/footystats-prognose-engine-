@@ -1,0 +1,98 @@
+{
+  "schema_version": "FULL7_OOS20_FREEZE_MANIFEST_1.0",
+  "status": "BATCH_A_PREDICTIONS_FROZEN_BEFORE_RESULTS",
+  "target_valid_matches": 20,
+  "workflow_run_id": 35032137022,
+  "workflow_head_sha": "dcefdb9540d2d62052d73c9b61fff2c5cd3f61b2",
+  "artifact": {
+    "id": 10421982310,
+    "name": "full7-oos20-batch-frozen-predictions",
+    "digest": "sha256:962f658f12ad8fa95f65a0eb3cb44358cfc6c48f6683dd6dbc38f31499be0c06"
+  },
+  "batch_sha256": "25f5c9dd3e9fbaac151b6de2446741315a11c042699318ed486c4071369d2119",
+  "model_bundle_sha256": "62dc5ff31fdb144d40c9c873ab2cd35de5b349a6497c2e50fe2c1ea3019a6187",
+  "result_joined": false,
+  "valid_frozen_count": 8,
+  "missed_count": 0,
+  "items": [
+    {
+      "match_id": 8408649,
+      "home": "Indy Eleven",
+      "away": "Brooklyn FC",
+      "kickoff_unix": 1789513200,
+      "frozen_at_unix": 1789512043,
+      "frozen_before_kickoff": true,
+      "prediction_payload_sha256": "f34c91a90876c4755ea9fbb769ca2b0fa2b70fa38df0e940799241886c5cd391"
+    },
+    {
+      "match_id": 8469622,
+      "home": "CRB",
+      "away": "Sport Recife",
+      "kickoff_unix": 1789516800,
+      "frozen_at_unix": 1789512043,
+      "frozen_before_kickoff": true,
+      "prediction_payload_sha256": "a6acd27eff017c933d8cfa9007729ec5f085fabda1282a8fcd549bb6afad0c75"
+    },
+    {
+      "match_id": 8544070,
+      "home": "Boyacá Chicó",
+      "away": "Alianza Petrolera",
+      "kickoff_unix": 1789518600,
+      "frozen_at_unix": 1789512043,
+      "frozen_before_kickoff": true,
+      "prediction_payload_sha256": "973c3790181cca80ba57ddb2964c0d8eb5b43c40987f65221aba7cb8ae2827f7"
+    },
+    {
+      "match_id": 8680643,
+      "home": "São Paulo",
+      "away": "Boca Juniors",
+      "kickoff_unix": 1789518600,
+      "frozen_at_unix": 1789512043,
+      "frozen_before_kickoff": true,
+      "prediction_payload_sha256": "5d91695c5d417394b6bc96b0f0e5328f9bf9a5aad68e6182e35e0908bd8bd2f5"
+    },
+    {
+      "match_id": 8548401,
+      "home": "Puebla",
+      "away": "Toluca",
+      "kickoff_unix": 1789520400,
+      "frozen_at_unix": 1789512043,
+      "frozen_before_kickoff": true,
+      "prediction_payload_sha256": "e184f164035d282024a94c5f94c6da6fa24a0f487c23d6548edec5436c52b5a5"
+    },
+    {
+      "match_id": 8546510,
+      "home": "Lokomotiv Sofia 1929",
+      "away": "CSKA Sofia",
+      "kickoff_unix": 1789574400,
+      "frozen_at_unix": 1789512043,
+      "frozen_before_kickoff": true,
+      "prediction_payload_sha256": "4182e2bda80458acf278926443c523ecc95a29e00d7e49bccd6f2562c6513c02"
+    },
+    {
+      "match_id": 8554516,
+      "home": "Lugano",
+      "away": "St. Gallen",
+      "kickoff_unix": 1789578000,
+      "frozen_at_unix": 1789512043,
+      "frozen_before_kickoff": true,
+      "prediction_payload_sha256": "72af5442a2cd7f3f0da160c1ba3279ed761fb4059849018a08e15af625d285a3"
+    },
+    {
+      "match_id": 8432266,
+      "home": "Coquimbo Unido",
+      "away": "Huachipato",
+      "kickoff_unix": 1789592400,
+      "frozen_at_unix": 1789512043,
+      "frozen_before_kickoff": true,
+      "prediction_payload_sha256": "15326702b3b94cc72f7287225a08673ea839a4f5fc5b999fe3ad19e96a6dae63"
+    }
+  ],
+  "audit": {
+    "all_predictions_frozen_before_kickoff": true,
+    "all_predictions_outcome_blind": true,
+    "all_result_joined_false": true,
+    "all_seven_markets_emitted": true,
+    "complete_evidence_in_artifact": true
+  }
+}

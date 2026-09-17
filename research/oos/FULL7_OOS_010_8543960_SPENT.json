@@ -1,0 +1,29 @@
+{
+  "oos_id": "OOS_010_8543960",
+  "status": "SPENT_OOS",
+  "identity": {"match_id": 8543960, "home_id": 2149, "away_id": 2142, "season_id": 16614, "kickoff_unix": 1789608000, "referee_id": null},
+  "frozen_prediction_sha256": "05e58889b6ab80d6a6ba0a1ff457d8bc586e981e37d43a45001737cfa6b8c9a3",
+  "frozen_artifact_sha256": "0f52c968b24ce76d971d6a3749d45202f21008bb2f237f639c431bc5d04f5912",
+  "result": {"home_goals": 2, "away_goals": 3, "total_goals": 5},
+  "targets": {"home_goals": 2, "away_goals": 3, "total_goals": 5, "home_win": 0, "draw": 0, "away_win": 1, "btts_yes": 1, "btts_no": 0, "over_2_5": 1, "under_2_5": 0},
+  "result_source": "Verified final result: Internacional de Bogotá 2-3 Atlético Nacional",
+  "result_verified_at": "2026-09-17T06:06:00Z",
+  "source_details": {"sources": [{"name": "TyC Sports", "url": "https://www.tycsports.com/colombia/futbol-de-colombia/colombia-primera-division-ii-2026-internacional-de-bogota-vs-at-nacional-fecha-13-id760916.html"}, {"name": "Internacional de Bogotá official history", "url": "https://interbogota.com/historia"}]},
+  "markets": {
+    "home_win": {"probability": 0.31605832706250253, "decision": "AUSLASSEN", "selected_in_family": false, "target": 0, "hit": false, "decision_correct": null},
+    "draw": {"probability": 0.27109250359852594, "decision": "AUSLASSEN", "selected_in_family": false, "target": 0, "hit": false, "decision_correct": null},
+    "away_win": {"probability": 0.41284916933897164, "decision": "AUSLASSEN", "selected_in_family": true, "target": 1, "hit": true, "decision_correct": null},
+    "btts_yes": {"probability": 0.6297936635511907, "decision": "BEOBACHTEN", "selected_in_family": true, "target": 1, "hit": true, "decision_correct": true},
+    "btts_no": {"probability": 0.3702063364488093, "decision": "AUSLASSEN", "selected_in_family": false, "target": 0, "hit": false, "decision_correct": null},
+    "over_2_5": {"probability": 0.6749654012565242, "decision": "BEOBACHTEN", "selected_in_family": true, "target": 1, "hit": true, "decision_correct": true},
+    "under_2_5": {"probability": 0.3250345987434759, "decision": "AUSLASSEN", "selected_in_family": false, "target": 0, "hit": false, "decision_correct": null}
+  },
+  "families": {
+    "1X2": {"selected_market": "away_win", "decision": "AUSLASSEN", "base_probability": 0.41284916933897164, "hit": true},
+    "BTTS": {"selected_market": "btts_yes", "decision": "BEOBACHTEN", "base_probability": 0.6297936635511907, "hit": true},
+    "TOTALS": {"selected_market": "over_2_5", "decision": "BEOBACHTEN", "base_probability": 0.6749654012565242, "hit": true}
+  },
+  "integrity": {"freeze_verified_before_join": true, "freeze_mutated": false, "all_seven_markets_evaluated": true, "architecture_change_allowed_from_single_oos": false},
+  "identity_note": "FootyStats pre-match snapshot labels home team ID 2149 as La Equidad. The club was officially renamed Internacional de Bogotá before the 2026 season; result joined to the same club identity, not to a substitute fixture.",
+  "spent_oos_sha256": "8f1c6b216f149377118ca0ef0718d47a5735293c0c29278cb4799702f0ab386f"
+}

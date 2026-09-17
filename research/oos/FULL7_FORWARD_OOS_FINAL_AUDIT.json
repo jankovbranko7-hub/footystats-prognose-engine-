@@ -1,0 +1,47 @@
+{
+  "schema_version": "FULL7_FORWARD_OOS_FINAL_AUDIT_1.2",
+  "status": "PASS",
+  "untouched_forward_oos_complete": true,
+  "all_predictions_frozen_before_results": true,
+  "no_result_leakage": true,
+  "no_architecture_change_during_validation": true,
+  "target_valid_matches": 12,
+  "target_source": "research/oos/FULL7_FORWARD_OOS_TARGET_12.json",
+  "previous_target_valid_matches": 20,
+  "valid_unique_forward_oos_count": 12,
+  "remaining_to_target": 0,
+  "user_excluded_match_ids": [8432266],
+  "decision_performance": {
+    "SPIELEN": {"n": 0, "correct": 0, "hit_rate": null, "status": "NO_EXPOSURE"},
+    "BEOBACHTEN": {"n": 17, "correct": 10, "hit_rate": 0.5882352941176471}
+  },
+  "sample_limitations": ["NO_SPIELEN_FORWARD_OOS_EXPOSURE_AFTER_USER_EXCLUSION", "SMALL_FORWARD_OOS_SAMPLE_N_12"],
+  "blockers": [],
+  "counted_match_ids": [8558326, 8408649, 8469622, 8544070, 8680643, 8548401, 8546510, 8554516, 8544082, 8543960, 8688013, 8640495],
+  "not_counted_as_forward_oos": {
+    "valid_prematch_but_freeze_failed_before_kickoff": [8570349, 8570376, 8420411, 8554518],
+    "full7_fail_closed_player_coverage_count": 7
+  },
+  "integrity": {
+    "all_12_unique": true,
+    "all_12_spent_after_final_result": true,
+    "all_12_frozen_before_result_join": true,
+    "no_counted_prediction_mutation": true,
+    "all_seven_markets_evaluated": true,
+    "architecture_changed_during_validation": false,
+    "parameters_changed_during_validation": false
+  },
+  "ready_for_release_gate": true,
+  "main_merge_allowed": false,
+  "render_deploy_allowed": false,
+  "references": [
+    "research/oos/FULL7_FORWARD_OOS_TARGET_12.json",
+    "research/oos/FULL7_OOS_001_8558326_SPENT.json",
+    "research/oos/FULL7_OOS_BATCH_A_SPENT_7.json",
+    "research/oos/FULL7_OOS_009_8544082_SPENT.json",
+    "research/oos/FULL7_OOS_010_8543960_SPENT.json",
+    "research/oos/FULL7_OOS_011_8688013_SPENT.json",
+    "research/oos/FULL7_OOS_012_8640495_SPENT.json",
+    "research/oos/FULL7_FORWARD_OOS_CURRENT_AUDIT.json"
+  ]
+}

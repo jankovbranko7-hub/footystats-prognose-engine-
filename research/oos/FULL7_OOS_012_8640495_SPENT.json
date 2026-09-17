@@ -1,0 +1,28 @@
+{
+  "oos_id": "OOS_012_8640495",
+  "status": "SPENT_OOS",
+  "identity": {"match_id": 8640495, "home_id": 2262, "away_id": 2282, "season_id": 16927, "kickoff_unix": 1789605000, "referee_id": null},
+  "frozen_prediction_sha256": "2ce7f68db3486965f2122759b671390b23e445e7446293d52a668e3be2bd0860",
+  "frozen_artifact_sha256": "f0c57c6cc700e1d11379b87fd588c823002f00232131fd8760c749973151aa8f",
+  "result": {"home_goals": 1, "away_goals": 1, "total_goals": 2},
+  "targets": {"home_goals": 1, "away_goals": 1, "total_goals": 2, "home_win": 0, "draw": 1, "away_win": 0, "btts_yes": 1, "btts_no": 0, "over_2_5": 0, "under_2_5": 1},
+  "result_source": "Verified final result: Blooming 1-1 Universitario de Vinto",
+  "result_verified_at": "2026-09-17T06:06:00Z",
+  "source_details": {"sources": [{"name": "Ceroacero", "url": "https://www.ceroacero.es/noticias/empate-en-el-partido-entre-blooming-y-universitario-de-vinto/1205537"}, {"name": "TyC Sports", "url": "https://www.tycsports.com/bolivia/futbol-de-bolivia/bolivia-division-profesional-2026-blooming-vs-universitario-de-vinto-fecha-20-id761088.html"}]},
+  "markets": {
+    "home_win": {"probability": 0.4878443678178738, "decision": "BEOBACHTEN", "selected_in_family": true, "target": 0, "hit": false, "decision_correct": false},
+    "draw": {"probability": 0.24104981291700847, "decision": "AUSLASSEN", "selected_in_family": false, "target": 1, "hit": true, "decision_correct": null},
+    "away_win": {"probability": 0.27110581926511773, "decision": "AUSLASSEN", "selected_in_family": false, "target": 0, "hit": false, "decision_correct": null},
+    "btts_yes": {"probability": 0.5653216800664687, "decision": "AUSLASSEN", "selected_in_family": true, "target": 1, "hit": true, "decision_correct": null},
+    "btts_no": {"probability": 0.43467831993353134, "decision": "AUSLASSEN", "selected_in_family": false, "target": 0, "hit": false, "decision_correct": null},
+    "over_2_5": {"probability": 0.5694677153302935, "decision": "AUSLASSEN", "selected_in_family": true, "target": 0, "hit": false, "decision_correct": null},
+    "under_2_5": {"probability": 0.4305322846697065, "decision": "AUSLASSEN", "selected_in_family": false, "target": 1, "hit": true, "decision_correct": null}
+  },
+  "families": {
+    "1X2": {"selected_market": "home_win", "decision": "BEOBACHTEN", "base_probability": 0.4878443678178738, "hit": false},
+    "BTTS": {"selected_market": "btts_yes", "decision": "AUSLASSEN", "base_probability": 0.5653216800664687, "hit": true},
+    "TOTALS": {"selected_market": "over_2_5", "decision": "AUSLASSEN", "base_probability": 0.5694677153302935, "hit": false}
+  },
+  "integrity": {"freeze_verified_before_join": true, "freeze_mutated": false, "all_seven_markets_evaluated": true, "architecture_change_allowed_from_single_oos": false},
+  "spent_oos_sha256": "53141d0e7626dca7de05177b5fad57a0b49ddfb874d4da84af97bb73bfb4129f"
+}

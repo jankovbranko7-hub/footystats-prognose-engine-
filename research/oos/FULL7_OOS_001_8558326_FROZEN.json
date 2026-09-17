@@ -1,0 +1,580 @@
+{
+  "oos_id": "OOS_001_8558326",
+  "status": "PREDICTION_FROZEN_BEFORE_RESULT_JOIN",
+  "bundle_sha256": "36c6b1592653c57d6f5bf275dff6c5533a3e30a7d1b01e917273ea2b0bd4f122",
+  "file_sha256": {
+    "8558326_MatchDaten.json": "19a385e3416455af9b45ba6e4826685422a5341a0f258a9a61e4f7bd5bdc94f3",
+    "17148_LeagueDaten.json": "808dd2ae4b1f9908e22bd0c5bd5fb22542d05e6ee39573ab2182122e26459dff",
+    "8558326_FormDaten.json": "aee82d28cfd13af1c4054b55dc0458fe04b5a94cd8c4524c1c455eb40f9032ed",
+    "8558326_TableDaten.json": "36c44048ce846974b68e2fd4828f4d4766d45b6df8525ec83ba20cf6049f948e",
+    "8558326_PlayerDaten.json": "8210c7767833230b5f077bd033b2bee316d519b181812b34be268b2cfe1a6fca",
+    "8558326_RefereeDaten.json": "5aec1aac089c89459bbbaa82cef452b9ddd9099e061749126b0f7c205b5f29c7",
+    "8558326_ManagerDaten.json": "ed1dd55a8e0c4957a2d40307211ca557ca6a80a9d2081797c4c90da5346171ab"
+  },
+  "identity": {
+    "match_id": 8558326,
+    "home_id": 1154,
+    "away_id": 32,
+    "season_id": 17148,
+    "kickoff_unix": 1789497900,
+    "referee_id": null
+  },
+  "quality": {
+    "status": "VALID",
+    "signal_families": [
+      "expected_goals_xga",
+      "goals_defence",
+      "venue",
+      "form",
+      "league_context",
+      "table_strength",
+      "shots_chance_creation",
+      "first_second_half",
+      "btts_ou_profile",
+      "player_depth",
+      "player_quality",
+      "player_concentration",
+      "h2h",
+      "referee",
+      "manager",
+      "data_quality"
+    ],
+    "no_imputation": true,
+    "no_global_sentinel_conversion": true
+  },
+  "gold": {
+    "feature_builder_version": "0.3.0",
+    "feature_count": 1031,
+    "available_block_count": 16
+  },
+  "probabilities": {
+    "home_win": 0.21646816176101843,
+    "draw": 0.2589203220751374,
+    "away_win": 0.5246115161638442,
+    "btts_yes": 0.5192912208735917,
+    "btts_no": 0.4807087791264083,
+    "over_2_5": 0.6173236907005797,
+    "under_2_5": 0.38267630929942026
+  },
+  "model_support": {
+    "catboost": {
+      "home_win": 0.21646816176101843,
+      "draw": 0.2589203220751374,
+      "away_win": 0.5246115161638442,
+      "btts_yes": 0.7407547840172792,
+      "btts_no": 0.25924521598272077,
+      "over_2_5": 0.7154368984095294,
+      "under_2_5": 0.2845631015904706
+    },
+    "goal_model": {
+      "home_win": 0.14789970436981817,
+      "draw": 0.2855584944935128,
+      "away_win": 0.5665418011366695,
+      "btts_yes": 0.5192912208735917,
+      "btts_no": 0.4807087791264083,
+      "over_2_5": 0.5058916193548991,
+      "under_2_5": 0.4941083806451009
+    },
+    "goal_parameters": {
+      "lambda_home": 0.8779864215267974,
+      "lambda_away": 1.8200388795909823,
+      "rho": -0.275
+    },
+    "ensemble": {
+      "home_win": 0.21646816176101843,
+      "draw": 0.2589203220751374,
+      "away_win": 0.5246115161638442,
+      "btts_yes": 0.5192912208735917,
+      "btts_no": 0.4807087791264083,
+      "over_2_5": 0.6173236907005797,
+      "under_2_5": 0.38267630929942026
+    },
+    "calibrated": {
+      "home_win": 0.21646816176101843,
+      "draw": 0.2589203220751374,
+      "away_win": 0.5246115161638442,
+      "btts_yes": 0.5192912208735917,
+      "btts_no": 0.4807087791264083,
+      "over_2_5": 0.6173236907005797,
+      "under_2_5": 0.38267630929942026
+    },
+    "ensemble_policy": {
+      "1X2": {
+        "strategy": "CATBOOST_ONLY",
+        "catboost_weight": 1,
+        "goal_weight": 0,
+        "selection": "PROSPECTIVE_TEMPORAL_DEVELOPMENT"
+      },
+      "BTTS": {
+        "strategy": "GOAL_ONLY",
+        "catboost_weight": 0,
+        "goal_weight": 1,
+        "selection": "PROSPECTIVE_TEMPORAL_DEVELOPMENT"
+      },
+      "TOTALS": {
+        "strategy": "LEARNED_BLEND",
+        "catboost_weight": 0.5317803953799852,
+        "goal_weight": 0.4682196046200148,
+        "selection": "PROSPECTIVE_TEMPORAL_DEVELOPMENT_THEN_REFIT_180_OOF"
+      }
+    },
+    "calibration_policy": {
+      "1X2": {
+        "method": "IDENTITY",
+        "reason": "Temporal calibration selector worsened prospective LogLoss: 1.071168 vs 1.046733 ensemble."
+      },
+      "BTTS": {
+        "method": "IDENTITY",
+        "reason": "Temporal calibration selector worsened prospective LogLoss: 0.685036 vs 0.682648 ensemble."
+      },
+      "TOTALS": {
+        "method": "IDENTITY",
+        "reason": "Temporal calibration selector worsened prospective LogLoss: 0.687136 vs 0.681950 ensemble."
+      }
+    }
+  },
+  "families": {
+    "1X2": {
+      "selected_market": "away_win",
+      "base_probability": 0.5246115161638442,
+      "evidence_adjusted_probability": 0.5568697057618064,
+      "reliability_score": 0.5568697057618064,
+      "decision": "BEOBACHTEN",
+      "decision_reason": "EMPIRICAL_GATE",
+      "thresholds": {
+        "auslassen_to_beobachten": 0.45407335034241475,
+        "beobachten_to_spielen": 0.6787245913915928
+      },
+      "confirm_count": 8,
+      "counter_count": 0,
+      "neutral_count": 3,
+      "strongest_counter": null,
+      "robustness": {
+        "status": "MEASURED_PENDING_EMPIRICAL_DECISION_GATE",
+        "family_preference_flip_count": 0,
+        "flip_clusters": [],
+        "max_cluster_probability_move": 0.10146975212664494
+      }
+    },
+    "BTTS": {
+      "selected_market": "btts_yes",
+      "base_probability": 0.5192912208735917,
+      "evidence_adjusted_probability": 0.5179376649803177,
+      "reliability_score": 0.5179376649803177,
+      "decision": "AUSLASSEN",
+      "decision_reason": "EMPIRICAL_GATE",
+      "thresholds": {
+        "auslassen_to_beobachten": 0.5814200941930889,
+        "beobachten_to_spielen": 0.6298345464447379
+      },
+      "confirm_count": 3,
+      "counter_count": 4,
+      "neutral_count": 4,
+      "strongest_counter": {
+        "cluster": "btts_ou_profile",
+        "status": "MODERATE_COUNTER"
+      },
+      "robustness": {
+        "status": "MEASURED_PENDING_EMPIRICAL_DECISION_GATE",
+        "family_preference_flip_count": 1,
+        "flip_clusters": [
+          "player"
+        ],
+        "max_cluster_probability_move": 0.0478895871905467
+      }
+    },
+    "TOTALS": {
+      "selected_market": "over_2_5",
+      "base_probability": 0.6173236907005797,
+      "evidence_adjusted_probability": 0.5975424723836679,
+      "reliability_score": 0.5975424723836679,
+      "decision": "BEOBACHTEN",
+      "decision_reason": "EMPIRICAL_GATE",
+      "thresholds": {
+        "auslassen_to_beobachten": 0.5683940094221348,
+        "beobachten_to_spielen": 0.7577724475079729
+      },
+      "confirm_count": 7,
+      "counter_count": 1,
+      "neutral_count": 3,
+      "strongest_counter": {
+        "cluster": "match_context",
+        "status": "WEAK_COUNTER"
+      },
+      "robustness": {
+        "status": "MEASURED_PENDING_EMPIRICAL_DECISION_GATE",
+        "family_preference_flip_count": 0,
+        "flip_clusters": [],
+        "max_cluster_probability_move": 0.06455980524310401
+      }
+    }
+  },
+  "markets": {
+    "home_win": {
+      "market": "home_win",
+      "family": "1X2",
+      "selected_in_family": false,
+      "probability": 0.21646816176101843,
+      "decision": "AUSLASSEN",
+      "decision_reason": "COHERENCE_NOT_SELECTED",
+      "reliability_score": null,
+      "counterargument_test": {
+        "status": "MEASURED_PENDING_EMPIRICAL_DECISION_GATE",
+        "counter_count": 6,
+        "strongest_counter": {
+          "cluster": "btts_ou_profile",
+          "status": "MODERATE_COUNTER"
+        }
+      },
+      "robustness": {
+        "status": "MEASURED_PENDING_EMPIRICAL_DECISION_GATE",
+        "family_preference_flip_count": 0,
+        "flip_clusters": [],
+        "max_cluster_probability_move": 0.07173242188617143
+      },
+      "sample_security": "HIGH",
+      "data_quality_support": true
+    },
+    "draw": {
+      "market": "draw",
+      "family": "1X2",
+      "selected_in_family": false,
+      "probability": 0.2589203220751374,
+      "decision": "AUSLASSEN",
+      "decision_reason": "COHERENCE_NOT_SELECTED",
+      "reliability_score": null,
+      "counterargument_test": {
+        "status": "MEASURED_PENDING_EMPIRICAL_DECISION_GATE",
+        "counter_count": 6,
+        "strongest_counter": {
+          "cluster": "btts_ou_profile",
+          "status": "MODERATE_COUNTER"
+        }
+      },
+      "robustness": {
+        "status": "MEASURED_PENDING_EMPIRICAL_DECISION_GATE",
+        "family_preference_flip_count": 0,
+        "flip_clusters": [],
+        "max_cluster_probability_move": 0.0405833547868612
+      },
+      "sample_security": "HIGH",
+      "data_quality_support": true
+    },
+    "away_win": {
+      "market": "away_win",
+      "family": "1X2",
+      "selected_in_family": true,
+      "probability": 0.5246115161638442,
+      "decision": "BEOBACHTEN",
+      "decision_reason": "EMPIRICAL_GATE",
+      "reliability_score": 0.5568697057618064,
+      "counterargument_test": {
+        "status": "MEASURED_PENDING_EMPIRICAL_DECISION_GATE",
+        "counter_count": 0,
+        "strongest_counter": null
+      },
+      "robustness": {
+        "status": "MEASURED_PENDING_EMPIRICAL_DECISION_GATE",
+        "family_preference_flip_count": 0,
+        "flip_clusters": [],
+        "max_cluster_probability_move": 0.10146975212664494
+      },
+      "sample_security": "HIGH",
+      "data_quality_support": true
+    },
+    "btts_yes": {
+      "market": "btts_yes",
+      "family": "BTTS",
+      "selected_in_family": true,
+      "probability": 0.5192912208735917,
+      "decision": "AUSLASSEN",
+      "decision_reason": "EMPIRICAL_GATE",
+      "reliability_score": 0.5179376649803177,
+      "counterargument_test": {
+        "status": "MEASURED_PENDING_EMPIRICAL_DECISION_GATE",
+        "counter_count": 4,
+        "strongest_counter": {
+          "cluster": "btts_ou_profile",
+          "status": "MODERATE_COUNTER"
+        }
+      },
+      "robustness": {
+        "status": "MEASURED_PENDING_EMPIRICAL_DECISION_GATE",
+        "family_preference_flip_count": 1,
+        "flip_clusters": [
+          "player"
+        ],
+        "max_cluster_probability_move": 0.0478895871905467
+      },
+      "sample_security": "HIGH",
+      "data_quality_support": true
+    },
+    "btts_no": {
+      "market": "btts_no",
+      "family": "BTTS",
+      "selected_in_family": false,
+      "probability": 0.4807087791264083,
+      "decision": "AUSLASSEN",
+      "decision_reason": "COHERENCE_NOT_SELECTED",
+      "reliability_score": null,
+      "counterargument_test": {
+        "status": "MEASURED_PENDING_EMPIRICAL_DECISION_GATE",
+        "counter_count": 3,
+        "strongest_counter": {
+          "cluster": "league_context",
+          "status": "STRONG_COUNTER"
+        }
+      },
+      "robustness": {
+        "status": "MEASURED_PENDING_EMPIRICAL_DECISION_GATE",
+        "family_preference_flip_count": 1,
+        "flip_clusters": [
+          "player"
+        ],
+        "max_cluster_probability_move": 0.0478895871905467
+      },
+      "sample_security": "HIGH",
+      "data_quality_support": true
+    },
+    "over_2_5": {
+      "market": "over_2_5",
+      "family": "TOTALS",
+      "selected_in_family": true,
+      "probability": 0.6173236907005797,
+      "decision": "BEOBACHTEN",
+      "decision_reason": "EMPIRICAL_GATE",
+      "reliability_score": 0.5975424723836679,
+      "counterargument_test": {
+        "status": "MEASURED_PENDING_EMPIRICAL_DECISION_GATE",
+        "counter_count": 1,
+        "strongest_counter": {
+          "cluster": "match_context",
+          "status": "WEAK_COUNTER"
+        }
+      },
+      "robustness": {
+        "status": "MEASURED_PENDING_EMPIRICAL_DECISION_GATE",
+        "family_preference_flip_count": 0,
+        "flip_clusters": [],
+        "max_cluster_probability_move": 0.06455980524310401
+      },
+      "sample_security": "HIGH",
+      "data_quality_support": true
+    },
+    "under_2_5": {
+      "market": "under_2_5",
+      "family": "TOTALS",
+      "selected_in_family": false,
+      "probability": 0.38267630929942026,
+      "decision": "AUSLASSEN",
+      "decision_reason": "COHERENCE_NOT_SELECTED",
+      "reliability_score": null,
+      "counterargument_test": {
+        "status": "MEASURED_PENDING_EMPIRICAL_DECISION_GATE",
+        "counter_count": 7,
+        "strongest_counter": {
+          "cluster": "expected_goals_xga",
+          "status": "STRONG_COUNTER"
+        }
+      },
+      "robustness": {
+        "status": "MEASURED_PENDING_EMPIRICAL_DECISION_GATE",
+        "family_preference_flip_count": 0,
+        "flip_clusters": [],
+        "max_cluster_probability_move": 0.06455980524310406
+      },
+      "sample_security": "HIGH",
+      "data_quality_support": true
+    }
+  },
+  "sample_security": {
+    "status": "HIGH",
+    "low_feature_count": 0,
+    "compared_feature_count": 18,
+    "low_fraction_q25": 0,
+    "development_q25": 0.05555555555555555,
+    "development_q75": 0.16666666666666666,
+    "details": [
+      {
+        "feature": "away_active_player_share",
+        "value": 0.875,
+        "development_q25": 0.782608695652174,
+        "below_q25": false
+      },
+      {
+        "feature": "away_away_matches",
+        "value": 2,
+        "development_q25": 1,
+        "below_q25": false
+      },
+      {
+        "feature": "away_last5_away_matches",
+        "value": 3,
+        "development_q25": 2,
+        "below_q25": false
+      },
+      {
+        "feature": "away_overall_matches",
+        "value": 5,
+        "development_q25": 3,
+        "below_q25": false
+      },
+      {
+        "feature": "away_players_found",
+        "value": 24,
+        "development_q25": 23,
+        "below_q25": false
+      },
+      {
+        "feature": "away_table_away_matches",
+        "value": 2,
+        "development_q25": 1,
+        "below_q25": false
+      },
+      {
+        "feature": "away_table_home_matches",
+        "value": 3,
+        "development_q25": 2,
+        "below_q25": false
+      },
+      {
+        "feature": "away_table_overall_matches",
+        "value": 5,
+        "development_q25": 3,
+        "below_q25": false
+      },
+      {
+        "feature": "home_active_player_share",
+        "value": 0.8571428571428571,
+        "development_q25": 0.782608695652174,
+        "below_q25": false
+      },
+      {
+        "feature": "home_home_matches",
+        "value": 2,
+        "development_q25": 1,
+        "below_q25": false
+      },
+      {
+        "feature": "home_last5_home_matches",
+        "value": 2,
+        "development_q25": 2,
+        "below_q25": false
+      },
+      {
+        "feature": "home_overall_matches",
+        "value": 5,
+        "development_q25": 3,
+        "below_q25": false
+      },
+      {
+        "feature": "home_players_found",
+        "value": 28,
+        "development_q25": 23,
+        "below_q25": false
+      },
+      {
+        "feature": "home_table_away_matches",
+        "value": 3,
+        "development_q25": 2,
+        "below_q25": false
+      },
+      {
+        "feature": "home_table_home_matches",
+        "value": 2,
+        "development_q25": 1,
+        "below_q25": false
+      },
+      {
+        "feature": "home_table_overall_matches",
+        "value": 5,
+        "development_q25": 3,
+        "below_q25": false
+      },
+      {
+        "feature": "player_active_player_share_home_minus_away",
+        "value": -0.017857142857142905,
+        "development_q25": -0.05358853311439521,
+        "below_q25": false
+      },
+      {
+        "feature": "player_players_found_home_minus_away",
+        "value": 4,
+        "development_q25": -2,
+        "below_q25": false
+      }
+    ]
+  },
+  "data_quality_support": {
+    "pass": true,
+    "failures": [],
+    "coverage": 1,
+    "development_coverage_min": 0.9903225806451613,
+    "ood_fraction_q01_q99": 0.0064516129032258064,
+    "development_ood_max": 0.08709677419354839
+  },
+  "coherence": {
+    "one_active_candidate_per_family": true,
+    "selected_markets": {
+      "1X2": "away_win",
+      "BTTS": "btts_yes",
+      "TOTALS": "over_2_5"
+    },
+    "nonselected_markets_fail_closed": true
+  },
+  "contract_stage": {
+    "goal_model_all_7": true,
+    "catboost_all_7": true,
+    "oos_ensemble": true,
+    "calibration": true,
+    "evidence_engine_all_7": true,
+    "counterarguments": true,
+    "robustness": true,
+    "sample_security": true,
+    "data_quality": true,
+    "coherence_ood": true,
+    "decision_all_7": true,
+    "new_untouched_oos": "OOS_001_PREDICTION_FROZEN_RESULT_NOT_JOINED"
+  },
+  "secondary_context": {
+    "H2H": {
+      "available": false,
+      "status": "UNAVAILABLE",
+      "decision_weight_validated": false,
+      "markets": {}
+    },
+    "REFEREE": {
+      "available": false,
+      "status": "UNAVAILABLE",
+      "feature_count": 0,
+      "decision_weight_validated": false,
+      "sample_security": {
+        "status": "UNVALIDATED_HISTORICAL_SAMPLE",
+        "metrics": [],
+        "decision_weight_validated": false
+      },
+      "reason": "No valid pre-match block available for this match."
+    },
+    "MANAGER": {
+      "available": false,
+      "status": "UNAVAILABLE",
+      "feature_count": 0,
+      "decision_weight_validated": false,
+      "sample_security": {
+        "status": "UNVALIDATED_HISTORICAL_SAMPLE",
+        "metrics": [],
+        "decision_weight_validated": false
+      },
+      "reason": "No valid pre-match block available for this match."
+    }
+  },
+  "freeze_audit": {
+    "frozen_before_result_join": true,
+    "workflow_run_id": 34980050610,
+    "workflow_job_id": 104417693220,
+    "workflow_head_sha": "1ac1d6cc77137549a8e72163013119bbf3e2139f",
+    "artifact_id": 10401490606,
+    "artifact_sha256": "8875812b00b8dd9bd4d72bccca7ca29c357b01f5ae59a63edbcfdaebae125bf5",
+    "result_joined": false
+  }
+}

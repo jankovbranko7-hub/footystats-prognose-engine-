@@ -1,0 +1,66 @@
+{
+  "schema_version": "FULL7_OOS_SINGLE_FREEZE_MANIFEST_1.0",
+  "oos_id": "OOS_011_8688013",
+  "status": "PREDICTION_FROZEN_BEFORE_RESULT_JOIN",
+  "match_id": 8688013,
+  "home": "Corinthians",
+  "away": "Estudiantes",
+  "season_id": 16556,
+  "kickoff_unix": 1789605000,
+  "source_capture_unix": 1789598939,
+  "strict_pre_match": true,
+  "gold_ready": true,
+  "received_file_count": 7,
+  "feature_count": 1000,
+  "available_block_count": 16,
+  "source_zip_sha256": "ef1268759dcf2818751d4eb6c47c5dcff77dd9f825cedf3d989b62c0ec615538",
+  "full_frozen_artifact_sha256": "7d46bff5fcc805b5e5997e4fbbc8da366126f6f97b4b7cf71ea38dfc720c9962",
+  "full_frozen_artifact_size_bytes": 115048,
+  "prediction_payload_sha256": "ef16de44e9c3bf997655b197466b9fb1ca0c55d99197eb8fd4299c5f079baa73",
+  "model_bundle_sha256": "62dc5ff31fdb144d40c9c873ab2cd35de5b349a6497c2e50fe2c1ea3019a6187",
+  "repo_snapshot_commit": "a6f8f381be47ab0c7652a59dbb7eca4dee41d6fb",
+  "probabilities": {
+    "home_win": 0.45200489109497155,
+    "draw": 0.30329061495585385,
+    "away_win": 0.24470449394917465,
+    "btts_yes": 0.43828946597456714,
+    "btts_no": 0.5617105340254329,
+    "over_2_5": 0.42529436474815097,
+    "under_2_5": 0.574705635251849
+  },
+  "decisions": {
+    "home_win": "AUSLASSEN",
+    "draw": "AUSLASSEN",
+    "away_win": "AUSLASSEN",
+    "btts_yes": "AUSLASSEN",
+    "btts_no": "AUSLASSEN",
+    "over_2_5": "AUSLASSEN",
+    "under_2_5": "AUSLASSEN"
+  },
+  "freeze_audit": {
+    "frozen_before_result_join": true,
+    "result_joined": false,
+    "frozen_at_utc": "2026-09-16T23:06:54.909882+00:00",
+    "frozen_at_unix": 1789600014,
+    "kickoff_unix": 1789605000,
+    "seconds_before_kickoff": 4986,
+    "prediction_mutated_after_freeze": false
+  },
+  "file_sha256": {
+    "8688013_MatchDaten.json": "ba6a7d6f0cde31a198b8c45acfcab933b32a75792f3dbf978ad648deb2e9c1c7",
+    "16556_LeagueDaten.json": "5cdbbe65c6b77147454645153cafbab8c3f55e901bab9c82caf0b0bb0fb3b952",
+    "8688013_FormDaten.json": "de1926d4f9aa8dab2d70e3a3bfaa5c75da7a0e5bb7a9fccc933530575b57bad6",
+    "8688013_TableDaten.json": "da3ca72c3e5d0c364937a93d76198c8735112434ef09a0f1ef3f6ea2e56ef553",
+    "8688013_PlayerDaten.json": "87ae5c6fb211c571ae9f1132dfade7a1feb43fc975df41837188253506c35e37",
+    "8688013_RefereeDaten.json": "2bd2f2560d7795acce1146153705298e129ef568d2366c21e5a193319d07d056",
+    "8688013_ManagerDaten.json": "ee5e27b8fda0705b6be7900c9cd0fbb6adcc130622fa20e3dafae1680aff47af"
+  },
+  "contract_flags": {
+    "all_seven_markets_present": true,
+    "complete_decision_layer_present": true,
+    "data_quality_pass": true,
+    "probability_mode_no_odds": true,
+    "result_joined": false,
+    "frozen_before_kickoff": true
+  }
+}

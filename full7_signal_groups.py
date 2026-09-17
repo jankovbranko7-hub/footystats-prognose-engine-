@@ -55,13 +55,13 @@ GROUP_META: Dict[str, Dict[str, Any]] = {
         "cluster": "half_profile",
         "role": "SUPPORT_CANDIDATE",
         "evidence_eligible": True,
-        "markets": ("btts_yes", "btts_no", "over_2_5", "under_2_5"),
+        "markets": ALL_MARKETS,
     },
     "BTTS_OU_PROFILE": {
         "cluster": "goal_pattern",
         "role": "CORE_CANDIDATE",
         "evidence_eligible": True,
-        "markets": ("btts_yes", "btts_no", "over_2_5", "under_2_5"),
+        "markets": ALL_MARKETS,
     },
     "PLAYER_DEPTH": {
         "cluster": "player",
@@ -83,8 +83,8 @@ GROUP_META: Dict[str, Dict[str, Any]] = {
     },
     "H2H_SECONDARY": {
         "cluster": "h2h",
-        "role": "DIAGNOSTIC_SECONDARY",
-        "evidence_eligible": False,
+        "role": "SECONDARY_EVIDENCE",
+        "evidence_eligible": True,
         "markets": ALL_MARKETS,
     },
     "REFEREE": {
@@ -96,6 +96,12 @@ GROUP_META: Dict[str, Dict[str, Any]] = {
     "MANAGER": {
         "cluster": "manager",
         "role": "SUPPORT_CANDIDATE",
+        "evidence_eligible": True,
+        "markets": ALL_MARKETS,
+    },
+    "MATCH_CONTEXT": {
+        "cluster": "match_context",
+        "role": "CONTEXT_CANDIDATE",
         "evidence_eligible": True,
         "markets": ALL_MARKETS,
     },
@@ -147,6 +153,12 @@ def classify_gold_feature(name: str, owner: str) -> str:
         return "DATA_QUALITY"
     if owner in {"league_context", "league_derived_context"}:
         return "LEAGUE_CONTEXT"
+    if owner == "match_prematch":
+        if "xg" in low:
+            return "EXPECTED_GOALS_XGA"
+        if "ppg" in low:
+            return "VENUE_STRENGTH"
+        return "MATCH_CONTEXT"
 
     if owner == "player_depth_quality_concentration":
         if "secondary_affiliation" in low:
@@ -186,8 +198,10 @@ def classify_gold_feature(name: str, owner: str) -> str:
     if any(token in low for token in ("possession", "corner")):
         return "AUXILIARY_CONTEXT"
 
-    # Any remaining explicit league-team profile feature is retained but not allowed
-    # to become an independent evidence vote until a domain rule is added.
+    # Remaining explicit pre-match fields retain a dedicated Match Context vote
+    # when they originate from the target match; other uncategorised context stays diagnostic.
+    if owner == "match_prematch":
+        return "MATCH_CONTEXT"
     return "AUXILIARY_CONTEXT"
 
 
@@ -257,7 +271,7 @@ def audit_signal_groups(gold_features: Dict[str, Any]) -> Dict[str, Any]:
             cluster_to_groups[row["cluster"]].append(row["group"])
 
     return {
-        "signal_group_version": "0.1.0",
+        "signal_group_version": "0.2.0",
         "feature_count": len(features),
         "assigned_feature_count": len(feature_to_group),
         "unassigned_feature_count": len(missing_owner),
@@ -275,6 +289,8 @@ def audit_signal_groups(gold_features: Dict[str, Any]) -> Dict[str, Any]:
             "player_groups": "Depth, quality and concentration share the PLAYER independence cluster.",
             "form_windows": "Last5/6/10 and form deltas share CURRENT_FORM and can never become separate confirmations.",
             "provider_potentials": "Research-only until isolated forward-OOS ablation proves incremental value.",
+            "h2h": "Secondary evidence only; requires sample/age/venue checks and can never outweigh core evidence by multiplicity.",
+            "all_markets": "Every evidence-eligible group can be evaluated for all seven markets; empirical effect may be neutral.",
             "thresholds": "No SPIELEN/BEOBACHTEN threshold is hard-coded here; thresholds must be learned and validated OOS.",
         },
     }
