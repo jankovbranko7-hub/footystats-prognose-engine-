@@ -2,20 +2,23 @@ from __future__ import annotations
 
 PRODUCTION_FAMILY_POLICY = {
     "1X2": {
-        "max_decision": "BEOBACHTEN",
-        "spielen_allowed": False,
-        "cap_reason": "FAMILY_OOS_OBSERVE_ONLY",
+        "max_decision": "SPIELEN",
+        "spielen_allowed": True,
+        "cap_reason": None,
+        "validation_maturity": "FORWARD_OOS_REQUIRED_FOR_PRODUCTION_PLAY",
     },
     "BTTS": {
         "max_decision": "SPIELEN",
         "spielen_allowed": True,
         "cap_reason": None,
         "min_family_margin": 0.08,
+        "validation_maturity": "HISTORICAL_OOS_STRONGEST_CURRENT_FAMILY",
     },
     "TOTALS": {
-        "max_decision": "BEOBACHTEN",
-        "spielen_allowed": False,
-        "cap_reason": "FAMILY_OOS_OBSERVE_ONLY",
+        "max_decision": "SPIELEN",
+        "spielen_allowed": True,
+        "cap_reason": None,
+        "validation_maturity": "FORWARD_OOS_REQUIRED_FOR_PRODUCTION_PLAY",
     },
 }
 DECISION_RANK = {"AUSLASSEN": 0, "BEOBACHTEN": 1, "SPIELEN": 2}
