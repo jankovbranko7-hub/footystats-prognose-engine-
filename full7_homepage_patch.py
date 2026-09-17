@@ -108,22 +108,30 @@ function jsonFile(name, obj){
 })();
 const full7Input=document.getElementById("full7Files");
 const full7Pick=document.getElementById("full7Pick");
-if(full7Input&&full7Pick){
-  full7Input.addEventListener("change",function(){
-    const n=full7Input.files?full7Input.files.length:0;
-    if(!n){full7Pick.textContent="Noch keine Dateien ausgewählt.";return;}
-    const names=[...full7Input.files].map(function(f){
-      const mb=(f.size/1048576);
-      const size=mb>=0.1? (mb.toFixed(2)+" MB") : (Math.max(1,Math.round(f.size/1024))+" KB");
-      return f.name+" ("+size+")";
-    });
-    full7Pick.innerHTML=n+" Datei(en):<br>"+names.map(function(x){return escapeHtml(x);}).join("<br>");
+function showPicked(){
+  if(!full7Input||!full7Pick) return;
+  const files=[...(full7Input.files||[])];
+  if(!files.length){
+    full7Pick.textContent="Noch keine Dateien ausgewählt.";
+    return;
+  }
+  const lines=files.map(function(f){
+    const mb=f.size/1048576;
+    const size=mb>=0.1? (mb.toFixed(2)+" MB") : (Math.max(1,Math.round(f.size/1024))+" KB");
+    return f.name+" ("+size+")";
   });
+  full7Pick.textContent=files.length+" Datei(en): "+lines.join(" | ");
+}
+if(full7Input&&full7Pick){
+  ["change","input","click","blur"].forEach(function(ev){
+    full7Input.addEventListener(ev, showPicked);
+  });
+  setInterval(showPicked, 400);
 }
 const go7=document.getElementById("go7");
 if(go7){
   go7.onclick=async function(){
-    const files=[...((full7Input&&full7Input.files)||[])];
+    showPicked(); const files=[...((full7Input&&full7Input.files)||[])];
     const out=document.getElementById("out");
     const slots=classifyFull7(files);
     const missing=Object.keys(slots).filter(function(key){return !slots[key];});
