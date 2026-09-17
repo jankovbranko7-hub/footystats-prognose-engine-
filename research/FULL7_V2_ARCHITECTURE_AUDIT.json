@@ -1,0 +1,90 @@
+{
+  "schema_version": "FULL7_V2_ARCHITECTURE_AUDIT_1.0",
+  "status": "IMPLEMENTATION_PASS_RELEASE_BLOCKED",
+  "date": "2026-09-17",
+  "branch": "feat/full7-v2-seven-market-heads",
+  "draft_pr": 35,
+  "base_main_commit": "e51ecb51bf043a7381e7b72fd1aa5244f1a5a70e",
+  "implementation_snapshot_before_audit_docs": "bbfb9d379b75f45953e7c51df4b643216c54d233",
+  "decision_architecture": "SEVEN_MARKET_RAW_HEADS_THEN_COHERENCE",
+  "engine_version": "FULL7_CONTRACT_V2_RC1",
+  "release_status": "BLOCKED_PENDING_V2_FORWARD_OOS",
+  "release_authorized": false,
+  "markets": [
+    "home_win",
+    "draw",
+    "away_win",
+    "btts_yes",
+    "btts_no",
+    "over_2_5",
+    "under_2_5"
+  ],
+  "all_seven_raw_heads_before_coherence": true,
+  "coherence_arbitration_basis": "RAW_RELIABILITY_THEN_CALIBRATED_PROBABILITY",
+  "structural_family_play_caps_removed": true,
+  "low_sample_downgrade_all_families": true,
+  "btts_margin_and_model_agreement_guard_retained": true,
+  "probability_foundation_frozen": true,
+  "common_core_feature_count": 620,
+  "model_bundle_sha256": "62dc5ff31fdb144d40c9c873ab2cd35de5b349a6497c2e50fe2c1ea3019a6187",
+  "decision_gate_version": "FULL7_CONTRACT_DECISION_GATE_1.0",
+  "decision_gate_version_reason": "Existing family-shared empirical coefficients were reused as a conservative V2 architecture baseline; no retraining or false relabeling was performed.",
+  "unchanged_model_artifacts": [
+    "models/full7_contract_bundle.part001",
+    "models/full7_contract_bundle.part002",
+    "models/full7_contract_bundle.part003",
+    "models/full7_contract_bundle.part004",
+    "models/full7_contract_bundle.part005",
+    "models/full7_contract_bundle.part006",
+    "models/full7_contract_decision_gate.json",
+    "models/full7_evidence_reference.json.gz"
+  ],
+  "historical_443": {
+    "rows": 443,
+    "archive_rows": 300,
+    "later_rows": 143,
+    "use": "RETROSPECTIVE_ARCHITECTURE_EVIDENCE_ONLY",
+    "untouched_v2_forward_oos": false
+  },
+  "testing": {
+    "baseline_after_stale_test_alignment": {
+      "tests": 152,
+      "passed": 152,
+      "failed": 0
+    },
+    "final_regression_snapshot": "bbfb9d379b75f45953e7c51df4b643216c54d233",
+    "final_tests": 157,
+    "final_passed": 157,
+    "final_failed": 0,
+    "tdd_red_stages_verified": true
+  },
+  "release_gate": {
+    "version": "FULL7_CONTRACT_RELEASE_GATE_2.0",
+    "status": "BLOCKED",
+    "blockers": [
+      "FORWARD_OOS_MAIN_MERGE_FORBIDDEN",
+      "FORWARD_OOS_RENDER_DEPLOY_FORBIDDEN",
+      "FORWARD_OOS_NO_SPIELEN_EXPOSURE"
+    ],
+    "main_merge_allowed": false,
+    "render_deploy_allowed": false,
+    "spielen_forward_oos_exposure": 0
+  },
+  "api_semantics": {
+    "decision_capable_families": ["1X2", "BTTS", "TOTALS"],
+    "release_authorized_spielen_families": [],
+    "candidate_spielen_visible": true,
+    "playable_empty_while_blocked": true
+  },
+  "statistical_limitations": [
+    "The family-shared decision artifact was originally fitted on family-selected development cases.",
+    "V2 applies those shared coefficients to all sides without inventing market-specific weights.",
+    "Previously non-selected sides are not claimed as untouched OOS validated.",
+    "A new strict pre-match forward OOS block after V2 freeze is required before production play."
+  ],
+  "production": {
+    "main_modified_by_v2": false,
+    "render_v2_deployed": false,
+    "draft_pr_only": true
+  }
+}
