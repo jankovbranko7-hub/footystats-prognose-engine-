@@ -73,7 +73,13 @@ const full7Pick=document.getElementById("full7Pick");
 if(full7Input&&full7Pick){
   full7Input.addEventListener("change",function(){
     const n=full7Input.files?full7Input.files.length:0;
-    full7Pick.textContent=n? (n+" Datei(en) ausgewählt") : "Noch keine Dateien ausgewählt.";
+    if(!n){full7Pick.textContent="Noch keine Dateien ausgewählt.";return;}
+    const names=[...full7Input.files].map(function(f){
+      const mb=(f.size/1048576);
+      const size=mb>=0.1? (mb.toFixed(2)+" MB") : (Math.max(1,Math.round(f.size/1024))+" KB");
+      return f.name+" ("+size+")";
+    });
+    full7Pick.innerHTML=n+" Datei(en):<br>"+names.map(function(x){return escapeHtml(x);}).join("<br>");
   });
 }
 const go7=document.getElementById("go7");
@@ -89,7 +95,8 @@ if(go7){
     }
     const form=new FormData();
     Object.keys(slots).forEach(function(key){form.append(key, slots[key]);});
-    out.innerHTML='<div class="c">FULL-7 lädt. Bitte Tab offen lassen.</div>';
+    const listed=[...files].map(function(f){return f.name;}).join(', ');
+    out.innerHTML='<div class="c">Geladen: '+escapeHtml(listed)+'<br>FULL-7 wertet aus…</div>';
     try{
       const response=await fetch("/api/full7/predict",{method:"POST",body:form});
       const data=await response.json();
