@@ -10,16 +10,21 @@ from typing import Any
 FULL7_CARD = r'''
   <div class="c" id="full7-card">
     <h2>FULL-7 Contract</h2>
-    <p class="s">7 Pre-Match-Dateien · keine Odds · SPIELEN nur BTTS · 1X2 und Totals höchstens BEOBACHTEN</p>
-    <p class="s">Match · League · Form · Table · Player · Referee · Manager</p>
+    <p class="s">7 Pre-Match-Dateien \u00b7 keine Odds \u00b7 SPIELEN nur BTTS \u00b7 1X2 und Totals h\u00f6chstens BEOBACHTEN</p>
+    <p class="s">Match \u00b7 League \u00b7 Form \u00b7 Table \u00b7 Player \u00b7 Referee \u00b7 Manager</p>
     <input id="full7Files" type="file" multiple accept=".json,application/json">
-    <p id="full7Pick" class="s">Noch keine Dateien ausgewählt.</p>
+    <p id="full7Pick" class="s">Noch keine Dateien ausgew\u00e4hlt.</p>
     <button id="go7">FULL-7 auswerten</button>
     <div id="full7Out"></div>
   </div>
 '''
 
 FULL7_SCRIPT = r'''
+function escapeHtml(v){
+  return String(v==null?'':v).replace(/[&<>"']/g,function(c){
+    return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]);
+  });
+}
 function classifyFull7(files){
   const slots={
     match_file:null,league_file:null,form_file:null,table_file:null,
@@ -43,15 +48,15 @@ function classifyFull7(files){
   return slots;
 }
 function pct(value){
-  if(value==null||isNaN(Number(value))) return "—";
+  if(value==null||isNaN(Number(value))) return "\u2014";
   return (Number(value)*100).toFixed(1)+"%";
 }
 function renderCards(items, emptyText){
   if(!items||!items.length) return '<p class="s">'+escapeHtml(emptyText)+'</p>';
   return '<div class="g">'+items.map(function(item){
-    return '<div class="m"><div class="s">'+escapeHtml(item.family||"")+' · '+escapeHtml(item.market||"")+'</div>'+
+    return '<div class="m"><div class="s">'+escapeHtml(item.family||"")+' \u00b7 '+escapeHtml(item.market||"")+'</div>'+
       '<div class="b">'+escapeHtml(item.decision||"")+'</div>'+
-      '<div class="s">'+escapeHtml(pct(item.probability))+' · '+escapeHtml(item.reason||"")+'</div></div>';
+      '<div class="s">'+escapeHtml(pct(item.probability))+' \u00b7 '+escapeHtml(item.reason||"")+'</div></div>';
   }).join("")+'</div>';
 }
 function matchIds(obj){
@@ -113,7 +118,7 @@ function showPicked(){
   if(!full7Input||!full7Pick) return;
   const files=[...(full7Input.files||[])];
   if(!files.length){
-    full7Pick.textContent="Noch keine Dateien ausgewählt.";
+    full7Pick.textContent="Noch keine Dateien ausgew\u00e4hlt.";
     return;
   }
   const lines=files.map(function(f){
@@ -144,7 +149,7 @@ if(go7){
     go7.disabled=true;
     const listed=[...files].map(function(f){return f.name;}).join(', ');
     try{
-      out.innerHTML='<div class="c">Geladen: '+escapeHtml(listed)+'<br>Dateien werden verkleinert…</div>';
+      out.innerHTML='<div class="c">Geladen: '+escapeHtml(listed)+'<br>Dateien werden verkleinert\u2026</div>';
       const parsed={};
       for(const key of Object.keys(slots)){
         parsed[key]=JSON.parse(await slots[key].text());
@@ -156,16 +161,16 @@ if(go7){
       Object.keys(parsed).forEach(function(key){
         form.append(key, jsonFile(slots[key].name, parsed[key]));
       });
-      out.innerHTML='<div class="c">Geladen: '+escapeHtml(listed)+'<br>Sende kompaktes Paket…</div>';
+      out.innerHTML='<div class="c">Geladen: '+escapeHtml(listed)+'<br>Sende kompaktes Paket\u2026</div>';
       const response=await fetch('/api/full7/predict',{method:'POST',body:form});
       const data=await response.json();
       if(!response.ok||!data.ok){
-        out.innerHTML='<div class="c"><h3 class="bad">FULL-7 nicht möglich</h3><pre>'+escapeHtml(JSON.stringify(data,null,2))+'</pre></div>';
+        out.innerHTML='<div class="c"><h3 class="bad">FULL-7 nicht m\u00f6glich</h3><pre>'+escapeHtml(JSON.stringify(data,null,2))+'</pre></div>';
         return;
       }
       const ident=data.identity||{};
       const engine=data.engine||{};
-      const sample=(engine.sample_security||{}).status||"—";
+      const sample=(engine.sample_security||{}).status||"\u2014";
       const families=engine.families||{};
       const familyRows=Object.keys(families).map(function(name){
         const row=families[name]||{};
@@ -176,14 +181,14 @@ if(go7){
       out.innerHTML=
         '<div class="c"><div class="ok"><b>FULL-7 Contract</b></div>'+
         '<p class="s">'+escapeHtml(String(ident.home_name||ident.home_id||"?"))+' vs '+escapeHtml(String(ident.away_name||ident.away_id||"?"))+
-        ' · '+escapeHtml(String((data.contract||{}).release_status||""))+'</p>'+
+        ' \u00b7 '+escapeHtml(String((data.contract||{}).release_status||""))+'</p>'+
         '<div class="g">'+
         '<div class="m"><div class="s">SPIELEN erlaubt</div><div class="b">BTTS</div></div>'+
         '<div class="m"><div class="s">Stichprobe</div><div class="b">'+escapeHtml(sample)+'</div></div>'+
         '<div class="m"><div class="s">Playable</div><div class="b">'+escapeHtml(String((engine.playable||[]).length))+'</div></div>'+
         '</div></div>'+
         '<div class="c"><h3>Playable</h3>'+renderCards(engine.playable,"Kein SPIELEN.")+'</div>'+
-        '<div class="c"><h3>Blocked</h3>'+renderCards(engine.blocked,"—")+'</div>'+
+        '<div class="c"><h3>Blocked</h3>'+renderCards(engine.blocked,"\u2014")+'</div>'+
         '<div class="c"><h3>Familien</h3><table><tr><th>Familie</th><th>Markt</th><th>Decision</th><th>p</th><th>Grund</th></tr>'+familyRows+'</table></div>';
     }catch(error){
       out.innerHTML='<div class="c bad">Fehler: '+escapeHtml(String(error))+'</div>';
@@ -205,15 +210,15 @@ def apply_full7_homepage(legacy: Any) -> Any:
     if "<style>" in html and "#go,.c:has(#go)" not in html:
         html = html.replace("<style>", "<style>\n#go,.c:has(#go){display:none!important}\n", 1)
     html = html.replace(
-        "<title>FootyStats SPEC v1.1 · Joint-Outcome Engine</title>",
-        "<title>FULL-7 Contract · FootyStats</title>",
+        "<title>FootyStats SPEC v1.1 \u00b7 Joint-Outcome Engine</title>",
+        "<title>FULL-7 Contract \u00b7 FootyStats</title>",
     )
     html = html.replace(
-        "<h2>SPEC v1.1 · Joint-Outcome Engine</h2>",
-        "<h2>Legacy · SPEC v1.1 Joint-Outcome</h2>",
+        "<h2>SPEC v1.1 \u00b7 Joint-Outcome Engine</h2>",
+        "<h2>Legacy \u00b7 SPEC v1.1 Joint-Outcome</h2>",
     )
     html = html.replace(
-        "<h3>5 Dateien eines Spiels auswählen</h3>",
+        "<h3>5 Dateien eines Spiels ausw\u00e4hlen</h3>",
         "<h3>Nur wenn FULL-7 nicht geht: 5 Dateien</h3>",
     )
     legacy.INDEX_HTML = html
