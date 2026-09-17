@@ -4,6 +4,8 @@ from full7_contract_decision import (
     ARTIFACT,
     DECISION_GATE_VERSION,
     FAMILY_MARKETS,
+    PRODUCTION_FAMILY_POLICY,
+    apply_precision_policy,
     build_decision_engine,
 )
 from full7_contract_engine import MARKETS
@@ -79,6 +81,57 @@ class Full7ContractDecisionTests(unittest.TestCase):
             out["status"],
             "DEVELOPMENT_ONLY_NEW_UNTOUCHED_OOS_REQUIRED",
         )
+
+    def test_precision_policy_caps_1x2_and_totals(self):
+        self.assertFalse(PRODUCTION_FAMILY_POLICY["1X2"]["spielen_allowed"])
+        self.assertFalse(PRODUCTION_FAMILY_POLICY["TOTALS"]["spielen_allowed"])
+        self.assertTrue(PRODUCTION_FAMILY_POLICY["BTTS"]["spielen_allowed"])
+        state, reason = apply_precision_policy(
+            "1X2", "SPIELEN", "EMPIRICAL_GATE",
+            sample_status="HIGH", family_margin=0.2,
+            catboost_prefers_market=1.0, goal_prefers_market=1.0,
+        )
+        self.assertEqual(state, "BEOBACHTEN")
+        self.assertEqual(reason, "FAMILY_OOS_OBSERVE_ONLY")
+        state, reason = apply_precision_policy(
+            "TOTALS", "SPIELEN", "EMPIRICAL_GATE",
+            sample_status="HIGH", family_margin=0.2,
+            catboost_prefers_market=1.0, goal_prefers_market=1.0,
+        )
+        self.assertEqual(state, "BEOBACHTEN")
+        self.assertEqual(reason, "FAMILY_OOS_OBSERVE_ONLY")
+
+    def test_precision_policy_blocks_low_sample_btts_spielen(self):
+        state, reason = apply_precision_policy(
+            "BTTS", "SPIELEN", "EMPIRICAL_GATE",
+            sample_status="LOW", family_margin=0.2,
+            catboost_prefers_market=1.0, goal_prefers_market=1.0,
+        )
+        self.assertEqual(state, "BEOBACHTEN")
+        self.assertEqual(reason, "SAMPLE_SECURITY_LOW")
+
+    def test_precision_policy_requires_btts_margin_and_agreement(self):
+        state, reason = apply_precision_policy(
+            "BTTS", "SPIELEN", "EMPIRICAL_GATE",
+            sample_status="HIGH", family_margin=0.03,
+            catboost_prefers_market=1.0, goal_prefers_market=1.0,
+        )
+        self.assertEqual(state, "BEOBACHTEN")
+        self.assertEqual(reason, "FAMILY_MARGIN_BELOW_MIN")
+        state, reason = apply_precision_policy(
+            "BTTS", "SPIELEN", "EMPIRICAL_GATE",
+            sample_status="HIGH", family_margin=0.20,
+            catboost_prefers_market=1.0, goal_prefers_market=0.0,
+        )
+        self.assertEqual(state, "BEOBACHTEN")
+        self.assertEqual(reason, "MODEL_DISAGREEMENT")
+        state, reason = apply_precision_policy(
+            "BTTS", "SPIELEN", "EMPIRICAL_GATE",
+            sample_status="HIGH", family_margin=0.20,
+            catboost_prefers_market=1.0, goal_prefers_market=1.0,
+        )
+        self.assertEqual(state, "SPIELEN")
+        self.assertEqual(reason, "EMPIRICAL_GATE")
 
 
 if __name__ == "__main__":

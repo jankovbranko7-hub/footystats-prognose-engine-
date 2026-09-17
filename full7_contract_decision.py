@@ -7,6 +7,10 @@ from typing import Any, Dict, List, Mapping, Sequence
 
 from full7_contract_engine import MARKETS
 from full7_contract_evidence import build_evidence_engine
+from full7_precision_policy import (
+    PRODUCTION_FAMILY_POLICY,
+    apply_precision_policy,
+)
 
 DECISION_GATE_VERSION = "FULL7_CONTRACT_DECISION_GATE_1.0"
 _ARTIFACT_PATH = Path(__file__).resolve().parent / "models" / "full7_contract_decision_gate.json"
@@ -250,6 +254,15 @@ def build_decision_engine(
         if not support["pass"]:
             selected_state = "AUSLASSEN"
             selected_reason = "OUTSIDE_DEVELOPMENT_SUPPORT"
+        selected_state, selected_reason = apply_precision_policy(
+            family,
+            selected_state,
+            selected_reason,
+            sample_status=str(sample_security["status"]),
+            family_margin=float(values["family_margin"]),
+            catboost_prefers_market=float(values["catboost_prefers_market"]),
+            goal_prefers_market=float(values["goal_prefers_market"]),
+        )
 
         family_results[family] = {
             "selected_market": selected,
@@ -270,6 +283,10 @@ def build_decision_engine(
             "prospective_development_validation": ARTIFACT["families"][family][
                 "prospective_last3"
             ],
+            "production_policy": {
+                "max_decision": PRODUCTION_FAMILY_POLICY[family]["max_decision"],
+                "spielen_allowed": PRODUCTION_FAMILY_POLICY[family]["spielen_allowed"],
+            },
         }
 
         for market in FAMILY_MARKETS[family]:
