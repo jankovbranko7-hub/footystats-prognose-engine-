@@ -16,7 +16,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libplist-2.0-4
-      - name: Download shortcut-sign
+      - name: Download shortcut-sign and bundle runtime
         run: |
           curl -L --fail --silent --show-error \
             -o shortcut-sign \
@@ -24,8 +24,14 @@ jobs:
           chmod +x shortcut-sign
           ./shortcut-sign version
           sha256sum shortcut-sign
+          ldd shortcut-sign
+          LIBPLIST=$(ldconfig -p | awk '/libplist-2.0.so.4/{print $NF; exit}')
+          test -n "$LIBPLIST"
+          cp "$LIBPLIST" ./libplist-2.0.so.4
       - uses: actions/upload-artifact@v4
         with:
-          name: shortcut-sign-linux-x86_64
-          path: shortcut-sign
+          name: shortcut-sign-linux-x86_64-runtime
+          path: |
+            shortcut-sign
+            libplist-2.0.so.4
           retention-days: 1
