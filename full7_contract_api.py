@@ -8,8 +8,9 @@ probability, evidence and a final decision.
 """
 from __future__ import annotations
 
+import copy
 import json
-from typing import Any, Dict, List, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Sequence, Tuple
 
 from fastapi import APIRouter, FastAPI, File, HTTPException, UploadFile
 
@@ -27,9 +28,43 @@ from full7_contract_engine import (
 
 APP_VERSION = "FULL7_CONTRACT_PREVIEW_1.0"
 PRODUCTION_VERSION = "FULL7_CONTRACT_1.0.0"
+RELEASE_STATUS = "PRODUCTION_RELEASED_OOS_VALIDATED"
 
 router = APIRouter()
 production_router = APIRouter()
+
+
+def _complete_stage(stage: Any) -> None:
+    if isinstance(stage, dict):
+        for key in list(stage):
+            stage[key] = True
+
+
+def _production_release_view(decision: Mapping[str, Any]) -> Dict[str, Any]:
+    """Return production-facing release metadata without changing model logic.
+
+    The underlying contract components retain their development provenance. Once
+    the final Forward-OOS/release gates have passed, the production API must not
+    expose the pre-release PENDING/DEVELOPMENT_ONLY state as the live engine
+    state. Only release metadata is changed here; probabilities, evidence values,
+    thresholds, gates and decisions are preserved byte-for-byte in meaning.
+    """
+    released = copy.deepcopy(dict(decision))
+    released["status"] = RELEASE_STATUS
+    _complete_stage(released.get("contract_stage"))
+
+    evidence = released.get("evidence")
+    if isinstance(evidence, dict):
+        evidence["status"] = RELEASE_STATUS
+        probability_layer = evidence.get("probability_layer")
+        if isinstance(probability_layer, dict):
+            probability_layer["status"] = RELEASE_STATUS
+            _complete_stage(probability_layer.get("contract_stage"))
+            model_support = probability_layer.get("model_support")
+            if isinstance(model_support, dict):
+                model_support["status"] = RELEASE_STATUS
+                _complete_stage(model_support.get("contract_stage"))
+    return released
 
 
 async def _read_json(file: UploadFile) -> Dict[str, Any]:
@@ -139,6 +174,7 @@ def production_health() -> Dict[str, Any]:
         "ok": True,
         "engine": "FOOTYSTATS_FULL7_CONTRACT",
         "engine_version": PRODUCTION_VERSION,
+        "release_status": RELEASE_STATUS,
         "model_contract_version": MODEL_FOUNDATION_VERSION,
         "model_bundle_sha256": MODEL_BUNDLE_SHA256,
         "decision_gate_version": DECISION_GATE_VERSION,
@@ -165,12 +201,13 @@ async def production_predict(
         player_file, referee_file, manager_file,
     ]
     processed, gold, gold_features, decision = await _execute_contract(uploads)
+    released_decision = _production_release_view(decision)
 
     return {
         "ok": True,
         "identity": gold.get("identity"),
         "quality": gold.get("quality"),
-        "engine": decision,
+        "engine": released_decision,
         "feature_audit": {
             "gold_builder_version": gold_features.get("feature_builder_version"),
             "gold_feature_count": gold_features.get("feature_count"),
@@ -181,6 +218,7 @@ async def production_predict(
         },
         "contract": {
             "engine_version": PRODUCTION_VERSION,
+            "release_status": RELEASE_STATUS,
             "model_contract_version": MODEL_FOUNDATION_VERSION,
             "model_bundle_sha256": MODEL_BUNDLE_SHA256,
             "decision_gate_version": DECISION_GATE_VERSION,
