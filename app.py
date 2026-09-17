@@ -1,13 +1,13 @@
-"""Render entry point: FULL-7 V2 homepage + contract engine."""
+"""Render entry point: legacy compatibility + final FULL7 contract engine."""
 import app_v040 as legacy
 from fastapi.responses import HTMLResponse
 from spec11_joint_core_patch import apply_patch
-from full7_v2_homepage import apply_v2_homepage
+from full7_homepage_patch import apply_full7_homepage
 from full7_dev_api import router as full7_router
 from full7_contract_api import production_router as full7_final_router
 
 app = apply_patch(legacy)
-apply_v2_homepage(legacy)
+apply_full7_homepage(legacy)
 app.include_router(full7_router)
 app.include_router(full7_final_router)
 
@@ -29,4 +29,17 @@ app.router.routes = [
 
 @app.get("/", include_in_schema=False)
 def index():
-    return HTMLResponse(legacy.INDEX_HTML, headers=NO_CACHE)
+    html = legacy.INDEX_HTML
+    if "http-equiv=\"Cache-Control\"" not in html:
+        html = html.replace(
+            "<head>",
+            "<head><meta http-equiv=\"Cache-Control\" content=\"no-store, no-cache, must-revalidate\"><meta http-equiv=\"Pragma\" content=\"no-cache\"><meta http-equiv=\"Expires\" content=\"0\">",
+            1,
+        )
+    if "full7Build" not in html:
+        html = html.replace(
+            "<h2>FULL-7 Contract</h2>",
+            "<h2>FULL-7 Contract</h2><p class=\"s\" id=\"full7Build\">Build 20260917-1608 | Safari-Cache aus</p>",
+            1,
+        )
+    return HTMLResponse(html, headers=NO_CACHE)
