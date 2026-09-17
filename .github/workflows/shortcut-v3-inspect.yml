@@ -1,0 +1,60 @@
+name: Inspect V3 Shortcut
+
+on:
+  push:
+    branches:
+      - tools/shortcut-v3-render-analysis
+    paths:
+      - '.github/workflows/shortcut-v3-inspect.yml'
+      - 'tools/shortcut_build/input.shortcut'
+  workflow_dispatch:
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download shortcut-sign
+        run: |
+          curl -L --fail --silent --show-error \
+            https://github.com/0xilis/shortcut-sign/releases/download/v1.0.0-beta.5/shortcut-sign-linux-x86_64 \
+            -o /tmp/shortcut-sign
+          chmod +x /tmp/shortcut-sign
+          /tmp/shortcut-sign version || true
+      - name: Extract signed shortcut
+        run: |
+          mkdir -p /tmp/out
+          /tmp/shortcut-sign extract \
+            -i tools/shortcut_build/input.shortcut \
+            -o /tmp/out/original_unsigned.shortcut
+          python - <<'PY'
+          import plistlib, json
+          from pathlib import Path
+          p=Path('/tmp/out/original_unsigned.shortcut')
+          data=plistlib.loads(p.read_bytes())
+          actions=data.get('WFWorkflowActions',[])
+          summary=[]
+          for i,a in enumerate(actions):
+              params=a.get('WFWorkflowActionParameters',{})
+              summary.append({
+                  'index':i,
+                  'identifier':a.get('WFWorkflowActionIdentifier'),
+                  'uuid':params.get('UUID'),
+                  'custom_output_name':params.get('CustomOutputName'),
+                  'variable_name':params.get('WFVariableName'),
+                  'keys':sorted(params.keys()),
+                  'params':params,
+              })
+          Path('/tmp/out/actions.json').write_text(json.dumps(summary,indent=2,ensure_ascii=False,default=str))
+          Path('/tmp/out/root.json').write_text(json.dumps({k:v for k,v in data.items() if k!='WFWorkflowActions'},indent=2,ensure_ascii=False,default=str))
+          print('ACTION_COUNT',len(actions))
+          for row in summary:
+              ident=row['identifier'] or ''
+              if any(x in ident for x in ('save','file','downloadurl','setvariable','getvariable','gettext','url')):
+                  print(row['index'],ident,row['uuid'],row['custom_output_name'],row['variable_name'])
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shortcut-v3-inspection
+          path: /tmp/out/
+          retention-days: 1
