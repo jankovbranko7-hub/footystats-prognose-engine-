@@ -60,6 +60,11 @@ class Full7ContractPreviewApiTests(unittest.TestCase):
         self.assertEqual(len(out["markets"]), 7)
         self.assertTrue(out["all_markets_decision_enabled"])
         self.assertTrue(out["probability_mode_no_odds"])
+        self.assertEqual(out["release_status"], "SELECTIVE_PRODUCTION_BTTS_ONLY")
+        self.assertEqual(out["family_readiness"]["1X2"], "OBSERVE_ONLY")
+        self.assertEqual(out["family_readiness"]["BTTS"], "SELECTIVE")
+        self.assertEqual(out["family_readiness"]["TOTALS"], "OBSERVE_ONLY")
+        self.assertEqual(out["spielen_allowed_families"], ["BTTS"])
 
 
 if __name__ == "__main__":

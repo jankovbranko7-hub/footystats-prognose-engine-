@@ -28,7 +28,13 @@ from full7_contract_engine import (
 
 APP_VERSION = "FULL7_CONTRACT_PREVIEW_1.0"
 PRODUCTION_VERSION = "FULL7_CONTRACT_1.0.0"
-RELEASE_STATUS = "PRODUCTION_RELEASED_OOS_VALIDATED"
+RELEASE_STATUS = "SELECTIVE_PRODUCTION_BTTS_ONLY"
+FAMILY_READINESS = {
+    "1X2": "OBSERVE_ONLY",
+    "BTTS": "SELECTIVE",
+    "TOTALS": "OBSERVE_ONLY",
+}
+SPIELEN_ALLOWED_FAMILIES = ["BTTS"]
 
 router = APIRouter()
 production_router = APIRouter()
@@ -43,27 +49,29 @@ def _complete_stage(stage: Any) -> None:
 def _production_release_view(decision: Mapping[str, Any]) -> Dict[str, Any]:
     """Return production-facing release metadata without changing model logic.
 
-    The underlying contract components retain their development provenance. Once
-    the final Forward-OOS/release gates have passed, the production API must not
-    expose the pre-release PENDING/DEVELOPMENT_ONLY state as the live engine
-    state. Only release metadata is changed here; probabilities, evidence values,
-    thresholds, gates and decisions are preserved byte-for-byte in meaning.
+    Inner DEVELOPMENT_ONLY / PENDING flags stay as fit provenance. The outer
+    release_status is the live policy label. Playable contains only SPIELEN.
     """
     released = copy.deepcopy(dict(decision))
     released["status"] = RELEASE_STATUS
-    _complete_stage(released.get("contract_stage"))
-
-    evidence = released.get("evidence")
-    if isinstance(evidence, dict):
-        evidence["status"] = RELEASE_STATUS
-        probability_layer = evidence.get("probability_layer")
-        if isinstance(probability_layer, dict):
-            probability_layer["status"] = RELEASE_STATUS
-            _complete_stage(probability_layer.get("contract_stage"))
-            model_support = probability_layer.get("model_support")
-            if isinstance(model_support, dict):
-                model_support["status"] = RELEASE_STATUS
-                _complete_stage(model_support.get("contract_stage"))
+    released["family_readiness"] = dict(FAMILY_READINESS)
+    released["spielen_allowed_families"] = list(SPIELEN_ALLOWED_FAMILIES)
+    playable = []
+    blocked = []
+    for market, row in (released.get("markets") or {}).items():
+        card = {
+            "market": market,
+            "family": row.get("family"),
+            "probability": row.get("probability"),
+            "decision": row.get("decision"),
+            "reason": row.get("decision_reason"),
+        }
+        if row.get("decision") == "SPIELEN":
+            playable.append(card)
+        else:
+            blocked.append(card)
+    released["playable"] = playable
+    released["blocked"] = blocked
     return released
 
 
@@ -183,6 +191,9 @@ def production_health() -> Dict[str, Any]:
         "markets": list(MARKETS),
         "all_markets_decision_enabled": True,
         "probability_mode_no_odds": True,
+        "family_readiness": dict(FAMILY_READINESS),
+        "spielen_allowed_families": list(SPIELEN_ALLOWED_FAMILIES),
+        "max_spielen_family": "BTTS",
     }
 
 
@@ -226,6 +237,8 @@ async def production_predict(
             "markets": list(MARKETS),
             "all_markets_decision_enabled": True,
             "probability_mode_no_odds": True,
+            "family_readiness": dict(FAMILY_READINESS),
+            "spielen_allowed_families": list(SPIELEN_ALLOWED_FAMILIES),
         },
     }
 
