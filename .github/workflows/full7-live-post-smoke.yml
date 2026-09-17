@@ -25,7 +25,7 @@ jobs:
           test -f /tmp/oos001/8558326_PlayerDaten.json
           test -f /tmp/oos001/8558326_RefereeDaten.json
           test -f /tmp/oos001/8558326_ManagerDaten.json
-      - name: Verify production health
+      - name: Verify released production health
         run: |
           curl --fail --silent --show-error \
             https://footystats-prognose-engine.onrender.com/api/full7/engine-health \
@@ -34,14 +34,18 @@ jobs:
           import json
           d=json.load(open('/tmp/health.json'))
           required={'home_win','draw','away_win','btts_yes','btts_no','over_2_5','under_2_5'}
+          released='PRODUCTION_RELEASED_OOS_VALIDATED'
           assert d['ok'] is True
           assert d['production_mounted'] is True
           assert d['engine_version']=='FULL7_CONTRACT_1.0.0'
+          assert d['release_status']==released
+          assert d['model_bundle_sha256']=='62dc5ff31fdb144d40c9c873ab2cd35de5b349a6497c2e50fe2c1ea3019a6187'
+          assert d['decision_gate_version']=='FULL7_CONTRACT_DECISION_GATE_1.0'
           assert d['expected_files']==7
           assert set(d['markets'])==required
           assert d['all_markets_decision_enabled'] is True
           assert d['probability_mode_no_odds'] is True
-          print('ENGINE_HEALTH_PASS', json.dumps(d, sort_keys=True))
+          print('ENGINE_HEALTH_RELEASE_PASS', json.dumps(d, sort_keys=True))
           PY
       - name: POST seven frozen files to live production
         run: |
@@ -57,21 +61,33 @@ jobs:
             -F 'manager_file=@/tmp/oos001/8558326_ManagerDaten.json;type=application/json' \
             https://footystats-prognose-engine.onrender.com/api/full7/predict)
           echo "HTTP_STATUS=$code"
-          cat /tmp/predict.json
           test "$code" = "200"
-      - name: Verify all seven markets have probability evidence and decision
+      - name: Verify final released seven-market response
         run: |
           python - <<'PY'
           import json
           d=json.load(open('/tmp/predict.json'))
           required={'home_win','draw','away_win','btts_yes','btts_no','over_2_5','under_2_5'}
+          released='PRODUCTION_RELEASED_OOS_VALIDATED'
           assert d['ok'] is True
           assert d['contract']['engine_version']=='FULL7_CONTRACT_1.0.0'
+          assert d['contract']['release_status']==released
+          assert d['contract']['model_bundle_sha256']=='62dc5ff31fdb144d40c9c873ab2cd35de5b349a6497c2e50fe2c1ea3019a6187'
+          assert d['contract']['decision_gate_version']=='FULL7_CONTRACT_DECISION_GATE_1.0'
           assert d['contract']['expected_files']==7
           assert set(d['contract']['markets'])==required
           assert d['contract']['all_markets_decision_enabled'] is True
           assert d['contract']['probability_mode_no_odds'] is True
           engine=d['engine']
+          assert engine['status']==released
+          assert all(value is True for value in engine['contract_stage'].values()), engine['contract_stage']
+          assert engine['evidence']['status']==released
+          layer=engine['evidence']['probability_layer']
+          assert layer['status']==released
+          assert all(value is True for value in layer['contract_stage'].values()), layer['contract_stage']
+          support=layer['model_support']
+          assert support['status']==released
+          assert all(value is True for value in support['contract_stage'].values()), support['contract_stage']
           assert set(engine['probabilities'])==required
           assert set(engine['markets'])==required
           assert set(engine['evidence']['market_evidence'])==required
@@ -81,14 +97,15 @@ jobs:
               row=engine['markets'][m]
               assert row['decision'] in {'SPIELEN','BEOBACHTEN','AUSLASSEN'}, (m,row)
               assert engine['evidence']['market_evidence'][m] is not None
-          print('LIVE_POST_PASS')
+          print('FINAL_LIVE_POST_PASS')
+          print('RELEASE_STATUS', engine['status'])
           print('IDENTITY', json.dumps(d.get('identity'), ensure_ascii=False, sort_keys=True))
           print('PROBABILITIES', json.dumps(engine['probabilities'], sort_keys=True))
           print('DECISIONS', json.dumps({m:engine['markets'][m]['decision'] for m in sorted(required)}, sort_keys=True))
           PY
       - uses: actions/upload-artifact@v4
         with:
-          name: full7-live-post-smoke-response
+          name: full7-final-live-post-smoke-response
           path: |
             /tmp/health.json
             /tmp/predict.json
