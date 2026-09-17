@@ -1,0 +1,35 @@
+{
+  "oos_id": "OOS_009_8544082",
+  "status": "SPENT_OOS",
+  "identity": {
+    "match_id": 8544082,
+    "home_id": 2135,
+    "away_id": 2140,
+    "season_id": 16614,
+    "kickoff_unix": 1789600500,
+    "referee_id": null
+  },
+  "frozen_prediction_sha256": "b942141debd892633aafa43e0fc45d205cf2fca8e3fceae844083fdf88b902db",
+  "frozen_artifact_sha256": "baf43b7daaa729c2ba1c81042ede0f76984a64a181b5523bbda72c61d4f5f90c",
+  "result": {"home_goals": 1, "away_goals": 0, "total_goals": 1},
+  "targets": {"home_goals": 1, "away_goals": 0, "total_goals": 1, "home_win": 1, "draw": 0, "away_win": 0, "btts_yes": 0, "btts_no": 1, "over_2_5": 0, "under_2_5": 1},
+  "result_source": "Verified final result: Once Caldas 1-0 Deportes Tolima",
+  "result_verified_at": "2026-09-17T06:06:00Z",
+  "source_details": {"sources": [{"name": "Caracol Radio", "url": "https://caracol.com.co/2026/09/16/en-vivo-once-caldas-vs-tolima-por-liga-colombiana-2026-2-transmision-y-minuto-a-minuto/"}]},
+  "markets": {
+    "home_win": {"probability": 0.4783643008890195, "decision": "BEOBACHTEN", "selected_in_family": true, "target": 1, "hit": true, "decision_correct": true},
+    "draw": {"probability": 0.265531728468256, "decision": "AUSLASSEN", "selected_in_family": false, "target": 0, "hit": false, "decision_correct": null},
+    "away_win": {"probability": 0.25610397064272455, "decision": "AUSLASSEN", "selected_in_family": false, "target": 0, "hit": false, "decision_correct": null},
+    "btts_yes": {"probability": 0.5381822416262402, "decision": "AUSLASSEN", "selected_in_family": true, "target": 0, "hit": false, "decision_correct": null},
+    "btts_no": {"probability": 0.4618177583737598, "decision": "AUSLASSEN", "selected_in_family": false, "target": 1, "hit": true, "decision_correct": null},
+    "over_2_5": {"probability": 0.6433504792302706, "decision": "BEOBACHTEN", "selected_in_family": true, "target": 0, "hit": false, "decision_correct": false},
+    "under_2_5": {"probability": 0.3566495207697294, "decision": "AUSLASSEN", "selected_in_family": false, "target": 1, "hit": true, "decision_correct": null}
+  },
+  "families": {
+    "1X2": {"selected_market": "home_win", "decision": "BEOBACHTEN", "base_probability": 0.4783643008890195, "hit": true},
+    "BTTS": {"selected_market": "btts_yes", "decision": "AUSLASSEN", "base_probability": 0.5381822416262402, "hit": false},
+    "TOTALS": {"selected_market": "over_2_5", "decision": "BEOBACHTEN", "base_probability": 0.6433504792302706, "hit": false}
+  },
+  "integrity": {"freeze_verified_before_join": true, "freeze_mutated": false, "all_seven_markets_evaluated": true, "architecture_change_allowed_from_single_oos": false},
+  "spent_oos_sha256": "5c4e0daf2a8f7097f6ab28c66afad94391b024725f189134dc08089b90779cdb"
+}
