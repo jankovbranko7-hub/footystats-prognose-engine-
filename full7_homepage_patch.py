@@ -15,6 +15,7 @@ FULL7_CARD = r'''
     <input id="full7Files" type="file" multiple accept=".json,application/json">
     <p id="full7Pick" class="s">Noch keine Dateien ausgewählt.</p>
     <button id="go7">FULL-7 auswerten</button>
+    <div id="full7Out"></div>
   </div>
 '''
 
@@ -132,7 +133,8 @@ const go7=document.getElementById("go7");
 if(go7){
   go7.onclick=async function(){
     showPicked(); const files=[...((full7Input&&full7Input.files)||[])];
-    const out=document.getElementById("out");
+    const out=document.getElementById("full7Out")||document.getElementById("out");
+    if(out&&out.scrollIntoView) try{out.scrollIntoView({block:"nearest"});}catch(e){}
     const slots=classifyFull7(files);
     const missing=Object.keys(slots).filter(function(key){return !slots[key];});
     if(missing.length){
