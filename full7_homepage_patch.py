@@ -53,6 +53,44 @@ function renderCards(items, emptyText){
       '<div class="s">'+escapeHtml(pct(item.probability))+' · '+escapeHtml(item.reason||"")+'</div></div>';
   }).join("")+'</div>';
 }
+function matchIds(obj){
+  const root=(obj&&obj.payload&&obj.payload.data)||(obj&&obj.data)||obj||{};
+  return {home:Number(root.homeID), away:Number(root.awayID)};
+}
+function slimLeague(obj, homeId, awayId){
+  try{
+    const rows=obj&&obj.payload&&obj.payload.team_pages&&obj.payload.team_pages.data;
+    if(Array.isArray(rows)){
+      obj.payload.team_pages.data=rows.filter(function(row){
+        const id=Number(row&&row.id);
+        return id===homeId||id===awayId;
+      });
+    }
+  }catch(e){}
+  return obj;
+}
+function slimPlayer(obj, homeId, awayId){
+  try{
+    const pages=obj&&obj.payload&&obj.payload.pages;
+    if(!Array.isArray(pages)) return obj;
+    const rows=[];
+    pages.forEach(function(page){
+      (page.data||[]).forEach(function(row){
+        const id=Number(row&&row.club_team_id);
+        if(id===homeId||id===awayId) rows.push(row);
+      });
+    });
+    obj.payload.pages=[{success:true,data:rows,pager:{current_page:1,max_page:1}}];
+    if(obj._footystats_meta){
+      obj._footystats_meta.pagination_complete=true;
+      obj._footystats_meta.max_page='1';
+    }
+  }catch(e){}
+  return obj;
+}
+function jsonFile(name, obj){
+  return new File([JSON.stringify(obj)], name, {type:'application/json'});
+}
 (function hideLegacySpecCard(){
   const go=document.getElementById("go");
   if(go){
@@ -93,12 +131,23 @@ if(go7){
       out.innerHTML='<div class="c bad"><b>FULL-7 braucht 7 Dateien.</b><p class="s">Es fehlen: '+escapeHtml(missing.join(", "))+'</p></div>';
       return;
     }
-    const form=new FormData();
-    Object.keys(slots).forEach(function(key){form.append(key, slots[key]);});
+    go7.disabled=true;
     const listed=[...files].map(function(f){return f.name;}).join(', ');
-    out.innerHTML='<div class="c">Geladen: '+escapeHtml(listed)+'<br>FULL-7 wertet aus…</div>';
     try{
-      const response=await fetch("/api/full7/predict",{method:"POST",body:form});
+      out.innerHTML='<div class="c">Geladen: '+escapeHtml(listed)+'<br>Dateien werden verkleinert…</div>';
+      const parsed={};
+      for(const key of Object.keys(slots)){
+        parsed[key]=JSON.parse(await slots[key].text());
+      }
+      const ids=matchIds(parsed.match_file);
+      slimLeague(parsed.league_file, ids.home, ids.away);
+      slimPlayer(parsed.player_file, ids.home, ids.away);
+      const form=new FormData();
+      Object.keys(parsed).forEach(function(key){
+        form.append(key, jsonFile(slots[key].name, parsed[key]));
+      });
+      out.innerHTML='<div class="c">Geladen: '+escapeHtml(listed)+'<br>Sende kompaktes Paket…</div>';
+      const response=await fetch('/api/full7/predict',{method:'POST',body:form});
       const data=await response.json();
       if(!response.ok||!data.ok){
         out.innerHTML='<div class="c"><h3 class="bad">FULL-7 nicht möglich</h3><pre>'+escapeHtml(JSON.stringify(data,null,2))+'</pre></div>';
@@ -128,6 +177,8 @@ if(go7){
         '<div class="c"><h3>Familien</h3><table><tr><th>Familie</th><th>Markt</th><th>Decision</th><th>p</th><th>Grund</th></tr>'+familyRows+'</table></div>';
     }catch(error){
       out.innerHTML='<div class="c bad">Fehler: '+escapeHtml(String(error))+'</div>';
+    }finally{
+      go7.disabled=false;
     }
   };
 }
