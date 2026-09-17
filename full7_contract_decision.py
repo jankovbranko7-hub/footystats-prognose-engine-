@@ -49,10 +49,6 @@ def _sigmoid(value: float) -> float:
     return 1.0 / (1.0 + math.exp(-x))
 
 
-def _selected_market(probabilities: Mapping[str, float], family: str) -> str:
-    return max(FAMILY_MARKETS[family], key=lambda market: float(probabilities[market]))
-
-
 def _sample_low_fraction(gold_features: Mapping[str, Any]) -> Dict[str, Any]:
     features = gold_features.get("features") or {}
     low = 0
@@ -94,7 +90,7 @@ def _decision_features(
     evidence: Mapping[str, Any],
     gold_features: Mapping[str, Any],
     family: str,
-    selected: str,
+    market: str,
 ) -> Dict[str, float]:
     probability_layer = evidence["probability_layer"]
     calibrated = probability_layer["calibrated"]
@@ -113,7 +109,7 @@ def _decision_features(
 
     for cluster in CLUSTERS:
         row = cluster_rows.get(cluster)
-        market_row = (row or {}).get("markets", {}).get(selected, {})
+        market_row = (row or {}).get("markets", {}).get(market, {})
         delta = float(market_row.get("delta") or 0.0)
         deltas[cluster] = delta
         max_move = max(max_move, abs(delta))
@@ -127,18 +123,29 @@ def _decision_features(
             flip_count += 1
 
     family_probabilities = {
-        market: float(calibrated[market]) for market in FAMILY_MARKETS[family]
+        candidate: float(calibrated[candidate])
+        for candidate in FAMILY_MARKETS[family]
     }
-    others = [value for market, value in family_probabilities.items() if market != selected]
-    family_margin = float(calibrated[selected]) - max(others)
+    others = [
+        value
+        for candidate, value in family_probabilities.items()
+        if candidate != market
+    ]
+    family_margin = float(calibrated[market]) - max(others)
 
-    cat_family = {market: float(catboost[market]) for market in FAMILY_MARKETS[family]}
-    goal_family = {market: float(goal[market]) for market in FAMILY_MARKETS[family]}
+    cat_family = {
+        candidate: float(catboost[candidate])
+        for candidate in FAMILY_MARKETS[family]
+    }
+    goal_family = {
+        candidate: float(goal[candidate])
+        for candidate in FAMILY_MARKETS[family]
+    }
 
     sample = _sample_low_fraction(gold_features)
 
     values: Dict[str, float] = {
-        "model_disagreement": abs(float(catboost[selected]) - float(goal[selected])),
+        "model_disagreement": abs(float(catboost[market]) - float(goal[market])),
         "confirm_count": float(confirm_count),
         "counter_count": float(counter_count),
         "sum_confirm_delta": sum_confirm,
@@ -152,8 +159,8 @@ def _decision_features(
         ),
         "low_sample_fraction_q25": float(sample["low_fraction_q25"]),
         "family_margin": family_margin,
-        "catboost_prefers_market": float(max(cat_family, key=cat_family.get) == selected),
-        "goal_prefers_market": float(max(goal_family, key=goal_family.get) == selected),
+        "catboost_prefers_market": float(max(cat_family, key=cat_family.get) == market),
+        "goal_prefers_market": float(max(goal_family, key=goal_family.get) == market),
     }
     for cluster in CLUSTERS:
         values[f"delta__{cluster}"] = deltas[cluster]
@@ -219,6 +226,54 @@ def _development_support(evidence: Mapping[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _raw_market_head(
+    evidence: Mapping[str, Any],
+    gold_features: Mapping[str, Any],
+    support: Mapping[str, Any],
+    sample_security: Mapping[str, Any],
+    family: str,
+    market: str,
+) -> Dict[str, Any]:
+    calibrated = evidence["probability_layer"]["calibrated"]
+    base_probability = float(calibrated[market])
+    values = _decision_features(evidence, gold_features, family, market)
+    adjusted = _adjusted_score(base_probability, values, family)
+
+    strategy = ARTIFACT["families"][family]["strategy"]
+    if strategy == "EVIDENCE_ADJUSTED":
+        reliability_score = adjusted
+    elif strategy == "EVIDENCE_DOWNGRADE":
+        reliability_score = min(base_probability, adjusted)
+    else:
+        raise RuntimeError(f"unknown FULL-7 decision strategy: {strategy}")
+
+    state = _state_from_score(reliability_score, family)
+    reason = "EMPIRICAL_GATE"
+    if not support["pass"]:
+        state = "AUSLASSEN"
+        reason = "OUTSIDE_DEVELOPMENT_SUPPORT"
+
+    state, reason = apply_precision_policy(
+        family,
+        state,
+        reason,
+        sample_status=str(sample_security["status"]),
+        family_margin=float(values["family_margin"]),
+        catboost_prefers_market=float(values["catboost_prefers_market"]),
+        goal_prefers_market=float(values["goal_prefers_market"]),
+    )
+
+    return {
+        "base_probability": base_probability,
+        "evidence_adjusted_probability": adjusted,
+        "raw_reliability_score": reliability_score,
+        "raw_decision": state,
+        "raw_decision_reason": reason,
+        "decision_features": values,
+        "strategy": strategy,
+    }
+
+
 def build_decision_engine(
     gold_features: Mapping[str, Any],
     *,
@@ -234,44 +289,40 @@ def build_decision_engine(
 
     family_results: Dict[str, Any] = {}
     market_results: Dict[str, Any] = {}
+    raw_heads: Dict[str, Dict[str, Any]] = {}
 
-    for family in ("1X2", "BTTS", "TOTALS"):
-        selected = _selected_market(calibrated, family)
-        base_probability = float(calibrated[selected])
-        values = _decision_features(evidence, gold_features, family, selected)
-        adjusted = _adjusted_score(base_probability, values, family)
+    for family, markets in FAMILY_MARKETS.items():
+        for market in markets:
+            raw_heads[market] = _raw_market_head(
+                evidence,
+                gold_features,
+                support,
+                sample_security,
+                family,
+                market,
+            )
 
-        strategy = ARTIFACT["families"][family]["strategy"]
-        if strategy == "EVIDENCE_ADJUSTED":
-            reliability_score = adjusted
-        elif strategy == "EVIDENCE_DOWNGRADE":
-            reliability_score = min(base_probability, adjusted)
-        else:
-            raise RuntimeError(f"unknown FULL-7 decision strategy: {strategy}")
-
-        selected_state = _state_from_score(reliability_score, family)
-        selected_reason = "EMPIRICAL_GATE"
-        if not support["pass"]:
-            selected_state = "AUSLASSEN"
-            selected_reason = "OUTSIDE_DEVELOPMENT_SUPPORT"
-        selected_state, selected_reason = apply_precision_policy(
-            family,
-            selected_state,
-            selected_reason,
-            sample_status=str(sample_security["status"]),
-            family_margin=float(values["family_margin"]),
-            catboost_prefers_market=float(values["catboost_prefers_market"]),
-            goal_prefers_market=float(values["goal_prefers_market"]),
+    selected_markets: Dict[str, str] = {}
+    for family, markets in FAMILY_MARKETS.items():
+        selected = max(
+            markets,
+            key=lambda market: (
+                float(raw_heads[market]["raw_reliability_score"]),
+                float(calibrated[market]),
+            ),
         )
+        selected_markets[family] = selected
+        selected_head = raw_heads[selected]
 
         family_results[family] = {
             "selected_market": selected,
-            "base_probability": base_probability,
-            "evidence_adjusted_probability": adjusted,
-            "reliability_score": reliability_score,
-            "strategy": strategy,
-            "decision": selected_state,
-            "decision_reason": selected_reason,
+            "arbitration_basis": "RAW_RELIABILITY_THEN_CALIBRATED_PROBABILITY",
+            "base_probability": selected_head["base_probability"],
+            "evidence_adjusted_probability": selected_head["evidence_adjusted_probability"],
+            "reliability_score": selected_head["raw_reliability_score"],
+            "strategy": selected_head["strategy"],
+            "decision": selected_head["raw_decision"],
+            "decision_reason": selected_head["raw_decision_reason"],
             "thresholds": {
                 "auslassen_to_beobachten": float(
                     ARTIFACT["families"][family]["threshold_low_to_observe"]
@@ -286,27 +337,33 @@ def build_decision_engine(
             "production_policy": {
                 "max_decision": PRODUCTION_FAMILY_POLICY[family]["max_decision"],
                 "spielen_allowed": PRODUCTION_FAMILY_POLICY[family]["spielen_allowed"],
+                "validation_maturity": PRODUCTION_FAMILY_POLICY[family].get(
+                    "validation_maturity"
+                ),
             },
         }
 
-        for market in FAMILY_MARKETS[family]:
+        for market in markets:
+            raw = raw_heads[market]
             if market == selected:
-                state = selected_state
-                reason = selected_reason
-                reliability = reliability_score
+                final_state = raw["raw_decision"]
+                final_reason = raw["raw_decision_reason"]
             else:
-                state = "AUSLASSEN"
-                reason = "COHERENCE_NOT_SELECTED"
-                reliability = None
+                final_state = "AUSLASSEN"
+                final_reason = "COHERENCE_NOT_SELECTED"
+
             market_evidence = evidence["market_evidence"][market]
             market_results[market] = {
                 "market": market,
                 "family": family,
                 "selected_in_family": market == selected,
                 "probability": float(calibrated[market]),
-                "decision": state,
-                "decision_reason": reason,
-                "reliability_score": reliability,
+                "raw_reliability_score": raw["raw_reliability_score"],
+                "raw_decision": raw["raw_decision"],
+                "raw_decision_reason": raw["raw_decision_reason"],
+                "reliability_score": raw["raw_reliability_score"],
+                "decision": final_state,
+                "decision_reason": final_reason,
                 "counterargument_test": market_evidence["counterargument_test"],
                 "robustness": market_evidence["robustness"],
                 "sample_security": sample_security["status"],
@@ -323,10 +380,11 @@ def build_decision_engine(
         "sample_security": sample_security,
         "data_quality_support": support,
         "coherence": {
+            "arbitration_stage": "AFTER_SEVEN_RAW_HEADS",
+            "all_seven_raw_heads_scored": len(raw_heads) == len(MARKETS),
             "one_active_candidate_per_family": True,
-            "selected_markets": {
-                family: row["selected_market"] for family, row in family_results.items()
-            },
+            "arbitration_basis": "RAW_RELIABILITY_THEN_CALIBRATED_PROBABILITY",
+            "selected_markets": selected_markets,
             "nonselected_markets_fail_closed": True,
         },
         "contract_stage": {
