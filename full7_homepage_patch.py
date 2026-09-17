@@ -10,10 +10,10 @@ from typing import Any
 FULL7_CARD = r'''
   <div class="c" id="full7-card">
     <h2>FULL-7 Contract</h2>
-    <p class="s">7 Pre-Match-Dateien \u00b7 keine Odds \u00b7 SPIELEN nur BTTS \u00b7 1X2 und Totals h\u00f6chstens BEOBACHTEN</p>
-    <p class="s">Match \u00b7 League \u00b7 Form \u00b7 Table \u00b7 Player \u00b7 Referee \u00b7 Manager</p>
+    <p class="s">7 Maerkte sichtbar | keine Odds | SPIELEN nur BTTS | 1X2 und Totals hoechstens BEOBACHTEN</p>
+    <p class="s">Match | League | Form | Table | Player | Referee | Manager</p>
     <input id="full7Files" type="file" multiple accept=".json,application/json">
-    <p id="full7Pick" class="s">Noch keine Dateien ausgew\u00e4hlt.</p>
+    <p id="full7Pick" class="s">Noch keine Dateien ausgewaehlt.</p>
     <button id="go7">FULL-7 auswerten</button>
     <div id="full7Out"></div>
   </div>
@@ -48,16 +48,27 @@ function classifyFull7(files){
   return slots;
 }
 function pct(value){
-  if(value==null||isNaN(Number(value))) return "\u2014";
+  if(value==null||isNaN(Number(value))) return "-";
   return (Number(value)*100).toFixed(1)+"%";
 }
 function renderCards(items, emptyText){
   if(!items||!items.length) return '<p class="s">'+escapeHtml(emptyText)+'</p>';
   return '<div class="g">'+items.map(function(item){
-    return '<div class="m"><div class="s">'+escapeHtml(item.family||"")+' \u00b7 '+escapeHtml(item.market||"")+'</div>'+
+    return '<div class="m"><div class="s">'+escapeHtml(item.family||"")+' | '+escapeHtml(item.market||"")+'</div>'+
       '<div class="b">'+escapeHtml(item.decision||"")+'</div>'+
-      '<div class="s">'+escapeHtml(pct(item.probability))+' \u00b7 '+escapeHtml(item.reason||"")+'</div></div>';
+      '<div class="s">'+escapeHtml(pct(item.probability))+' | '+escapeHtml(item.reason||"")+'</div></div>';
   }).join("")+'</div>';
+}
+const MARKET_ORDER=["home_win","draw","away_win","btts_yes","btts_no","over_2_5","under_2_5"];
+const MARKET_LABEL={home_win:"Heim",draw:"Unentschieden",away_win:"Auswaerts",btts_yes:"BTTS Ja",btts_no:"BTTS Nein",over_2_5:"Over 2.5",under_2_5:"Under 2.5"};
+function renderMarkets(markets){
+  const rows=MARKET_ORDER.map(function(key){
+    const row=(markets||{})[key]||{};
+    return '<tr><td>'+escapeHtml(MARKET_LABEL[key]||key)+'</td><td>'+escapeHtml(row.family||"")+
+      '</td><td>'+escapeHtml(pct(row.probability))+'</td><td>'+escapeHtml(row.decision||"")+
+      '</td><td class="s">'+escapeHtml(row.decision_reason||row.reason||"")+'</td></tr>';
+  }).join("");
+  return '<table><tr><th>Markt</th><th>Familie</th><th>p</th><th>Decision</th><th>Grund</th></tr>'+rows+'</table>';
 }
 function matchIds(obj){
   const root=(obj&&obj.payload&&obj.payload.data)||(obj&&obj.data)||obj||{};
@@ -118,7 +129,7 @@ function showPicked(){
   if(!full7Input||!full7Pick) return;
   const files=[...(full7Input.files||[])];
   if(!files.length){
-    full7Pick.textContent="Noch keine Dateien ausgew\u00e4hlt.";
+    full7Pick.textContent="Noch keine Dateien ausgewaehlt.";
     return;
   }
   const lines=files.map(function(f){
@@ -149,7 +160,7 @@ if(go7){
     go7.disabled=true;
     const listed=[...files].map(function(f){return f.name;}).join(', ');
     try{
-      out.innerHTML='<div class="c">Geladen: '+escapeHtml(listed)+'<br>Dateien werden verkleinert\u2026</div>';
+      out.innerHTML='<div class="c">Geladen: '+escapeHtml(listed)+'<br>Dateien werden verkleinert...</div>';
       const parsed={};
       for(const key of Object.keys(slots)){
         parsed[key]=JSON.parse(await slots[key].text());
@@ -161,16 +172,16 @@ if(go7){
       Object.keys(parsed).forEach(function(key){
         form.append(key, jsonFile(slots[key].name, parsed[key]));
       });
-      out.innerHTML='<div class="c">Geladen: '+escapeHtml(listed)+'<br>Sende kompaktes Paket\u2026</div>';
+      out.innerHTML='<div class="c">Geladen: '+escapeHtml(listed)+'<br>Sende kompaktes Paket...</div>';
       const response=await fetch('/api/full7/predict',{method:'POST',body:form});
       const data=await response.json();
       if(!response.ok||!data.ok){
-        out.innerHTML='<div class="c"><h3 class="bad">FULL-7 nicht m\u00f6glich</h3><pre>'+escapeHtml(JSON.stringify(data,null,2))+'</pre></div>';
+        out.innerHTML='<div class="c"><h3 class="bad">FULL-7 nicht moeglich</h3><pre>'+escapeHtml(JSON.stringify(data,null,2))+'</pre></div>';
         return;
       }
       const ident=data.identity||{};
       const engine=data.engine||{};
-      const sample=(engine.sample_security||{}).status||"\u2014";
+      const sample=(engine.sample_security||{}).status||"-";
       const families=engine.families||{};
       const familyRows=Object.keys(families).map(function(name){
         const row=families[name]||{};
@@ -179,16 +190,17 @@ if(go7){
           '<td class="s">'+escapeHtml(row.decision_reason||"")+'</td></tr>';
       }).join("");
       out.innerHTML=
-        '<div class="c"><div class="ok"><b>FULL-7 Contract</b></div>'+
+        '<div class="c"><div class="ok"><b>FULL-7 | 7 Maerkte</b></div>'+
         '<p class="s">'+escapeHtml(String(ident.home_name||ident.home_id||"?"))+' vs '+escapeHtml(String(ident.away_name||ident.away_id||"?"))+
-        ' \u00b7 '+escapeHtml(String((data.contract||{}).release_status||""))+'</p>'+
+        ' | '+escapeHtml(String((data.contract||{}).release_status||""))+'</p>'+
         '<div class="g">'+
         '<div class="m"><div class="s">SPIELEN erlaubt</div><div class="b">BTTS</div></div>'+
         '<div class="m"><div class="s">Stichprobe</div><div class="b">'+escapeHtml(sample)+'</div></div>'+
         '<div class="m"><div class="s">Playable</div><div class="b">'+escapeHtml(String((engine.playable||[]).length))+'</div></div>'+
         '</div></div>'+
+        '<div class="c"><h3>7 Maerkte</h3>'+renderMarkets(engine.markets||{})+'</div>'+
         '<div class="c"><h3>Playable</h3>'+renderCards(engine.playable,"Kein SPIELEN.")+'</div>'+
-        '<div class="c"><h3>Blocked</h3>'+renderCards(engine.blocked,"\u2014")+'</div>'+
+        '<div class="c"><h3>Blocked</h3>'+renderCards(engine.blocked,"-")+'</div>'+
         '<div class="c"><h3>Familien</h3><table><tr><th>Familie</th><th>Markt</th><th>Decision</th><th>p</th><th>Grund</th></tr>'+familyRows+'</table></div>';
     }catch(error){
       out.innerHTML='<div class="c bad">Fehler: '+escapeHtml(String(error))+'</div>';
