@@ -19,6 +19,14 @@ class Full7HomepageV3Tests(unittest.TestCase):
         self.assertIn("row.probability", script)
         self.assertIn("row.base_probability", script)
 
+    def test_matchup_is_prominent_and_can_use_uploaded_match_names(self):
+        script = full7_homepage_patch.FULL7_SCRIPT
+        self.assertIn("matchDisplay", script)
+        self.assertIn("localDisplay.home_name", script)
+        self.assertIn("localDisplay.away_name", script)
+        self.assertIn("full7-matchup", script)
+        self.assertIn("Match-ID", script)
+
 
 if __name__ == "__main__":
     unittest.main()
