@@ -81,6 +81,18 @@ def _to_int(v):
         return None
 
 
+def rss_mb() -> float | None:
+    """Current resident-set memory from Linux /proc, for Render diagnostics."""
+    try:
+        with open("/proc/self/status", encoding="utf-8") as fh:
+            for line in fh:
+                if line.startswith("VmRSS:"):
+                    return round(int(line.split()[1]) / 1024, 1)
+    except Exception:
+        pass
+    return None
+
+
 def target_outcomes(target: dict) -> tuple[int, int, str, int, int]:
     hg = _to_int(target.get("homeGoalCount"))
     ag = _to_int(target.get("awayGoalCount"))
@@ -731,6 +743,7 @@ def main():
                 "last_id": mid,
                 "done_total": len(done),
                 "disk_free_gb": round(shutil.disk_usage(ROOT).free / (1024 ** 3), 3),
+                "rss_mb": rss_mb(),
             }
             with PROGRESS_PATH.open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps(line) + "\n")
