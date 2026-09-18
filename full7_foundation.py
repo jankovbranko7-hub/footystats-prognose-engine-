@@ -110,10 +110,20 @@ def _data(v: Any) -> Any:
 
 def _identity(a: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     m = _data(_payload(a)); m = m if isinstance(m, dict) else {}
+
+    def _name(*keys: str) -> Optional[str]:
+        for key in keys:
+            value = m.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return None
+
     out = {
         "match_id": _int(m.get("id")), "home_id": _int(m.get("homeID")),
         "away_id": _int(m.get("awayID")), "season_id": _int(m.get("competition_id")),
         "kickoff_unix": _int(m.get("date_unix")), "referee_id": _positive_int(m.get("refereeID")),
+        "home_name": _name("home_name", "homeName", "team_a_name", "home_team_name"),
+        "away_name": _name("away_name", "awayName", "team_b_name", "away_team_name"),
     }
     return None if any(out[k] is None for k in ("match_id", "home_id", "away_id", "season_id", "kickoff_unix")) else out
 
