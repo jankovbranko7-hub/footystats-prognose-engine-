@@ -19,5 +19,6 @@ CACHE_INDEX = ROOT / "raw_cache_index.jsonl"
 SLEEP_S = float(os.environ.get("FULL7_SLEEP", "0.22"))
 REQUEST_TIMEOUT = int(os.environ.get("FULL7_TIMEOUT", "90"))
 EXPECTED_TOTAL = int(os.environ.get("FULL7_EXPECTED_TOTAL", "17685"))
+MIN_FREE_GB = float(os.environ.get("FULL7_MIN_FREE_GB", "0.75"))
 
 REQUIRED_CSV_COLUMNS = ["match_id", "season_id"]
