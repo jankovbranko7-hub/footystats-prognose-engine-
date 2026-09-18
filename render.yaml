@@ -2,13 +2,12 @@ services:
   - type: worker
     name: full7-mass-collector-17685
     runtime: python
-    plan: starter
+    plan: 0.5c-512mb
     region: frankfurt
     branch: collector/full7-mass-17685
     autoDeployTrigger: off
     buildCommand: pip install -r collector/full7_mass_worker/requirements.txt
     startCommand: >-
-      mkdir -p /var/data/full7/input /var/data/full7/output &&
       python -u collector/full7_mass_worker/bootstrap_input.py &&
       python -u collector/full7_mass_worker/collect.py
     maxShutdownDelaySeconds: 300
@@ -17,7 +16,7 @@ services:
       - key: FOOTYSTATS_API_KEY
         sync: false
       - key: FULL7_CSV
-        value: /var/data/full7/input/backtest_50_ligen.csv
+        value: /var/data/full7/input/full7_targets_17685_min.csv
       - key: FULL7_ROOT
         value: /var/data/full7/output
       - key: FULL7_EXPECTED_TOTAL
@@ -26,6 +25,8 @@ services:
         value: "0.22"
       - key: FULL7_TIMEOUT
         value: "90"
+      - key: FULL7_MIN_FREE_GB
+        value: "0.75"
       - key: PYTHONUNBUFFERED
         value: "1"
     disk:
