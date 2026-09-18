@@ -38,7 +38,8 @@ from full7_v3_live import (
 
 APP_VERSION = "FULL7_CONTRACT_PREVIEW_3.1"
 PRODUCTION_VERSION = V3_ENGINE_VERSION
-DECISION_ARCHITECTURE = "V3_LIVE_META_FAMILY_MODELS_WITH_V2_DIAGNOSTIC_CORE"
+DECISION_ARCHITECTURE = "SEVEN_MARKET_RAW_HEADS_THEN_COHERENCE"
+PRODUCTION_DECISION_ARCHITECTURE = "V3_LIVE_META_FAMILY_MODELS_WITH_V2_DIAGNOSTIC_CORE"
 RELEASE_STATUS = "LIVE_USER_AUTHORIZED_HISTORICAL_WALK_FORWARD"
 RELEASE_AUTHORIZED = True
 PRODUCTION_AUTHORIZATION_BASIS = "USER_EXPLICIT_2026-09-18"
@@ -78,7 +79,7 @@ def _production_release_view(
     released["status"] = RELEASE_STATUS
     released["release_authorized"] = RELEASE_AUTHORIZED
     released["production_authorization_basis"] = PRODUCTION_AUTHORIZATION_BASIS
-    released["decision_architecture"] = DECISION_ARCHITECTURE
+    released["decision_architecture"] = PRODUCTION_DECISION_ARCHITECTURE
     released["decision_source"] = V3_DECISION_SOURCE
     released["decision_capable_families"] = list(DECISION_CAPABLE_FAMILIES)
     released["family_readiness"] = dict(FAMILY_READINESS)
@@ -284,7 +285,7 @@ def production_health() -> Dict[str, Any]:
         "model_bundle_sha256": MODEL_BUNDLE_SHA256,
         "v3_model_sha256": dict(V3_MODEL_SHA256),
         "decision_gate_version": DECISION_GATE_VERSION,
-        "decision_architecture": DECISION_ARCHITECTURE,
+        "decision_architecture": PRODUCTION_DECISION_ARCHITECTURE,
         "expected_files": 7,
         "production_mounted": True,
         "markets": list(MARKETS),
@@ -339,7 +340,7 @@ async def production_predict(
             "release_authorized": RELEASE_AUTHORIZED,
             "production_authorization_basis": PRODUCTION_AUTHORIZATION_BASIS,
             "decision_source": V3_DECISION_SOURCE,
-            "decision_architecture": DECISION_ARCHITECTURE,
+            "decision_architecture": PRODUCTION_DECISION_ARCHITECTURE,
             "model_contract_version": MODEL_FOUNDATION_VERSION,
             "model_bundle_sha256": MODEL_BUNDLE_SHA256,
             "decision_gate_version": DECISION_GATE_VERSION,
