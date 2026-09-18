@@ -165,6 +165,33 @@ def save_state(st: dict, done: set[int]) -> None:
     tmp_done.replace(DONE_PATH)
 
 
+def quarantine_reason_summary() -> dict:
+    counts: dict[str, int] = {}
+    seasons: dict[str, int] = {}
+    if not QUAR_DIR.exists():
+        return {"total": 0, "reasons": {}, "seasons": {}}
+    total = 0
+    for reason_path in QUAR_DIR.glob("*/reason.json"):
+        try:
+            obj = json.loads(reason_path.read_text())
+        except Exception:
+            continue
+        total += 1
+        sid = obj.get("season_id")
+        seasons[str(sid)] = seasons.get(str(sid), 0) + 1
+        reasons = obj.get("reason_if_false") or ["UNKNOWN"]
+        if not isinstance(reasons, list):
+            reasons = [str(reasons)]
+        for reason in reasons:
+            key = str(reason)
+            counts[key] = counts.get(key, 0) + 1
+    return {
+        "total": total,
+        "reasons": dict(sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))),
+        "seasons": dict(sorted(seasons.items(), key=lambda kv: (-kv[1], kv[0]))),
+    }
+
+
 def fetch(endpoint: str, params: dict, state: dict) -> tuple[dict, dict]:
     rec, js = CACHE.lookup(endpoint, params)
     if rec is not None and isinstance(js, dict) and js.get("success"):
@@ -686,6 +713,9 @@ def main():
     done = load_done_ids()
     st = reconcile_state(st, done)
     print(f"start total={total} already_done={len(done)} root={ROOT}", flush=True)
+    qsummary = quarantine_reason_summary()
+    if qsummary["total"]:
+        print("QUARANTINE_SUMMARY", json.dumps(qsummary, ensure_ascii=False, sort_keys=True), flush=True)
 
     since_progress = 0
     for r in targets:
@@ -712,6 +742,7 @@ def main():
             st["strict_pass"] += 1
         else:
             st["quarantined"] += 1
+            print("QUARANTINE", {"match_id": mid, "season_id": int(r.season_id), "reasons": reasons}, flush=True)
         done.add(mid)
         since_progress += 1
         save_state(st, done)
