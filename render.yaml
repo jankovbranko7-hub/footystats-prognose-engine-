@@ -1,0 +1,39 @@
+services:
+  - type: worker
+    name: full7-mass-collector-17685
+    runtime: python
+    plan: starter
+    region: frankfurt
+    branch: collector/full7-mass-17685
+    autoDeployTrigger: off
+    buildCommand: pip install "pandas>=2.0" "requests>=2.31"
+    startCommand: >-
+      rm -rf /tmp/full7_worker &&
+      mkdir -p /tmp/full7_worker &&
+      cat collector/full7_mass_worker_bundle.b64.part* | base64 -d > /tmp/full7_mass_worker_bundle.zip &&
+      python -m zipfile -e /tmp/full7_mass_worker_bundle.zip /tmp/full7_worker &&
+      mkdir -p /var/data/full7/input &&
+      if [ ! -f /var/data/full7/input/backtest_50_ligen.csv ]; then gzip -dc /tmp/full7_worker/backtest_50_ligen.csv.gz > /var/data/full7/input/backtest_50_ligen.csv; fi &&
+      cd /tmp/full7_worker &&
+      python -u collect.py
+    maxShutdownDelaySeconds: 300
+    numInstances: 1
+    envVars:
+      - key: FOOTYSTATS_API_KEY
+        sync: false
+      - key: FULL7_CSV
+        value: /var/data/full7/input/backtest_50_ligen.csv
+      - key: FULL7_ROOT
+        value: /var/data/full7/output
+      - key: FULL7_EXPECTED_TOTAL
+        value: "17685"
+      - key: FULL7_SLEEP
+        value: "0.22"
+      - key: FULL7_TIMEOUT
+        value: "90"
+      - key: PYTHONUNBUFFERED
+        value: "1"
+    disk:
+      name: full7-mass-data
+      mountPath: /var/data
+      sizeGB: 10
