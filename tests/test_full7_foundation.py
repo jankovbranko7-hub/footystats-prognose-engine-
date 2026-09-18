@@ -19,6 +19,14 @@ def files():
 
 class T(unittest.TestCase):
     def test_valid_reaches_gold(self): self.assertEqual(process_full7(files())["stage"],"GOLD_READY")
+    def test_identity_preserves_team_names_when_present(self):
+        x=files()
+        match=x[0]["data"]["payload"]["data"]
+        match["home_name"]="Home FC"
+        match["away_name"]="Away United"
+        ident=process_full7(x)["gold"]["identity"]
+        self.assertEqual(ident["home_name"],"Home FC")
+        self.assertEqual(ident["away_name"],"Away United")
     def test_exact_seven(self): self.assertFalse(process_full7(files()[:-1])["ok"])
     def test_endpoint_mismatch(self):
         x=files(); x[0]["data"]["_footystats_meta"]["endpoint"]="/league-tables"; self.assertFalse(process_full7(x)["ok"])
