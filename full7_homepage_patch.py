@@ -10,7 +10,7 @@ from typing import Any
 FULL7_CARD = r'''
   <div class="c" id="full7-card">
     <h2>FULL-7 Contract</h2>
-    <p class="s">7 Maerkte sichtbar | keine Odds | SPIELEN nur BTTS | 1X2 und Totals hoechstens BEOBACHTEN</p>
+    <p class="s">V3.1 | 7 Maerkte sichtbar | keine Odds | SPIELEN-Gates: 1X2 | BTTS | TOTALS</p>
     <p class="s">Match | League | Form | Table | Player | Referee | Manager</p>
     <input id="full7Files" type="file" multiple accept=".json,application/json">
     <p id="full7Pick" class="s">Noch keine Dateien ausgewaehlt.</p>
@@ -183,10 +183,12 @@ if(go7){
       const engine=data.engine||{};
       const sample=(engine.sample_security||{}).status||"-";
       const families=engine.families||{};
+      const contract=data.contract||{};
+      const allowedFamilies=(contract.spielen_allowed_families||[]).join(" | ")||"-";
       const familyRows=Object.keys(families).map(function(name){
         const row=families[name]||{};
         return '<tr><td>'+escapeHtml(name)+'</td><td>'+escapeHtml(row.selected_market||"")+'</td>'+
-          '<td>'+escapeHtml(row.decision||"")+'</td><td>'+escapeHtml(pct(row.base_probability))+'</td>'+
+          '<td>'+escapeHtml(row.decision||"")+'</td><td>'+escapeHtml(pct(row.probability!=null?row.probability:row.base_probability))+'</td>'+
           '<td class="s">'+escapeHtml(row.decision_reason||"")+'</td></tr>';
       }).join("");
       out.innerHTML=
@@ -194,7 +196,7 @@ if(go7){
         '<p class="s">'+escapeHtml(String(ident.home_name||ident.home_id||"?"))+' vs '+escapeHtml(String(ident.away_name||ident.away_id||"?"))+
         ' | '+escapeHtml(String((data.contract||{}).release_status||""))+'</p>'+
         '<div class="g">'+
-        '<div class="m"><div class="s">SPIELEN erlaubt</div><div class="b">BTTS</div></div>'+
+        '<div class="m"><div class="s">SPIELEN erlaubt</div><div class="b">'+escapeHtml(allowedFamilies)+'</div></div>'+
         '<div class="m"><div class="s">Stichprobe</div><div class="b">'+escapeHtml(sample)+'</div></div>'+
         '<div class="m"><div class="s">Playable</div><div class="b">'+escapeHtml(String((engine.playable||[]).length))+'</div></div>'+
         '</div></div>'+
