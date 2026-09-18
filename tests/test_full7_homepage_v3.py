@@ -11,7 +11,8 @@ class Full7HomepageV3Tests(unittest.TestCase):
         self.assertNotIn("1X2 und Totals hoechstens BEOBACHTEN", card)
         self.assertNotIn('<div class="b">BTTS</div>', script)
         self.assertIn("1X2 | BTTS | TOTALS", card)
-        self.assertIn("1X2 | BTTS | TOTALS", script)
+        self.assertIn("contract.spielen_allowed_families", script)
+        self.assertIn("allowedFamilies", script)
 
     def test_family_probability_supports_v3_probability_field(self):
         script = full7_homepage_patch.FULL7_SCRIPT
