@@ -22,7 +22,7 @@ services:
       - key: FULL7_EXPECTED_TOTAL
         value: "17685"
       - key: FULL7_SLEEP
-        value: "0.22"
+        value: "2.10"
       - key: FULL7_TIMEOUT
         value: "90"
       - key: FULL7_MIN_FREE_GB
