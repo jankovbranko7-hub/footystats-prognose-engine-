@@ -10,7 +10,6 @@ services:
     startCommand: >-
       python -u collector/full7_mass_worker/bootstrap_input.py &&
       python -u collector/full7_mass_worker/collect.py
-    maxShutdownDelaySeconds: 300
     numInstances: 1
     envVars:
       - key: FOOTYSTATS_API_KEY
