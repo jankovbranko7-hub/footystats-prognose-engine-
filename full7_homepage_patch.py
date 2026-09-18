@@ -74,6 +74,20 @@ function matchIds(obj){
   const root=(obj&&obj.payload&&obj.payload.data)||(obj&&obj.data)||obj||{};
   return {home:Number(root.homeID), away:Number(root.awayID)};
 }
+function matchDisplay(obj){
+  const root=(obj&&obj.payload&&obj.payload.data)||(obj&&obj.data)||obj||{};
+  function firstText(keys){
+    for(const key of keys){
+      const value=root&&root[key];
+      if(typeof value==="string"&&value.trim()) return value.trim();
+    }
+    return null;
+  }
+  return {
+    home_name:firstText(["home_name","homeName","team_a_name","home_team_name"]),
+    away_name:firstText(["away_name","awayName","team_b_name","away_team_name"])
+  };
+}
 function slimLeague(obj, homeId, awayId){
   try{
     const rows=obj&&obj.payload&&obj.payload.team_pages&&obj.payload.team_pages.data;
@@ -166,6 +180,7 @@ if(go7){
         parsed[key]=JSON.parse(await slots[key].text());
       }
       const ids=matchIds(parsed.match_file);
+      const localDisplay=matchDisplay(parsed.match_file);
       slimLeague(parsed.league_file, ids.home, ids.away);
       slimPlayer(parsed.player_file, ids.home, ids.away);
       const form=new FormData();
@@ -191,10 +206,13 @@ if(go7){
           '<td>'+escapeHtml(row.decision||"")+'</td><td>'+escapeHtml(pct(row.probability!=null?row.probability:row.base_probability))+'</td>'+
           '<td class="s">'+escapeHtml(row.decision_reason||"")+'</td></tr>';
       }).join("");
+      const homeDisplay=ident.home_name||localDisplay.home_name||ident.home_id||"?";
+      const awayDisplay=ident.away_name||localDisplay.away_name||ident.away_id||"?";
+      const matchId=ident.match_id||"";
       out.innerHTML=
         '<div class="c"><div class="ok"><b>FULL-7 | 7 Maerkte</b></div>'+
-        '<p class="s">'+escapeHtml(String(ident.home_name||ident.home_id||"?"))+' vs '+escapeHtml(String(ident.away_name||ident.away_id||"?"))+
-        ' | '+escapeHtml(String((data.contract||{}).release_status||""))+'</p>'+
+        '<div class="full7-matchup"><span>'+escapeHtml(String(homeDisplay))+'</span><span class="full7-vs">VS</span><span>'+escapeHtml(String(awayDisplay))+'</span></div>'+
+        '<p class="s">'+(matchId?('Match-ID '+escapeHtml(String(matchId))+' | '):'')+escapeHtml(String((data.contract||{}).release_status||""))+'</p>'+
         '<div class="g">'+
         '<div class="m"><div class="s">SPIELEN erlaubt</div><div class="b">'+escapeHtml(allowedFamilies)+'</div></div>'+
         '<div class="m"><div class="s">Stichprobe</div><div class="b">'+escapeHtml(sample)+'</div></div>'+
@@ -223,6 +241,12 @@ def apply_full7_homepage(legacy: Any) -> Any:
             html = html.replace("</script>", FULL7_SCRIPT + "\n</script>", 1)
     if "<style>" in html and "#go,.c:has(#go)" not in html:
         html = html.replace("<style>", "<style>\n#go,.c:has(#go){display:none!important}\n", 1)
+    if "<style>" in html and ".full7-matchup" not in html:
+        html = html.replace(
+            "<style>",
+            "<style>\n.full7-matchup{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:1.28rem;font-weight:800;color:#111827;margin:10px 0 4px}.full7-vs{font-size:.78rem;font-weight:800;color:#6b7280;letter-spacing:.08em}\n",
+            1,
+        )
     html = html.replace(
         "<title>FootyStats SPEC v1.1 \u00b7 Joint-Outcome Engine</title>",
         "<title>FULL-7 Contract \u00b7 FootyStats</title>",
