@@ -16,7 +16,9 @@ DONE_PATH = ROOT / "done_ids.txt"
 PROGRESS_PATH = ROOT / "progress.jsonl"
 CACHE_INDEX = ROOT / "raw_cache_index.jsonl"
 
-SLEEP_S = float(os.environ.get("FULL7_SLEEP", "0.22"))
+# Hobby package: 1800 requests/hour = 1 request every 2.0 seconds.
+# Default 2.10 s leaves ~5% safety margin before HTTP/network latency.
+SLEEP_S = float(os.environ.get("FULL7_SLEEP", "2.10"))
 REQUEST_TIMEOUT = int(os.environ.get("FULL7_TIMEOUT", "90"))
 EXPECTED_TOTAL = int(os.environ.get("FULL7_EXPECTED_TOTAL", "17685"))
 MIN_FREE_GB = float(os.environ.get("FULL7_MIN_FREE_GB", "0.75"))
