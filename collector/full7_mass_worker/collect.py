@@ -23,7 +23,7 @@ import requests
 from config import (
     API_BASE, API_KEY_ENV, ROOT, CSV_PATH, RAW_DIR, MATCH_DIR, QUAR_DIR,
     STATE_PATH, DONE_PATH, PROGRESS_PATH, CACHE_INDEX, SLEEP_S,
-    REQUEST_TIMEOUT, EXPECTED_TOTAL, REQUIRED_CSV_COLUMNS,
+    REQUEST_TIMEOUT, EXPECTED_TOTAL, MIN_FREE_GB, REQUIRED_CSV_COLUMNS,
 )
 from raw_cache import RawCache
 from strict_validator import validate_match_bundle
@@ -378,7 +378,8 @@ def load_players(sid, mt, state):
 
 
 def write_json(path: Path, obj) -> None:
-    path.write_text(json.dumps(obj, indent=2, ensure_ascii=False, default=str))
+    # Machine artifacts are stored compactly to conserve persistent-disk space.
+    path.write_text(json.dumps(obj, ensure_ascii=False, default=str, separators=(",", ":")))
 
 
 def process_one(r, state):
@@ -683,6 +684,19 @@ def main():
         since_progress += 1
         save_state(st, done)
 
+        # Fail closed before the persistent disk fills. Resume is safe because
+        # state + done_ids were atomically checkpointed above.
+        disk = shutil.disk_usage(ROOT)
+        free_gb = disk.free / (1024 ** 3)
+        if free_gb < MIN_FREE_GB:
+            print(
+                "DISK_LOW",
+                {"free_gb": round(free_gb, 3), "min_free_gb": MIN_FREE_GB,
+                 "processed": st["processed"], "last_id": mid},
+                flush=True,
+            )
+            sys.exit(4)
+
         if since_progress >= 10:
             line = {
                 "ts": datetime.now(timezone.utc).isoformat(),
@@ -696,6 +710,7 @@ def main():
                 "retry": st["retry_count"],
                 "last_id": mid,
                 "done_total": len(done),
+                "disk_free_gb": round(shutil.disk_usage(ROOT).free / (1024 ** 3), 3),
             }
             with PROGRESS_PATH.open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps(line) + "\n")
