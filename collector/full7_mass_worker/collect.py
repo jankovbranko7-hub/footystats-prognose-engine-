@@ -9,6 +9,8 @@ max_time = kickoff - 1 and validated.
 """
 from __future__ import annotations
 
+import csv
+import gc
 import hashlib
 import json
 import os
@@ -17,8 +19,8 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
-import pandas as pd
 import requests
 
 from config import (
@@ -65,7 +67,7 @@ CORE_TEAM = {
 SESSION = requests.Session()
 CACHE: RawCache | None = None
 KEY = os.environ.get(API_KEY_ENV, "")
-MEMO: dict = {}
+DISCOVERY_MEMO = {"sid": None, "value": None}
 
 
 def utc_iso(ts: int) -> str:
@@ -186,20 +188,20 @@ def fetch(endpoint: str, params: dict, state: dict) -> tuple[dict, dict]:
 
 
 def cached(key, endpoint, params, state):
-    if key in MEMO:
-        state["cache_hits"] += 1
-        return MEMO[key]
-    js, rec = fetch(endpoint, params, state)
-    MEMO[key] = (js, rec)
-    return MEMO[key]
+    # Raw responses already have a persistent SHA cache on disk. Keeping every
+    # historical snapshot in RAM caused unbounded growth on the 512 MB worker.
+    # Repeated identical requests are served by RawCache.lookup() without a new API call.
+    return fetch(endpoint, params, state)
 
 
 def discover_season_matches(sid: int, state: dict) -> tuple[list[dict], list[dict]]:
-    """Complete season list used ONLY to discover target identity/kickoff/final label."""
-    key = ("discover", sid)
-    if key in MEMO:
+    """Complete season list used ONLY to discover target identity/kickoff/final label.
+
+    The input is sorted by season_id, so holding only the current season is enough.
+    """
+    if DISCOVERY_MEMO["sid"] == sid and DISCOVERY_MEMO["value"] is not None:
         state["cache_hits"] += 1
-        return MEMO[key]
+        return DISCOVERY_MEMO["value"]
 
     params = {"season_id": sid, "max_per_page": 1000, "page": 1}
     js, rec = fetch("league-matches", params, state)
@@ -216,7 +218,8 @@ def discover_season_matches(sid: int, state: dict) -> tuple[list[dict], list[dic
         rows.extend(js2.get("data") or [])
         recs.append(rec2)
 
-    MEMO[key] = (rows, recs)
+    DISCOVERY_MEMO["sid"] = sid
+    DISCOVERY_MEMO["value"] = (rows, recs)
     return rows, recs
 
 
@@ -592,7 +595,7 @@ def process_one(r, state):
         "league_source_count": derived.get("league_source_count"),
         "league_source_max_timestamp": derived.get("league_source_max_timestamp"),
         "player_pagination_complete": pag.get("pagination_complete"),
-        "collector_version": "FULL7_V3_COLLECTOR_1.2_COMPACT_TARGET_MANIFEST",
+        "collector_version": "FULL7_V3_COLLECTOR_1.3_BOUNDED_MEMORY",
         "request_provenance": [
             {k: rec.get(k) for k in (
                 "endpoint", "params", "requested_max_time", "raw_response_sha256",
@@ -632,21 +635,37 @@ def main():
     QUAR_DIR.mkdir(parents=True, exist_ok=True)
     CACHE = RawCache(RAW_DIR, CACHE_INDEX)
 
-    df = pd.read_csv(CSV_PATH)
-    missing = [c for c in REQUIRED_CSV_COLUMNS if c not in df.columns]
-    if missing:
-        print("CSV-Spalten fehlen:", missing, file=sys.stderr)
-        sys.exit(2)
-    if df["match_id"].isna().any() or df["season_id"].isna().any():
-        print("CSV enthält leere match_id/season_id", file=sys.stderr)
-        sys.exit(2)
-    if df["match_id"].duplicated().any():
-        dups = df.loc[df["match_id"].duplicated(), "match_id"].head(10).tolist()
-        print(f"CSV enthält doppelte match_id, Beispiele: {dups}", file=sys.stderr)
+    # The manifest is only two integer columns. csv.DictReader avoids loading
+    # pandas/numpy into the worker, saving a large amount of baseline RAM.
+    targets = []
+    seen_ids = set()
+    duplicate_ids = []
+    with CSV_PATH.open(newline="", encoding="utf-8") as fh:
+        reader = csv.DictReader(fh)
+        fieldnames = reader.fieldnames or []
+        missing = [name for name in REQUIRED_CSV_COLUMNS if name not in fieldnames]
+        if missing:
+            print("CSV-Spalten fehlen:", missing, file=sys.stderr)
+            sys.exit(2)
+        for row in reader:
+            try:
+                mid = int(row["match_id"])
+                sid = int(row["season_id"])
+            except (TypeError, ValueError, KeyError):
+                print("CSV enthält ungültige match_id/season_id", file=sys.stderr)
+                sys.exit(2)
+            if mid in seen_ids:
+                if len(duplicate_ids) < 10:
+                    duplicate_ids.append(mid)
+                continue
+            seen_ids.add(mid)
+            targets.append(SimpleNamespace(match_id=mid, season_id=sid))
+    if duplicate_ids:
+        print(f"CSV enthält doppelte match_id, Beispiele: {duplicate_ids}", file=sys.stderr)
         sys.exit(2)
 
-    df = df.sort_values(["season_id", "match_id"])
-    total = len(df)
+    targets.sort(key=lambda r: (r.season_id, r.match_id))
+    total = len(targets)
     if EXPECTED_TOTAL and total != EXPECTED_TOTAL:
         print(f"Unerwartete Zielanzahl: {total}, erwartet {EXPECTED_TOTAL}", file=sys.stderr)
         sys.exit(2)
@@ -657,7 +676,7 @@ def main():
     print(f"start total={total} already_done={len(done)} root={ROOT}", flush=True)
 
     since_progress = 0
-    for _, r in df.iterrows():
+    for r in targets:
         mid = int(r.match_id)
         if mid in done:
             continue
@@ -672,7 +691,7 @@ def main():
                 "season_id": int(r.season_id),
                 "strict_prematch": False,
                 "reason_if_false": reasons,
-                "collector_version": "FULL7_V3_COLLECTOR_1.2_COMPACT_TARGET_MANIFEST",
+                "collector_version": "FULL7_V3_COLLECTOR_1.3_BOUNDED_MEMORY",
                 "ts": datetime.now(timezone.utc).isoformat(),
             })
 
@@ -717,6 +736,8 @@ def main():
                 fh.write(json.dumps(line) + "\n")
             print(line, flush=True)
             since_progress = 0
+            # Explicitly collect cyclic garbage between progress batches.
+            gc.collect()
 
     st = reconcile_state(st, done)
     save_state(st, done)
