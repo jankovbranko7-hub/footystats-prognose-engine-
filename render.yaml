@@ -6,16 +6,11 @@ services:
     region: frankfurt
     branch: collector/full7-mass-17685
     autoDeployTrigger: off
-    buildCommand: pip install "pandas>=2.0" "requests>=2.31"
+    buildCommand: pip install -r collector/full7_mass_worker/requirements.txt
     startCommand: >-
-      rm -rf /tmp/full7_worker &&
-      mkdir -p /tmp/full7_worker &&
-      cat collector/full7_mass_worker_bundle.b64.part* | base64 -d > /tmp/full7_mass_worker_bundle.zip &&
-      python -m zipfile -e /tmp/full7_mass_worker_bundle.zip /tmp/full7_worker &&
-      mkdir -p /var/data/full7/input &&
-      if [ ! -f /var/data/full7/input/backtest_50_ligen.csv ]; then gzip -dc /tmp/full7_worker/backtest_50_ligen.csv.gz > /var/data/full7/input/backtest_50_ligen.csv; fi &&
-      cd /tmp/full7_worker &&
-      python -u collect.py
+      mkdir -p /var/data/full7/input /var/data/full7/output &&
+      python -u collector/full7_mass_worker/bootstrap_input.py &&
+      python -u collector/full7_mass_worker/collect.py
     maxShutdownDelaySeconds: 300
     numInstances: 1
     envVars:
