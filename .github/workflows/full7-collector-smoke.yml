@@ -1,0 +1,39 @@
+name: FULL7 Collector Smoke
+
+on:
+  push:
+    branches:
+      - collector/full7-mass-17685
+  workflow_dispatch:
+
+jobs:
+  collector-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install collector dependencies
+        run: pip install -r collector/full7_mass_worker/requirements.txt
+      - name: Compile collector
+        run: python -m py_compile collector/full7_mass_worker/*.py
+      - name: Reconstruct locked target manifest
+        env:
+          FULL7_CSV: /tmp/full7_targets_17685_min.csv
+        run: python collector/full7_mass_worker/bootstrap_input.py
+      - name: Verify 17685 targets and SHA256
+        run: |
+          python - <<'PY'
+          import csv, hashlib
+          from pathlib import Path
+          p=Path("/tmp/full7_targets_17685_min.csv")
+          raw=p.read_bytes()
+          assert hashlib.sha256(raw).hexdigest()=="6f8d79f8bb477b8d7e1735a6e61a57e1f3ba998ca65af8aab903094bb64d5b65"
+          rows=list(csv.DictReader(raw.decode("utf-8").splitlines()))
+          assert len(rows)==17685
+          ids=[r["match_id"] for r in rows]
+          assert len(ids)==len(set(ids))==17685
+          assert set(rows[0])=={"match_id","season_id"}
+          print("COLLECTOR_MANIFEST_SMOKE_OK", len(rows))
+          PY
