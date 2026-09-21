@@ -789,6 +789,10 @@ def main():
         print("INCOMPLETE", st, "done", len(done), "total", total, flush=True)
         sys.exit(3)
     print("FINISHED", st, "done", len(done), flush=True)
+    if os.environ.get("FULL7_HOLD_OPEN") == "1":
+        print("HOLD_OPEN shell/export mode active", flush=True)
+        while True:
+            time.sleep(3600)
 
 
 if __name__ == "__main__":
