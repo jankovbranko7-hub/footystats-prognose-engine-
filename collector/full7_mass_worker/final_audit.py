@@ -256,15 +256,29 @@ def audit(root: Path, csv_path: Path, expected_total: int, verify_raw: bool) -> 
             expected_paths["MatchDaten.json"], expected_paths["FormDaten.json"],
             expected_paths["TableDaten.json"], expected_paths["PlayerDaten.json"],
         ] + ([league_path] if league_path is not None else [])
+
+        # Target post-match fields are forbidden in MatchDaten. Historical
+        # source rows in Form/League legitimately contain prior-match results,
+        # so they are not leakage merely because they contain goal keys.
+        try:
+            match_obj = read_json(expected_paths["MatchDaten.json"])
+            for path_key, key, _ in walk_keys(match_obj):
+                if key in POSTMATCH_FORBIDDEN:
+                    feature_key_leaks[path_key] += 1
+        except Exception:
+            pass
+
+        # Outcome-label / hit fields are forbidden anywhere in feature files.
+        label_keys = {"actual_1x2", "actual_btts", "actual_over25", "hit_ou", "hit_btts"}
         for fp in feature_paths:
             try:
                 obj = read_json(fp)
             except Exception:
                 continue
             for path_key, key, _ in walk_keys(obj):
-                if key in POSTMATCH_FORBIDDEN:
+                if key in label_keys:
                     feature_key_leaks[path_key] += 1
-                if "odd" in key.lower() or "odds" in key.lower():
+                if "odd" in key.lower():
                     odds_like_keys[path_key] += 1
 
         for rec in meta.get("request_provenance") or []:
@@ -277,22 +291,55 @@ def audit(root: Path, csv_path: Path, expected_total: int, verify_raw: bool) -> 
                     provenance_max_time_violations += 1
 
     quarantine_dirs = {int(p.name) for p in quar_dir.iterdir() if p.is_dir() and p.name.isdigit()} if quar_dir.exists() else set()
-    nonstrict_ids = set()
-    for mid in done_set:
-        mp = match_dir / str(mid) / f"{mid}_Metadata.json"
-        if mp.exists():
-            try:
-                if read_json(mp).get("strict_prematch") is not True:
-                    nonstrict_ids.add(mid)
-            except Exception:
-                pass
 
-    for mid in sorted(nonstrict_ids - quarantine_dirs)[:20]:
-        add_issue("nonstrict_missing_quarantine_dir", mid)
-    for mid in sorted(quarantine_dirs - nonstrict_ids)[:20]:
+    # reason.json is authoritative even when an API exception happened before
+    # a complete match Metadata.json could be written.
+    q_reason.clear()
+    q_class.clear()
+    q_season.clear()
+    for mid in sorted(quarantine_dirs):
         reason_p = quar_dir / str(mid) / "reason.json"
         if not reason_p.exists():
             add_issue("quarantine_without_reason", mid)
+            continue
+        try:
+            qobj = read_json(reason_p)
+        except Exception as exc:
+            add_issue("quarantine_reason_parse_error", {"match_id": mid, "error": str(exc)})
+            continue
+        reasons = qobj.get("reason_if_false") or []
+        if not isinstance(reasons, list):
+            reasons = [str(reasons)]
+        if not reasons:
+            add_issue("quarantine_without_reason_text", mid)
+        for reason in reasons:
+            rs = str(reason)
+            q_reason[rs] += 1
+            q_class[reason_class(rs)] += 1
+        q_season[str(qobj.get("season_id"))] += 1
+
+    metadata_nonstrict_ids = set()
+    metadata_strict_ids = set()
+    for mid in done_set:
+        mp = match_dir / str(mid) / f"{mid}_Metadata.json"
+        if not mp.exists():
+            continue
+        try:
+            if read_json(mp).get("strict_prematch") is True:
+                metadata_strict_ids.add(mid)
+            else:
+                metadata_nonstrict_ids.add(mid)
+        except Exception:
+            pass
+
+    for mid in sorted(metadata_nonstrict_ids - quarantine_dirs)[:20]:
+        add_issue("nonstrict_missing_quarantine_dir", mid)
+    for mid in sorted(metadata_strict_ids & quarantine_dirs)[:20]:
+        add_issue("strict_has_active_quarantine_dir", mid)
+
+    # Final classification is active quarantine vs non-quarantine done IDs.
+    nonstrict = len(quarantine_dirs)
+    strict = len(done_set - quarantine_dirs)
 
     raw = {
         "checked": False,
@@ -359,7 +406,7 @@ def audit(root: Path, csv_path: Path, expected_total: int, verify_raw: bool) -> 
         "done_unique": len(done_set),
         "match_dirs": len(match_ids_on_disk),
         "strict_pass": strict,
-        "quarantined_by_metadata": nonstrict,
+        "quarantined_active": nonstrict,
         "quarantine_dirs": len(quarantine_dirs),
         "verified_payload_hashes": verified_payload_hashes,
         "quarantine_reason_classes": dict(q_class.most_common()),
@@ -387,7 +434,7 @@ def render_text(report: dict) -> str:
         f"done_unique={report['done_unique']}",
         f"match_dirs={report['match_dirs']}",
         f"strict_pass={report['strict_pass']}",
-        f"quarantined_by_metadata={report['quarantined_by_metadata']}",
+        f"quarantined_active={report['quarantined_active']}",
         f"quarantine_dirs={report['quarantine_dirs']}",
         f"verified_payload_hashes={report['verified_payload_hashes']}",
         f"provenance_missing_max_time={report['provenance_missing_max_time']}",
