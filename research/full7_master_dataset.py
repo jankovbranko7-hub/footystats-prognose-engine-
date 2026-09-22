@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import csv
+import ctypes
 import gc
 import gzip
 import json
@@ -17,6 +18,9 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
+
+csv.field_size_limit(2**31 - 1)
+
 
 
 EXPECTED_TARGET_TOTAL = 17_685
@@ -52,6 +56,15 @@ MATCH_POSTMATCH_FORBIDDEN = {
     "team_b_possession",
     "totalCornerCount",
 } | LABEL_KEYS
+
+
+def _release_process_memory() -> None:
+    """Return freed Python/Arrow-adjacent heap pages to the OS when possible."""
+    gc.collect()
+    try:
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except Exception:
+        pass
 
 
 class DatasetValidationError(RuntimeError):
@@ -699,7 +712,12 @@ def audit_master_outputs(
             for path in null_paths:
                 null_path_counts[str(path)] = null_path_counts.get(str(path), 0) + 1
             rows_by_id[match_id] = row["row_sha256"]
+            if len(rows_by_id) % 32 == 0:
+                sources = None
+                row = None
+                _release_process_memory()
 
+    _release_process_memory()
     expected_ids = set(population.eligible_ids)
     actual_ids = set(rows_by_id)
     if actual_ids != expected_ids:
@@ -718,6 +736,10 @@ def audit_master_outputs(
             raise DatasetValidationError("cp2_csv_column_contract_mismatch")
         for row in reader:
             csv_pairs.append((int(row["match_id"]), row["row_sha256"]))
+            if len(csv_pairs) % 32 == 0:
+                row = None
+                _release_process_memory()
+    _release_process_memory()
     expected_pairs = sorted(rows_by_id.items())
     if sorted(csv_pairs) != expected_pairs:
         raise DatasetValidationError("cp2_csv_jsonl_pair_mismatch")
@@ -828,6 +850,10 @@ def _precheck_existing_cp2_stage(stage: Path, population: PopulationAudit) -> di
             rows_by_id[match_id] = row_hash
             pair_digest_jsonl.update(f"{match_id}\t{row_hash}\n".encode("utf-8"))
             jsonl_rows += 1
+            if jsonl_rows % 32 == 0:
+                sources = None
+                row = None
+                _release_process_memory()
 
     if seen_ids != expected_ids or jsonl_rows != len(population.eligible_ids):
         raise DatasetValidationError(
@@ -849,6 +875,9 @@ def _precheck_existing_cp2_stage(stage: Path, population: PopulationAudit) -> di
                 raise DatasetValidationError(f"resume_csv_row_hash_mismatch:{match_id}")
             pair_digest_csv.update(f"{match_id}\t{row_hash}\n".encode("utf-8"))
             csv_rows += 1
+            if csv_rows % 32 == 0:
+                row = None
+                _release_process_memory()
     if csv_rows != jsonl_rows or pair_digest_csv.digest() != pair_digest_jsonl.digest():
         raise DatasetValidationError("resume_csv_jsonl_representation_mismatch")
 
@@ -866,6 +895,10 @@ def _precheck_existing_cp2_stage(stage: Path, population: PopulationAudit) -> di
             if rows_by_id.get(match_id) != row.get("row_sha256"):
                 raise DatasetValidationError(f"resume_provenance_row_hash_mismatch:{match_id}")
             provenance_rows += 1
+            if provenance_rows % 128 == 0:
+                row = None
+                _release_process_memory()
+    _release_process_memory()
     if provenance_ids != expected_ids or provenance_rows != jsonl_rows:
         raise DatasetValidationError("resume_provenance_population_mismatch")
 
