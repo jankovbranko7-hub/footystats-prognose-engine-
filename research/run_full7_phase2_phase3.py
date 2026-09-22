@@ -117,11 +117,13 @@ def compare_manifest_files(before: Path, after: Path) -> dict[str, object]:
 
 def _read_hold_ids(path: Path) -> set[int]:
     values = []
-    for token in Path(path).read_text(encoding="utf-8").split():
-        try:
-            values.append(int(token))
-        except ValueError as exc:
-            raise OfflineExecutionError(f"invalid_hold_id:{token}") from exc
+    for line in Path(path).read_text(encoding="utf-8").splitlines():
+        uncommented = line.split("#", 1)[0]
+        for token in uncommented.split():
+            try:
+                values.append(int(token))
+            except ValueError as exc:
+                raise OfflineExecutionError(f"invalid_hold_id:{token}") from exc
     if len(values) != len(set(values)):
         raise OfflineExecutionError("duplicate_hold_id")
     return set(values)
