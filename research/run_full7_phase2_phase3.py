@@ -139,6 +139,17 @@ def _write_json_atomic(path: Path, value: object) -> None:
     temporary.replace(path)
 
 
+def _next_available_path(path: Path) -> Path:
+    path = Path(path)
+    if not path.exists():
+        return path
+    for index in range(1, 1000):
+        candidate = path.with_name(f"{path.name}.{index}")
+        if not candidate.exists():
+            return candidate
+    raise OfflineExecutionError(f"no_available_preservation_path:{path}")
+
+
 
 def inspect_existing_output(output_root: Path) -> dict[str, object]:
     """Read-only inventory of an interrupted/finished offline output root."""
@@ -229,19 +240,21 @@ def resume_existing_phase2_phase3(
         raise OfflineExecutionError(f"resume_output_root_missing:{output_root}")
 
     resume_lock = output_root / ".phase2_phase3.resume.lock"
-    try:
-        descriptor = os.open(resume_lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
-    except FileExistsError as exc:
-        raise OfflineExecutionError("resume_execution_lock_exists") from exc
+    if resume_lock.exists():
+        preserved_lock = _next_available_path(
+            output_root / ".phase2_phase3.resume.lock.interrupted"
+        )
+        resume_lock.rename(preserved_lock)
+    descriptor = os.open(resume_lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
     os.write(descriptor, str(os.getpid()).encode("ascii"))
     os.close(descriptor)
 
     original_before = output_root / "PROTECTED_COLLECTION_BEFORE.tsv"
-    resume_after = output_root / "PROTECTED_COLLECTION_RESUME_AFTER.tsv"
+    resume_after = _next_available_path(
+        output_root / "PROTECTED_COLLECTION_RESUME_AFTER.tsv"
+    )
     if not original_before.is_file():
         raise OfflineExecutionError("resume_original_protected_manifest_missing")
-    if resume_after.exists():
-        raise OfflineExecutionError("resume_after_manifest_already_exists")
 
     result: dict[str, object] = {
         "execution": "FULL7_PHASE2_PHASE3_OFFLINE_RESUME_1.0",
@@ -328,9 +341,9 @@ def resume_existing_phase2_phase3(
             if pending_error is None:
                 pending_error = mutation_error
         result["finished_at_utc"] = datetime.now(timezone.utc).isoformat()
-        execution_path = output_root / "FULL7_PHASE2_PHASE3_EXECUTION_RESUME.json"
-        if execution_path.exists():
-            raise OfflineExecutionError("resume_execution_report_already_exists")
+        execution_path = _next_available_path(
+            output_root / "FULL7_PHASE2_PHASE3_EXECUTION_RESUME.json"
+        )
         _write_json_atomic(execution_path, result)
         if resume_lock.is_file() and resume_lock.parent == output_root:
             resume_lock.unlink()
