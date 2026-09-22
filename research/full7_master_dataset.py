@@ -333,10 +333,8 @@ def load_validated_bundle(root: Path, match_id: int, season_id: int) -> BundleRe
         raise DatasetValidationError(f"match_identity_missing:{match_id}")
     if _as_int(identity.get("match_id"), "identity_match_id_missing") != match_id:
         raise DatasetValidationError(f"identity_match_id_mismatch:{match_id}")
-    if identity.get("season") is not None and _as_int(
-        identity.get("season"), "identity_season_invalid"
-    ) != season_id:
-        raise DatasetValidationError(f"identity_season_id_mismatch:{match_id}")
+    # FootyStats match identity uses `season` as a display label/year. The
+    # numeric join is validated independently against metadata and league ID.
     if _as_int(identity.get("homeID"), "identity_home_id_missing") != home_id:
         raise DatasetValidationError(f"identity_home_id_mismatch:{match_id}")
     if _as_int(identity.get("awayID"), "identity_away_id_missing") != away_id:
