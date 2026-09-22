@@ -135,6 +135,76 @@ def _write_json_atomic(path: Path, value: object) -> None:
     temporary.replace(path)
 
 
+
+def inspect_existing_output(output_root: Path) -> dict[str, object]:
+    """Read-only inventory of an interrupted/finished offline output root."""
+    output_root = Path(output_root)
+    if not output_root.is_dir():
+        raise OfflineExecutionError(f"existing_output_not_directory:{output_root}")
+
+    entries: list[dict[str, object]] = []
+    checkpoint_payloads: dict[str, object] = {}
+    for path in sorted(output_root.rglob("*")):
+        relative = path.relative_to(output_root).as_posix()
+        stat = path.stat()
+        if path.is_dir():
+            entries.append(
+                {
+                    "path": relative,
+                    "kind": "directory",
+                    "mtime_ns": stat.st_mtime_ns,
+                }
+            )
+            continue
+        item = {
+            "path": relative,
+            "kind": "file",
+            "bytes": stat.st_size,
+            "mtime_ns": stat.st_mtime_ns,
+            "sha256": _sha256(path),
+        }
+        entries.append(item)
+        if path.name in {
+            "CP2_MASTER_DATASET.json",
+            "CP2_MASTER_DATASET_AUDIT.json",
+            "FULL7_MASTER_BUILD_MANIFEST.json",
+            "CP3_FEATURE_AUDIT.json",
+            "FULL7_FEATURE_AUDIT_MANIFEST.json",
+            "FULL7_PHASE2_PHASE3_EXECUTION.json",
+        }:
+            try:
+                checkpoint_payloads[relative] = json.loads(path.read_text(encoding="utf-8"))
+            except Exception as exc:
+                checkpoint_payloads[relative] = {
+                    "parse_error": f"{type(exc).__name__}:{exc}"
+                }
+
+    names = {entry["path"] for entry in entries}
+    stage_dirs = sorted(
+        entry["path"]
+        for entry in entries
+        if entry["kind"] == "directory"
+        and any(part.startswith(".cp2.stage-") or part.startswith(".cp3.stage-") for part in str(entry["path"]).split("/"))
+    )
+    cp2_published = "cp2" in names and "cp2/CP2_MASTER_DATASET.json" in names
+    cp3_published = "cp3" in names and "cp3/CP3_FEATURE_AUDIT.json" in names
+
+    return {
+        "inspection": "FULL7_EXISTING_OUTPUT_READ_ONLY_1.0",
+        "inspected_at_utc": datetime.now(timezone.utc).isoformat(),
+        "output_root": str(output_root),
+        "entry_count": len(entries),
+        "cp2_published_checkpoint_present": cp2_published,
+        "cp3_published_checkpoint_present": cp3_published,
+        "stage_directories": stage_dirs,
+        "checkpoint_payloads": checkpoint_payloads,
+        "entries": entries,
+        "mutation_performed": False,
+        "api_calls_performed": False,
+        "collection_performed": False,
+    }
+
+
 def execute_phase2_phase3(
     *,
     root: Path,
@@ -246,11 +316,15 @@ def main() -> None:
         default="/var/data/full7/derived/full7_phase2_phase3_2026-09-22",
     )
     args = parser.parse_args()
+    output_root = Path(args.output_root)
+    if output_root.exists():
+        print(json.dumps(inspect_existing_output(output_root), indent=2, ensure_ascii=False))
+        return
     result = execute_phase2_phase3(
         root=Path(args.root),
         cp1_path=Path(args.cp1),
         hold_ids_path=Path(args.hold_ids),
-        output_root=Path(args.output_root),
+        output_root=output_root,
     )
     print(json.dumps(result, indent=2, ensure_ascii=False))
 
