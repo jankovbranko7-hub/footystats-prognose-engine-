@@ -1,0 +1,14 @@
+{
+  "checkpoint": "CP1_STRICT_DATASET",
+  "status": "BLOCKED_REPAIR_REQUIRED",
+  "checked_at_utc": "2026-09-22T07:57:05.333692+00:00",
+  "collector_strict_label": 16267,
+  "cp1_eligible_strict": 16137,
+  "existing_quarantine": 1418,
+  "new_cp1_audit_holds": 130,
+  "blocking_code": "LEAGUE_TARGET_TEAM_ROWS_MISSING",
+  "production_release_allowed": false,
+  "repair_or_mutation_authorized": false,
+  "full_audit_sha256": "4cfe7184dd4c60415f054ea5b94aec5d45d1c821b01f9f5b3b3e39ee83d6a18f",
+  "render_full_checkpoint_sha256": "e915c5b6912af728ceee9e35fd20325a86672c8e20d2da83a1aa1743fc0d785a"
+}
