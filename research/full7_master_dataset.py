@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import csv
+import gc
 import gzip
 import json
 import shutil
@@ -519,38 +520,84 @@ def _bundle_to_row(bundle: BundleRecord) -> dict[str, Any]:
     return row
 
 
-def _write_parquet_pyarrow(jsonl_path: Path, parquet_path: Path) -> None:
+def _write_parquet_pyarrow(
+    jsonl_path: Path,
+    parquet_path: Path,
+    *,
+    max_batch_rows: int = 8,
+    max_batch_json_chars: int = 2 * 1024 * 1024,
+) -> None:
+    """Write Parquet with a hard bounded in-memory micro-batch.
+
+    The master rows contain large JSON feature payloads. A row-count-only
+    batch of 256 rows can transiently exceed a 512-MB worker once Python
+    objects and Arrow buffers coexist. This writer caps both rows and the
+    source JSON character volume without dropping or changing any row.
+    """
     try:
         import pyarrow as pa
         import pyarrow.parquet as pq
     except ImportError as exc:
         raise DatasetValidationError("pyarrow_required_for_parquet") from exc
 
-    writer = None
+    schema = pa.schema(
+        [
+            ("match_id", pa.int64()),
+            ("season_id", pa.int64()),
+            ("competition", pa.string()),
+            ("kickoff_unix", pa.int64()),
+            ("kickoff_utc", pa.string()),
+            ("requested_max_time", pa.int64()),
+            ("home_id", pa.int64()),
+            ("away_id", pa.int64()),
+            ("home_name", pa.string()),
+            ("away_name", pa.string()),
+            ("strict_prematch", pa.bool_()),
+            ("dataset_status", pa.string()),
+            ("feature_sources_json", pa.string()),
+            ("null_paths_json", pa.string()),
+            ("source_file_sha256_json", pa.string()),
+            ("request_provenance_json", pa.string()),
+            ("label_home_goals", pa.int64()),
+            ("label_away_goals", pa.int64()),
+            ("label_actual_1x2", pa.string()),
+            ("label_actual_btts", pa.int64()),
+            ("label_actual_over25", pa.int64()),
+            ("row_sha256", pa.string()),
+        ]
+    )
+    writer = pq.ParquetWriter(parquet_path, schema, compression="zstd")
     batch: list[dict[str, Any]] = []
+    batch_chars = 0
+
+    def flush_batch() -> None:
+        nonlocal batch_chars
+        if not batch:
+            return
+        table = pa.Table.from_pylist(batch, schema=schema)
+        writer.write_table(table, row_group_size=len(batch))
+        batch.clear()
+        batch_chars = 0
+        del table
+        gc.collect()
+
     try:
         with jsonl_path.open(encoding="utf-8") as handle:
             for line in handle:
                 if not line.strip():
                     continue
+                if batch and (
+                    len(batch) >= max_batch_rows
+                    or batch_chars + len(line) > max_batch_json_chars
+                ):
+                    flush_batch()
                 batch.append(json.loads(line))
-                if len(batch) >= 256:
-                    table = pa.Table.from_pylist(batch)
-                    if writer is None:
-                        writer = pq.ParquetWriter(parquet_path, table.schema, compression="zstd")
-                    writer.write_table(table)
-                    batch.clear()
-        if batch:
-            table = pa.Table.from_pylist(batch)
-            if writer is None:
-                writer = pq.ParquetWriter(parquet_path, table.schema, compression="zstd")
-            writer.write_table(table)
-        if writer is None:
-            raise DatasetValidationError("cannot_write_empty_parquet")
+                batch_chars += len(line)
+                if len(batch) >= max_batch_rows or batch_chars >= max_batch_json_chars:
+                    flush_batch()
+        flush_batch()
     finally:
-        if writer is not None:
-            writer.close()
-
+        writer.close()
 
 def _read_parquet_pairs_pyarrow(parquet_path: Path):
     try:
@@ -736,6 +783,224 @@ def _data_dictionary() -> list[dict[str, str]]:
         }
         for column in MASTER_COLUMNS
     ]
+
+
+def _precheck_existing_cp2_stage(stage: Path, population: PopulationAudit) -> dict[str, Any]:
+    """Stream-validate completed pre-Parquet CP2 artifacts before resuming."""
+    stage = Path(stage)
+    jsonl_path = stage / "FULL7_MASTER_STRICT.jsonl"
+    csv_path = stage / "FULL7_MASTER_STRICT.csv.gz"
+    provenance_path = stage / "FULL7_MASTER_PROVENANCE.jsonl"
+    for path in (jsonl_path, csv_path, provenance_path):
+        if not path.is_file() or path.stat().st_size <= 0:
+            raise DatasetValidationError(f"resume_required_artifact_missing:{path.name}")
+
+    expected_ids = set(population.eligible_ids)
+    seen_ids: set[int] = set()
+    rows_by_id: dict[int, str] = {}
+    pair_digest_jsonl = hashlib.sha256()
+    jsonl_rows = 0
+    with jsonl_path.open(encoding="utf-8") as handle:
+        for line_number, line in enumerate(handle, 1):
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            if len(row) != len(MASTER_COLUMNS) or set(row) != set(MASTER_COLUMNS):
+                raise DatasetValidationError(f"resume_jsonl_column_contract_mismatch:{line_number}")
+            match_id = _as_int(row.get("match_id"), "resume_match_id_missing")
+            if match_id in seen_ids:
+                raise DatasetValidationError(f"resume_duplicate_match_id:{match_id}")
+            seen_ids.add(match_id)
+            calculated = canonical_sha256(
+                {key: value for key, value in row.items() if key != "row_sha256"}
+            )
+            if row.get("row_sha256") != calculated:
+                raise DatasetValidationError(f"resume_row_sha256_mismatch:{match_id}")
+            if row.get("strict_prematch") is not True or row.get("dataset_status") != "CP1_ELIGIBLE_STRICT":
+                raise DatasetValidationError(f"resume_strict_status_invalid:{match_id}")
+            sources = json.loads(row["feature_sources_json"])
+            _check_feature_tree(match_id, sources)
+            row_hash = str(row["row_sha256"])
+            rows_by_id[match_id] = row_hash
+            pair_digest_jsonl.update(f"{match_id}\t{row_hash}\n".encode("utf-8"))
+            jsonl_rows += 1
+
+    if seen_ids != expected_ids or jsonl_rows != len(population.eligible_ids):
+        raise DatasetValidationError(
+            f"resume_jsonl_population_mismatch:rows={jsonl_rows}:"
+            f"missing={sorted(expected_ids-seen_ids)[:20]}:"
+            f"extra={sorted(seen_ids-expected_ids)[:20]}"
+        )
+
+    pair_digest_csv = hashlib.sha256()
+    csv_rows = 0
+    with gzip.open(csv_path, "rt", encoding="utf-8", newline="") as handle:
+        reader = csv.DictReader(handle)
+        if tuple(reader.fieldnames or ()) != MASTER_COLUMNS:
+            raise DatasetValidationError("resume_csv_column_contract_mismatch")
+        for row in reader:
+            match_id = int(row["match_id"])
+            row_hash = str(row["row_sha256"])
+            if rows_by_id.get(match_id) != row_hash:
+                raise DatasetValidationError(f"resume_csv_row_hash_mismatch:{match_id}")
+            pair_digest_csv.update(f"{match_id}\t{row_hash}\n".encode("utf-8"))
+            csv_rows += 1
+    if csv_rows != jsonl_rows or pair_digest_csv.digest() != pair_digest_jsonl.digest():
+        raise DatasetValidationError("resume_csv_jsonl_representation_mismatch")
+
+    provenance_rows = 0
+    provenance_ids: set[int] = set()
+    with provenance_path.open(encoding="utf-8") as handle:
+        for line in handle:
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            match_id = _as_int(row.get("match_id"), "resume_provenance_match_id_missing")
+            if match_id in provenance_ids:
+                raise DatasetValidationError(f"resume_provenance_duplicate_match_id:{match_id}")
+            provenance_ids.add(match_id)
+            if rows_by_id.get(match_id) != row.get("row_sha256"):
+                raise DatasetValidationError(f"resume_provenance_row_hash_mismatch:{match_id}")
+            provenance_rows += 1
+    if provenance_ids != expected_ids or provenance_rows != jsonl_rows:
+        raise DatasetValidationError("resume_provenance_population_mismatch")
+
+    return {
+        "gate": "PASS",
+        "jsonl_rows": jsonl_rows,
+        "csv_rows": csv_rows,
+        "provenance_rows": provenance_rows,
+        "unique_match_ids": len(seen_ids),
+        "pair_sha256": pair_digest_jsonl.hexdigest(),
+        "artifacts": {
+            path.name: _artifact_info(path)
+            for path in (jsonl_path, csv_path, provenance_path)
+        },
+    }
+
+
+def resume_master_dataset_from_stage(
+    root: Path,
+    output_dir: Path,
+    population: PopulationAudit,
+    stage: Path,
+    *,
+    parquet_writer=None,
+    parquet_reader=None,
+) -> dict[str, Any]:
+    """Resume a crashed CP2 only after validating all already-written artifacts."""
+    root, output_dir, stage = Path(root), Path(output_dir), Path(stage)
+    if output_dir.exists():
+        raise DatasetValidationError(f"resume_output_directory_already_exists:{output_dir}")
+    if not stage.is_dir() or stage.parent != output_dir.parent or not stage.name.startswith(
+        f".{output_dir.name}.stage-"
+    ):
+        raise DatasetValidationError(f"resume_stage_invalid:{stage}")
+
+    parquet_writer = parquet_writer or _write_parquet_pyarrow
+    parquet_reader = parquet_reader or _read_parquet_pairs_pyarrow
+    precheck = _precheck_existing_cp2_stage(stage, population)
+    (stage / "CP2_RESUME_PRECHECK.json").write_text(
+        json.dumps(precheck, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+
+    parquet_path = stage / "FULL7_MASTER_STRICT.parquet"
+    partial_evidence = None
+    if parquet_path.exists():
+        partial_evidence = _artifact_info(parquet_path)
+        preserved = stage / "FULL7_MASTER_STRICT.parquet.crash-partial"
+        if preserved.exists():
+            raise DatasetValidationError("resume_partial_parquet_evidence_already_exists")
+        parquet_path.rename(preserved)
+        (stage / "CP2_PARQUET_CRASH_EVIDENCE.json").write_text(
+            json.dumps(
+                {
+                    "reason": "PREVIOUS_PROCESS_RESTART_DURING_PARQUET_CONVERSION",
+                    "preserved_file": preserved.name,
+                    "artifact": partial_evidence,
+                },
+                indent=2,
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+    temporary_parquet = stage / "FULL7_MASTER_STRICT.parquet.resume.tmp"
+    if temporary_parquet.exists():
+        raise DatasetValidationError("resume_temporary_parquet_already_exists")
+    parquet_writer(stage / "FULL7_MASTER_STRICT.jsonl", temporary_parquet)
+    temporary_parquet.replace(parquet_path)
+
+    _write_exclusions(root, stage / "FULL7_QUARANTINE_FINAL.csv", population)
+    dictionary = _data_dictionary()
+    (stage / "FULL7_MASTER_DATA_DICTIONARY.json").write_text(
+        json.dumps(dictionary, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+    (stage / "FULL7_MASTER_DATA_DICTIONARY.txt").write_text(
+        "\n".join(
+            f"{item['column']}\t{item['role']}\t{item['missingness_policy']}\t{item['leakage_policy']}"
+            for item in dictionary
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    audit = audit_master_outputs(stage, population, parquet_reader=parquet_reader)
+    audit["resume_precheck"] = precheck
+    audit["parquet_crash_partial_preserved"] = partial_evidence is not None
+    (stage / "CP2_MASTER_DATASET_AUDIT.json").write_text(
+        json.dumps(audit, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+    (stage / "CP2_MASTER_DATASET_AUDIT.txt").write_text(
+        "\n".join(f"{key}: {canonical_json(value)}" for key, value in audit.items()) + "\n",
+        encoding="utf-8",
+    )
+
+    artifact_names = sorted(path.name for path in stage.iterdir() if path.is_file())
+    manifest = {
+        "dataset_version": "FULL7_MASTER_STRICT_CP2_2026-09-22",
+        "created_at_utc": datetime.now(timezone.utc).isoformat(),
+        "resume_mode": True,
+        "match_count_input": len(population.target_ids),
+        "match_count_valid": len(population.eligible_ids),
+        "existing_quarantine": len(population.quarantine_ids),
+        "cp1_holds": len(population.hold_ids),
+        "match_count_excluded": len(population.quarantine_ids) + len(population.hold_ids),
+        "eligible_id_sha256": _id_sha256(population.eligible_ids),
+        "artifacts": {name: _artifact_info(stage / name) for name in artifact_names},
+    }
+    (stage / "FULL7_MASTER_BUILD_MANIFEST.json").write_text(
+        json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+    files_created = sorted(path.name for path in stage.iterdir() if path.is_file())
+    checkpoint = {
+        "checkpoint": "CP2_MASTER_DATASET",
+        "status": "COMPLETE",
+        "gate": "PASS",
+        "model_used": "GPT-5.6 Sol",
+        "dataset_version": manifest["dataset_version"],
+        "match_count_input": len(population.target_ids),
+        "match_count_valid": len(population.eligible_ids),
+        "match_count_quarantined": len(population.quarantine_ids),
+        "new_cp1_holds_excluded": len(population.hold_ids),
+        "match_count_excluded": len(population.quarantine_ids) + len(population.hold_ids),
+        "eligible_id_sha256": audit["eligible_id_sha256"],
+        "files_created_or_changed": files_created,
+        "validations_completed": audit,
+        "known_problems": [],
+        "open_questions": [],
+        "next_phase": "PHASE 3 — FULL FEATURE AUDIT",
+        "resume_instruction": "Run Phase 3 only from this passing CP2 artifact set.",
+    }
+    (stage / "CP2_MASTER_DATASET.json").write_text(
+        json.dumps(checkpoint, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+    (stage / "CP2_MASTER_DATASET.txt").write_text(
+        "\n".join(f"{key}: {canonical_json(value)}" for key, value in checkpoint.items()) + "\n",
+        encoding="utf-8",
+    )
+    stage.rename(output_dir)
+    return checkpoint
 
 
 def build_master_dataset(
