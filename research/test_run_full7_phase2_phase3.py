@@ -6,6 +6,7 @@ import pytest
 
 from research.run_full7_phase2_phase3 import (
     OfflineExecutionError,
+    _read_hold_ids,
     block_network,
     compare_manifest_files,
     execute_phase2_phase3,
@@ -18,6 +19,16 @@ def test_network_blocker_rejects_outbound_connection():
     with block_network():
         with pytest.raises(OfflineExecutionError, match="network_disabled"):
             socket.create_connection(("example.com", 80), timeout=0.01)
+
+
+def test_hold_id_reader_ignores_documentation_comments(tmp_path):
+    hold_path = tmp_path / "holds.txt"
+    hold_path.write_text(
+        "# FULL7 CP1 held IDs\n# Reason: documented provenance\n102\n103 # inline note\n",
+        encoding="utf-8",
+    )
+
+    assert _read_hold_ids(hold_path) == {102, 103}
 
 
 def test_protected_manifest_detects_no_change_and_then_mutation(tmp_path):
