@@ -488,8 +488,8 @@ def main() -> None:
             and int(cp3.get("match_count_valid", -1)) == 16137
         ):
             print("CP3_FROZEN_REUSE_PASS", flush=True)
-            from research.full7_phase4_model_research import run_phase4_offline
-            phase4 = run_phase4_offline(
+            from research.full7_phase4_continue import run_phase4_continue_offline
+            phase4 = run_phase4_continue_offline(
                 output_root / "cp2",
                 output_root / "cp3",
                 output_root / "phase4",
