@@ -18,7 +18,11 @@ from pathlib import Path
 from unittest.mock import patch
 
 from research.full7_feature_audit import run_feature_audit
-from research.full7_master_dataset import build_master_dataset, derive_population
+from research.full7_master_dataset import (
+    build_master_dataset,
+    derive_population,
+    resume_master_dataset_from_stage,
+)
 
 
 class OfflineExecutionError(RuntimeError):
@@ -205,6 +209,136 @@ def inspect_existing_output(output_root: Path) -> dict[str, object]:
     }
 
 
+def resume_existing_phase2_phase3(
+    *,
+    root: Path,
+    cp1_path: Path,
+    hold_ids_path: Path,
+    output_root: Path,
+    expected_target_total: int = 17_685,
+    expected_collector_strict: int = 16_267,
+    expected_quarantine_total: int = 1_418,
+    expected_hold_total: int = 130,
+    expected_eligible_total: int = 16_137,
+    correlation_min_overlap: int = 100,
+) -> dict[str, object]:
+    """Resume only from validated persisted checkpoints/stages; never rebuild good CP2 files."""
+    root, cp1_path = Path(root), Path(cp1_path)
+    hold_ids_path, output_root = Path(hold_ids_path), Path(output_root)
+    if not output_root.is_dir():
+        raise OfflineExecutionError(f"resume_output_root_missing:{output_root}")
+
+    resume_lock = output_root / ".phase2_phase3.resume.lock"
+    try:
+        descriptor = os.open(resume_lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    except FileExistsError as exc:
+        raise OfflineExecutionError("resume_execution_lock_exists") from exc
+    os.write(descriptor, str(os.getpid()).encode("ascii"))
+    os.close(descriptor)
+
+    original_before = output_root / "PROTECTED_COLLECTION_BEFORE.tsv"
+    resume_after = output_root / "PROTECTED_COLLECTION_RESUME_AFTER.tsv"
+    if not original_before.is_file():
+        raise OfflineExecutionError("resume_original_protected_manifest_missing")
+    if resume_after.exists():
+        raise OfflineExecutionError("resume_after_manifest_already_exists")
+
+    result: dict[str, object] = {
+        "execution": "FULL7_PHASE2_PHASE3_OFFLINE_RESUME_1.0",
+        "started_at_utc": datetime.now(timezone.utc).isoformat(),
+        "status": "RUNNING",
+        "api_calls_performed": False,
+        "collection_performed": False,
+        "source_mutation_detected": None,
+        "cp2_gate": None,
+        "cp3_gate": None,
+    }
+    pending_error: Exception | None = None
+    try:
+        with block_network():
+            population = derive_population(
+                root,
+                _read_hold_ids(hold_ids_path),
+                cp1_path,
+                expected_target_total=expected_target_total,
+                expected_collector_strict=expected_collector_strict,
+                expected_quarantine_total=expected_quarantine_total,
+                expected_hold_total=expected_hold_total,
+                expected_eligible_total=expected_eligible_total,
+            )
+
+            cp2_dir = output_root / "cp2"
+            cp2_checkpoint_path = cp2_dir / "CP2_MASTER_DATASET.json"
+            if cp2_checkpoint_path.is_file():
+                cp2 = json.loads(cp2_checkpoint_path.read_text(encoding="utf-8"))
+                if cp2.get("gate") != "PASS" or cp2.get("match_count_valid") != expected_eligible_total:
+                    raise OfflineExecutionError("resume_existing_cp2_checkpoint_not_pass")
+                print("RESUME_CP2_REUSE_PASS", flush=True)
+            else:
+                stages = sorted(output_root.glob(".cp2.stage-*"))
+                if len(stages) != 1:
+                    raise OfflineExecutionError(f"resume_cp2_stage_count_not_one:{len(stages)}")
+                print(f"RESUME_CP2_STAGE={stages[0].name}", flush=True)
+                print("RESUME_CP2_PRECHECK_AND_PARQUET_START", flush=True)
+                cp2 = resume_master_dataset_from_stage(root, cp2_dir, population, stages[0])
+                print("RESUME_CP2_PASS", flush=True)
+            result["cp2_gate"] = cp2.get("gate")
+            result["cp2_checkpoint"] = cp2
+
+            cp3_dir = output_root / "cp3"
+            cp3_checkpoint_path = cp3_dir / "CP3_FEATURE_AUDIT.json"
+            if cp3_checkpoint_path.is_file():
+                cp3 = json.loads(cp3_checkpoint_path.read_text(encoding="utf-8"))
+                if cp3.get("gate") != "PASS" or cp3.get("match_count_valid") != expected_eligible_total:
+                    raise OfflineExecutionError("resume_existing_cp3_checkpoint_not_pass")
+                print("RESUME_CP3_REUSE_PASS", flush=True)
+            else:
+                cp3_stages = sorted(output_root.glob(".cp3.stage-*"))
+                if cp3_stages:
+                    raise OfflineExecutionError(
+                        "resume_cp3_stage_exists_requires_integrity_inspection:"
+                        + ",".join(path.name for path in cp3_stages)
+                    )
+                print("RESUME_CP3_START", flush=True)
+                cp3 = run_feature_audit(
+                    cp2_dir,
+                    cp3_dir,
+                    correlation_min_overlap=correlation_min_overlap,
+                )
+                print("RESUME_CP3_PASS", flush=True)
+            result["cp3_gate"] = cp3.get("gate")
+            result["cp3_checkpoint"] = cp3
+            result["status"] = "COMPLETE"
+    except Exception as exc:
+        pending_error = exc
+        result["status"] = "BLOCKED"
+        result["error"] = {"type": type(exc).__name__, "message": str(exc)}
+    finally:
+        result["protected_after"] = write_protected_manifest(root, resume_after)
+        integrity = compare_manifest_files(original_before, resume_after)
+        result["protected_collection_integrity"] = integrity
+        result["source_mutation_detected"] = not integrity["equal"]
+        if not integrity["equal"]:
+            result["status"] = "BLOCKED"
+            mutation_error = OfflineExecutionError("protected_collection_mutation_detected_on_resume")
+            result["error"] = {
+                "type": type(mutation_error).__name__,
+                "message": str(mutation_error),
+            }
+            if pending_error is None:
+                pending_error = mutation_error
+        result["finished_at_utc"] = datetime.now(timezone.utc).isoformat()
+        execution_path = output_root / "FULL7_PHASE2_PHASE3_EXECUTION_RESUME.json"
+        if execution_path.exists():
+            raise OfflineExecutionError("resume_execution_report_already_exists")
+        _write_json_atomic(execution_path, result)
+        if resume_lock.is_file() and resume_lock.parent == output_root:
+            resume_lock.unlink()
+    if pending_error is not None:
+        raise pending_error
+    return result
+
+
 def execute_phase2_phase3(
     *,
     root: Path,
@@ -318,14 +452,19 @@ def main() -> None:
     args = parser.parse_args()
     output_root = Path(args.output_root)
     if output_root.exists():
-        print(json.dumps(inspect_existing_output(output_root), indent=2, ensure_ascii=False))
-        return
-    result = execute_phase2_phase3(
-        root=Path(args.root),
-        cp1_path=Path(args.cp1),
-        hold_ids_path=Path(args.hold_ids),
-        output_root=output_root,
-    )
+        result = resume_existing_phase2_phase3(
+            root=Path(args.root),
+            cp1_path=Path(args.cp1),
+            hold_ids_path=Path(args.hold_ids),
+            output_root=output_root,
+        )
+    else:
+        result = execute_phase2_phase3(
+            root=Path(args.root),
+            cp1_path=Path(args.cp1),
+            hold_ids_path=Path(args.hold_ids),
+            output_root=output_root,
+        )
     print(json.dumps(result, indent=2, ensure_ascii=False))
 
 
