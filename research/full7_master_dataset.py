@@ -524,8 +524,8 @@ def _write_parquet_pyarrow(
     jsonl_path: Path,
     parquet_path: Path,
     *,
-    max_batch_rows: int = 8,
-    max_batch_json_chars: int = 2 * 1024 * 1024,
+    max_batch_rows: int = 4,
+    max_batch_json_chars: int = 1024 * 1024,
 ) -> None:
     """Write Parquet with a hard bounded in-memory micro-batch.
 
@@ -580,6 +580,10 @@ def _write_parquet_pyarrow(
         batch_chars = 0
         del table
         gc.collect()
+        try:
+            pa.default_memory_pool().release_unused()
+        except Exception:
+            pass
 
     try:
         with jsonl_path.open(encoding="utf-8") as handle:
@@ -927,7 +931,22 @@ def resume_master_dataset_from_stage(
 
     temporary_parquet = stage / "FULL7_MASTER_STRICT.parquet.resume.tmp"
     if temporary_parquet.exists():
-        raise DatasetValidationError("resume_temporary_parquet_already_exists")
+        interrupted = stage / "FULL7_MASTER_STRICT.parquet.resume-interrupted"
+        if interrupted.exists():
+            raise DatasetValidationError("resume_interrupted_parquet_evidence_already_exists")
+        temporary_parquet.rename(interrupted)
+        (stage / "CP2_PARQUET_RESUME_INTERRUPTION_EVIDENCE.json").write_text(
+            json.dumps(
+                {
+                    "reason": "PREVIOUS_RESUME_INTERRUPTED_DURING_PARQUET_CONVERSION",
+                    "preserved_file": interrupted.name,
+                    "artifact": _artifact_info(interrupted),
+                },
+                indent=2,
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
     parquet_writer(stage / "FULL7_MASTER_STRICT.jsonl", temporary_parquet)
     temporary_parquet.replace(parquet_path)
 
