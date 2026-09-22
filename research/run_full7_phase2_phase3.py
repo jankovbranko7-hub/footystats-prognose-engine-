@@ -475,6 +475,28 @@ def main() -> None:
     )
     args = parser.parse_args()
     output_root = Path(args.output_root)
+
+    # Post-CP3 rule: once the frozen CP3 checkpoint is COMPLETE/PASS for 16,137
+    # rows, never re-enter CP1/CP2/CP3. Go directly to Phase 4 research.
+    cp3_checkpoint_path = output_root / "cp3" / "CP3_FEATURE_AUDIT.json"
+    if cp3_checkpoint_path.is_file():
+        cp3 = json.loads(cp3_checkpoint_path.read_text(encoding="utf-8"))
+        if (
+            cp3.get("checkpoint") == "CP3_FEATURE_AUDIT"
+            and cp3.get("gate") == "PASS"
+            and cp3.get("status") == "COMPLETE"
+            and int(cp3.get("match_count_valid", -1)) == 16137
+        ):
+            print("CP3_FROZEN_REUSE_PASS", flush=True)
+            from research.full7_phase4_model_research import run_phase4_offline
+            phase4 = run_phase4_offline(
+                output_root / "cp2",
+                output_root / "cp3",
+                output_root / "phase4",
+            )
+            print(json.dumps(phase4, indent=2, ensure_ascii=False))
+            return
+
     if output_root.exists():
         result = resume_existing_phase2_phase3(
             root=Path(args.root),
