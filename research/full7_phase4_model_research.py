@@ -1160,6 +1160,35 @@ def _eval_v3_baseline(
     if path.is_file() and pred_file.is_file():
         return json.loads(path.read_text(encoding="utf-8"))
     supported = np.all(np.isfinite(v3), axis=1) & (leagues != "")
+    train_arr = np.asarray(train_idx, dtype=int)
+    dev_arr = np.asarray(dev_idx, dtype=int)
+    fold_support = []
+    for _ftr, _fte, _label in folds:
+        _fte_arr = np.asarray(_fte, dtype=int)
+        fold_support.append({
+            "fold": _label,
+            "rows": int(len(_fte_arr)),
+            "supported_rows": int(supported[_fte_arr].sum()),
+        })
+    per_feature = {}
+    for j, name in enumerate(V3_NUMERIC):
+        per_feature[name] = {
+            "all_non_null": int(np.isfinite(v3[:, j]).sum()),
+            "train_non_null": int(np.isfinite(v3[train_arr, j]).sum()),
+            "development_non_null": int(np.isfinite(v3[dev_arr, j]).sum()),
+        }
+    support_diag = {
+        "all_rows": int(len(supported)),
+        "all_supported_rows": int(supported.sum()),
+        "train_rows": int(len(train_arr)),
+        "train_supported_rows": int(supported[train_arr].sum()),
+        "development_rows": int(len(dev_arr)),
+        "development_supported_rows": int(supported[dev_arr].sum()),
+        "oos_folds": fold_support,
+        "per_feature_non_null": per_feature,
+    }
+    _json_atomic(stage / "PHASE4_V3_SUPPORT_DIAGNOSTIC.json", support_diag)
+    print("PHASE4_V3_SUPPORT=" + json.dumps(support_diag, sort_keys=True), flush=True)
     outputs: dict[str, Any] = {
         "baseline": "V3_1_CONTRACT_RETRAINED_REFERENCE",
         "architecture": "30 numeric V3.1 features + train-only league one-hot + standardized SGDClassifier(log_loss)",
@@ -1177,7 +1206,9 @@ def _eval_v3_baseline(
         tr = np.asarray([i for i in train_idx if supported[i]], dtype=int)
         dv = np.asarray([i for i in dev_idx if supported[i]], dtype=int)
         if len(tr) < 1000 or len(dv) < 100:
-            raise Phase4Error("v3_development_support_too_low")
+            raise Phase4Error(
+                f"v3_development_support_too_low:train={len(tr)}:development={len(dv)}"
+            )
         pdev = _fit_v3_target(v3, leagues, y, tr, dv, target)
         dev_pred[dv] = pdev
         fold_metrics = []
