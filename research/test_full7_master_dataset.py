@@ -213,6 +213,23 @@ def test_validated_bundle_separates_label_and_records_null_paths(tmp_path):
     )
 
 
+def test_validated_bundle_treats_match_identity_season_as_label(tmp_path):
+    root, _ = make_population(tmp_path)
+    match_dir = root / "matches" / "101"
+    match_path = match_dir / "101_MatchDaten.json"
+    match_payload = json.loads(match_path.read_text(encoding="utf-8"))
+    match_payload["identity"]["season"] = "2025"
+    write_json(match_path, match_payload)
+    metadata_path = match_dir / "101_Metadata.json"
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    metadata["files_sha256"][match_path.name] = sha256(match_path)
+    write_json(metadata_path, metadata)
+
+    bundle = load_validated_bundle(root, 101, 7)
+
+    assert bundle.feature_sources["match"]["identity"]["season"] == "2025"
+
+
 def test_validated_bundle_rejects_payload_hash_mismatch(tmp_path):
     root, _ = make_population(tmp_path)
     path = root / "matches" / "101" / "101_FormDaten.json"
