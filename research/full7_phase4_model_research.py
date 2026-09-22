@@ -698,9 +698,15 @@ def _matrix_pass(master_path: Path, stage: Path) -> dict[str, Any]:
 
     if processed != EXPECTED_ROWS or len(set(match_ids)) != EXPECTED_ROWS:
         raise Phase4Error(f"phase4_master_population_mismatch:{processed}")
-    order = np.argsort(np.array([(kickoffs[i], match_ids[i]) for i in range(processed)], dtype=[("k", "i8"), ("m", "i8")]), order=("k", "m"))
-    if not np.array_equal(order, np.arange(processed)):
-        raise Phase4Error("cp2_master_not_chronologically_sorted")
+    # CP2 physical row order is frozen but is not required to be chronological.
+    # Phase 4 must be chronological, so derive a stable permutation without
+    # mutating/rebuilding CP2 and write every research row into that order.
+    order = np.asarray(
+        sorted(range(processed), key=lambda i: (kickoffs[i], match_ids[i])),
+        dtype=np.int64,
+    )
+    inverse_order = np.empty(processed, dtype=np.int64)
+    inverse_order[order] = np.arange(processed, dtype=np.int64)
 
     names = sorted(feature_names)
     index = {name: j for j, name in enumerate(names)}
@@ -720,12 +726,13 @@ def _matrix_pass(master_path: Path, stage: Path) -> dict[str, Any]:
                 continue
             row = json.loads(line)
             features, _groups = _extract_features(row)
+            target_index = int(inverse_order[row_index])
             for name, value in features.items():
-                X[row_index, index[name]] = value
+                X[target_index, index[name]] = value
             base, _league_name = _v3_base_record(row)
             if base is not None:
                 for j, name in enumerate(V3_NUMERIC):
-                    V3[row_index, j] = base[name]
+                    V3[target_index, j] = base[name]
             row_index += 1
             if row_index % 500 == 0:
                 X.flush()
@@ -738,15 +745,15 @@ def _matrix_pass(master_path: Path, stage: Path) -> dict[str, Any]:
 
     np.savez_compressed(
         stage / "PHASE4_LABELS.npz",
-        match_ids=np.asarray(match_ids, dtype=np.int64),
-        kickoffs=np.asarray(kickoffs, dtype=np.int64),
-        dates=np.asarray(dates, dtype="U10"),
-        leagues=np.asarray(leagues, dtype="U128"),
-        y1=np.asarray(y1, dtype=np.int8),
-        yb=np.asarray(yb, dtype=np.int8),
-        yo=np.asarray(yo, dtype=np.int8),
-        yh=np.asarray(yh, dtype=np.int16),
-        ya=np.asarray(ya, dtype=np.int16),
+        match_ids=np.asarray(match_ids, dtype=np.int64)[order],
+        kickoffs=np.asarray(kickoffs, dtype=np.int64)[order],
+        dates=np.asarray(dates, dtype="U10")[order],
+        leagues=np.asarray(leagues, dtype="U128")[order],
+        y1=np.asarray(y1, dtype=np.int8)[order],
+        yb=np.asarray(yb, dtype=np.int8)[order],
+        yo=np.asarray(yo, dtype=np.int8)[order],
+        yh=np.asarray(yh, dtype=np.int16)[order],
+        ya=np.asarray(ya, dtype=np.int16)[order],
     )
     meta = {
         "matrix_version": "FULL7_PHASE4_MATRIX_1.0",
@@ -756,6 +763,8 @@ def _matrix_pass(master_path: Path, stage: Path) -> dict[str, Any]:
         "feature_groups": {name: group_map[name] for name in names},
         "v3_numeric_features": list(V3_NUMERIC),
         "v3_supported_rows": v3_support,
+        "research_row_order": "chronological_by_kickoff_unix_then_match_id",
+        "cp2_physical_order_mutated": False,
         "created_at_utc": _utcnow(),
     }
     _json_atomic(matrix_meta_path, meta)
@@ -1737,18 +1746,15 @@ def run_phase4(cp2_dir: Path, cp3_dir: Path, output_dir: Path) -> dict[str, Any]
         "production_release_allowed": False,
     }
     _json_atomic(stage / "PHASE4_MODEL_RESEARCH.json", result)
-    manifest = _manifest(stage)
-    result["manifest_sha256"] = _sha256(stage / "PHASE4_MANIFEST.json")
-    _json_atomic(stage / "PHASE4_MODEL_RESEARCH.json", result)
-    # Refresh manifest once because final checkpoint gained manifest_sha256.
-    manifest = _manifest(stage)
+    _manifest(stage)
+    manifest_sha256 = _sha256(stage / "PHASE4_MANIFEST.json")
 
     if output_dir.exists():
         raise Phase4Error("phase4_output_appeared_during_publish")
     stage.rename(output_dir)
     print("PHASE4_MODEL_RESEARCH=PASS", flush=True)
     print("PHASE4_CANDIDATES=" + json.dumps(candidates, ensure_ascii=False, sort_keys=True), flush=True)
-    print("PHASE4_MANIFEST_SHA256=" + _sha256(output_dir / "PHASE4_MANIFEST.json"), flush=True)
+    print("PHASE4_MANIFEST_SHA256=" + manifest_sha256, flush=True)
     return result
 
 

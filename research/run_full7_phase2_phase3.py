@@ -494,7 +494,21 @@ def main() -> None:
                 output_root / "cp3",
                 output_root / "phase4",
             )
-            print(json.dumps(phase4, indent=2, ensure_ascii=False))
+            manifest_path = output_root / "phase4" / "PHASE4_MANIFEST.json"
+            print(
+                json.dumps(
+                    {
+                        "PHASE4_MODEL_RESEARCH": phase4.get("PHASE4_MODEL_RESEARCH"),
+                        "status": phase4.get("status"),
+                        "candidates": phase4.get("candidates"),
+                        "phase5_freeze_file": phase4.get("phase5_freeze_file"),
+                        "manifest_sha256": _sha256(manifest_path) if manifest_path.is_file() else None,
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                ),
+                flush=True,
+            )
             return
 
     if output_root.exists():
