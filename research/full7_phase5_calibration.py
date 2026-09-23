@@ -783,16 +783,22 @@ def _detail_metrics(target, y, p):
 
 
 def _loss_vectors(target, y, p):
+    """Per-match losses EXACTLY matching Phase-4 metric definitions.
+
+    Phase-4 metrics use 1e-7 clipping. Bootstrap point estimates must equal
+    the corresponding reported aggregate metric delta up to floating error.
+    """
     y = np.asarray(y, dtype=int)
     if target == "1X2":
-        q = _clip_multi(p)
+        q = np.clip(np.asarray(p, dtype=float), 1e-7, 1.0)
+        q = q / q.sum(axis=1, keepdims=True)
         ll = -np.log(q[np.arange(len(y)), y])
         one = np.zeros_like(q)
         one[np.arange(len(y)), y] = 1.0
         br = np.sum((q - one) ** 2, axis=1)
         return ll, br
-    q = _clip_binary(p)
-    ll = -(y * np.log(q) + (1 - y) * np.log1p(-q))
+    q = np.clip(np.asarray(p, dtype=float), 1e-7, 1.0 - 1e-7)
+    ll = -(y * np.log(q) + (1 - y) * np.log(1.0 - q))
     br = (q - y) ** 2
     return ll, br
 
@@ -985,9 +991,85 @@ def run_phase5(phase4_dir: Path, output_dir: Path):
     phase4 = Path(phase4_dir)
     output = Path(output_dir)
     if output.is_dir() and (output / "PHASE5_CALIBRATION_REPORT.json").is_file():
-        report = json.loads((output / "PHASE5_CALIBRATION_REPORT.json").read_text(encoding="utf-8"))
+        report_path = output / "PHASE5_CALIBRATION_REPORT.json"
+        report = json.loads(report_path.read_text(encoding="utf-8"))
         if report.get("PHASE5_CALIBRATION") == "PASS":
-            print("PHASE5_REUSE_PASS", flush=True)
+            if report.get("uncertainty_metric_definition") == "PHASE4_EXACT_CLIP_1E-7":
+                print("PHASE5_REUSE_PASS", flush=True)
+                return report
+
+            # One bounded QA repair of the uncertainty calculation only.
+            # Decision lock, calibrator selection, fitted parameters and raw OOS
+            # predictions stay byte-identical. No fit/selection is repeated.
+            validation = _validate_phase4(phase4)
+            lock_path = output / "PHASE5_CALIBRATION_DECISION_LOCK.json"
+            lock_sha_path = output / "PHASE5_CALIBRATION_DECISION_LOCK.sha256"
+            if not lock_path.is_file() or not lock_sha_path.is_file():
+                raise Phase5Error("phase5_existing_decision_lock_missing")
+            lock_sha = _sha256(lock_path)
+            expected_lock_sha = lock_sha_path.read_text(encoding="ascii").strip()
+            if lock_sha != expected_lock_sha:
+                raise Phase5Error("phase5_existing_decision_lock_hash_mismatch")
+            if lock_sha != report.get("PHASE5_CALIBRATION_DECISION_LOCK_SHA256"):
+                raise Phase5Error("phase5_report_lock_hash_mismatch")
+            decision_lock = json.loads(lock_path.read_text(encoding="utf-8"))
+
+            labels_npz = np.load(phase4 / "PHASE4_LABELS.npz")
+            labels = {k: labels_npz[k] for k in ("match_ids", "dates", "y1", "yb", "yo", "yh", "ya")}
+            splits = json.loads((phase4 / "PHASE4_SPLITS.json").read_text(encoding="utf-8"))
+
+            before_lock_hash = _sha256(lock_path)
+            corrected = _evaluate_oos_after_lock(output, phase4, labels, splits, decision_lock, lock_sha)
+            after_lock_hash = _sha256(lock_path)
+            if before_lock_hash != after_lock_hash:
+                raise Phase5Error("decision_lock_mutated_during_uncertainty_qa")
+
+            old_report_hash = _sha256(report_path)
+            report["targets"] = corrected["targets"]
+            report["uncertainty_metric_definition"] = "PHASE4_EXACT_CLIP_1E-7"
+            report["uncertainty_qa_correction"] = {
+                "status": "CORRECTED",
+                "reason": "bootstrap_loss_vectors_used_1e-8_while_phase4_metrics_use_1e-7",
+                "superseded_report_sha256": old_report_hash,
+                "decision_lock_unchanged": True,
+                "decision_lock_sha256": lock_sha,
+                "calibrator_selection_changed": False,
+                "fitted_parameters_changed": False,
+                "oos_predictions_changed": False,
+                "oos_used_for_fit": False,
+                "oos_used_for_selection": False,
+            }
+            _json_atomic(report_path, report)
+
+            lines = [
+                "FULL-7 PHASE 5 CALIBRATION — QA-CORRECTED",
+                f"PHASE5_CALIBRATION = {report['PHASE5_CALIBRATION']}",
+                f"PHASE5_CALIBRATION_DECISION_LOCK_SHA256 = {lock_sha}",
+                "UNCERTAINTY_METRIC_DEFINITION = PHASE4_EXACT_CLIP_1E-7",
+                "OOS_USED_FOR_FIT = false",
+                "OOS_USED_FOR_SELECTION = false",
+                "",
+            ]
+            for target in ("1X2", "BTTS", "O25"):
+                t = report["targets"][target]
+                agg = t["AGGREGATE_OOS_METRICS"]
+                lines += [
+                    f"[{target}]",
+                    f"MODEL_LOCK = {json.dumps(t['MODEL_LOCK'], sort_keys=True)}",
+                    f"SELECTED_CALIBRATOR = {t['SELECTED_CALIBRATOR']}",
+                    f"CALIBRATION_ACCEPTED = {str(t['CALIBRATION_ACCEPTED']).lower()}",
+                    f"PRE_LOGLOSS = {agg['PRE_CALIBRATION_METRICS']['logloss']:.12f}",
+                    f"POST_LOGLOSS = {agg['POST_CALIBRATION_METRICS']['logloss']:.12f}",
+                    f"PRE_BRIER = {agg['PRE_CALIBRATION_METRICS']['brier']:.12f}",
+                    f"POST_BRIER = {agg['POST_CALIBRATION_METRICS']['brier']:.12f}",
+                    f"PHASE6_READY = {str(t['PHASE6_READY']).lower()}",
+                    "",
+                ]
+            (output / "PHASE5_CALIBRATION_REPORT.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
+            _manifest(output)
+            print("PHASE5_UNCERTAINTY_QA_CORRECTED", flush=True)
+            print("PHASE5_DECISION_LOCK_UNCHANGED_SHA256=" + lock_sha, flush=True)
+            print("PHASE5_MANIFEST_SHA256=" + _sha256(output / "PHASE5_MANIFEST.json"), flush=True)
             return report
 
     validation = _validate_phase4(phase4)
@@ -1042,6 +1124,7 @@ def run_phase5(phase4_dir: Path, output_dir: Path):
         "Provider_Potentials": "UNAVAILABLE_IN_FROZEN_FULL7_PHASE4_INPUT",
         "phase4_model_locks_unchanged": MODEL_LOCKS,
         "phase4_feature_results_mutated": False,
+        "uncertainty_metric_definition": "PHASE4_EXACT_CLIP_1E-7",
         "collection_performed": False,
         "api_calls_performed": False,
         "phase4_rebuilt": False,
