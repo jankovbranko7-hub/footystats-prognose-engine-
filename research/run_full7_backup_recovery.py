@@ -218,6 +218,88 @@ def _search_artifacts() -> dict[str, Any]:
     }
 
 
+EXPECTED_PART_PLAN = [
+    ("part-0000.tar.enc", 13009, 805133453),
+    ("part-0001.tar.enc", 15834, 805203710),
+    ("part-0002.tar.enc", 15778, 805152728),
+    ("part-0003.tar.enc", 15817, 805255444),
+    ("part-0004.tar.enc", 15736, 805300103),
+    ("part-0005.tar.enc", 15879, 805252045),
+    ("part-0006.tar.enc", 16006, 805239493),
+    ("part-0007.tar.enc", 18034, 805104188),
+    ("part-0008.tar.enc", 15918, 805255219),
+    ("part-0009.tar.enc", 15839, 805289919),
+    ("part-0010.tar.enc", 16057, 805286239),
+    ("part-0011.tar.enc", 16406, 805173012),
+    ("part-0012.tar.enc", 15992, 805296642),
+    ("part-0013.tar.enc", 10955, 555087106),
+]
+
+
+def _partition_plan_diagnostic() -> dict[str, Any]:
+    records: list[tuple[str, int]] = []
+    with SOURCE_MANIFEST.open("r", encoding="utf-8") as fh:
+        header = fh.readline()
+        for line in fh:
+            line = line.rstrip("\n")
+            if not line:
+                continue
+            _sha, size_text, rel = line.split("\t", 2)
+            records.append((rel, int(size_text)))
+
+    meta = [
+        ("FULL7_BACKUP_INVENTORY.json", SOURCE_INVENTORY.stat().st_size),
+        ("FULL7_BACKUP_SHA256_MANIFEST.tsv", SOURCE_MANIFEST.stat().st_size),
+    ]
+    candidates = {
+        "SORT_ALL_RELATIVE_PATHS": sorted(records + meta, key=lambda item: item[0]),
+        "MANIFEST_ORDER_THEN_META_SORTED": records + sorted(meta),
+        "META_SORTED_THEN_MANIFEST_ORDER": sorted(meta) + records,
+        "MANIFEST_THEN_INVENTORY_THEN_SHA_MANIFEST": records + meta,
+        "SHA_MANIFEST_THEN_INVENTORY_THEN_MANIFEST": [meta[1], meta[0]] + records,
+    }
+
+    results: dict[str, Any] = {}
+    exact: list[str] = []
+    expected_total_count = sum(item[1] for item in EXPECTED_PART_PLAN)
+    expected_total_bytes = sum(item[2] for item in EXPECTED_PART_PLAN)
+    for name, ordered in candidates.items():
+        cursor = 0
+        parts = []
+        all_match = True
+        for part_name, expected_count, expected_bytes in EXPECTED_PART_PLAN:
+            group = ordered[cursor : cursor + expected_count]
+            actual_count = len(group)
+            actual_bytes = sum(size for _rel, size in group)
+            match = actual_count == expected_count and actual_bytes == expected_bytes
+            all_match = all_match and match
+            parts.append(
+                {
+                    "name": part_name,
+                    "expected_count": expected_count,
+                    "actual_count": actual_count,
+                    "expected_raw_bytes": expected_bytes,
+                    "actual_raw_bytes": actual_bytes,
+                    "match": match,
+                    "first": group[0][0] if group else None,
+                    "last": group[-1][0] if group else None,
+                }
+            )
+            cursor += expected_count
+        result = {
+            "record_count": len(ordered),
+            "record_bytes": sum(size for _rel, size in ordered),
+            "expected_total_count": expected_total_count,
+            "expected_total_bytes": expected_total_bytes,
+            "all_parts_match": all_match and cursor == len(ordered),
+            "parts": parts,
+        }
+        results[name] = result
+        if result["all_parts_match"]:
+            exact.append(name)
+    return {"exact_order_candidates": exact, "candidates": results}
+
+
 def run_backup_recovery_probe() -> dict[str, Any]:
     _require_authorized_runtime()
     print("FULL7_BACKUP_RECOVERY_MODE=READ_ONLY_PROBE", flush=True)
@@ -225,6 +307,8 @@ def run_backup_recovery_probe() -> dict[str, Any]:
     print("FULL7_BACKUP_RECOVERY_SOURCE=" + json.dumps(source, sort_keys=True), flush=True)
     artifacts = _search_artifacts()
     print("FULL7_BACKUP_RECOVERY_ARTIFACTS=" + json.dumps(artifacts, sort_keys=True), flush=True)
+    partition_plan = _partition_plan_diagnostic()
+    print("FULL7_BACKUP_RECOVERY_PARTITION_PLAN=" + json.dumps(partition_plan, sort_keys=True), flush=True)
     status = (
         "ORIGINAL_PARTS_FOUND_ALL"
         if artifacts["exact_original_part_count"] == 14
@@ -234,6 +318,7 @@ def run_backup_recovery_probe() -> dict[str, Any]:
         "status": status,
         "source": source,
         "artifacts": artifacts,
+        "partition_plan": partition_plan,
         "collection_performed": False,
         "api_calls_performed": False,
         "cp1_cp7_reexecuted": False,
