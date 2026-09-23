@@ -151,8 +151,30 @@ def _train_forward_folds(labels: Mapping[str, np.ndarray], train_idx: np.ndarray
     unique_dates = sorted({str(dates[i]) for i in train_idx})
     if len(unique_dates) < 20:
         raise Phase5Error("train_dates_too_few_for_forward_oof")
-    warmup_dates = max(5, int(len(unique_dates) * TRAIN_FORWARD_WARMUP_FRACTION))
+
+    # Warm-up is date-boundary safe, but its minimum is defined by actual rows,
+    # not by a fraction of unique dates. This prevents sparse early calendar
+    # periods from violating the pre-declared calibration-fit support floor.
+    by_date = {}
+    for d in unique_dates:
+        by_date[d] = int(sum(str(dates[i]) == d for i in train_idx))
+    required_warmup_rows = max(
+        MIN_CALIBRATION_FIT_N,
+        int(math.ceil(len(train_idx) * TRAIN_FORWARD_WARMUP_FRACTION)),
+    )
+    cumulative = 0
+    warmup_dates = 0
+    for d in unique_dates:
+        cumulative += by_date[d]
+        warmup_dates += 1
+        if cumulative >= required_warmup_rows:
+            break
+    if cumulative < required_warmup_rows:
+        raise Phase5Error(f"train_warmup_support_unreachable:{cumulative}:{required_warmup_rows}")
+
     remaining = unique_dates[warmup_dates:]
+    if len(remaining) < TRAIN_FORWARD_FOLDS:
+        raise Phase5Error("train_forward_remaining_dates_too_few")
     chunks = np.array_split(np.asarray(remaining, dtype=object), TRAIN_FORWARD_FOLDS)
     folds = []
     for n, chunk in enumerate(chunks, 1):
