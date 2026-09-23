@@ -10,7 +10,9 @@ class Full7HomepageV3Tests(unittest.TestCase):
         self.assertNotIn("SPIELEN nur BTTS", card)
         self.assertNotIn("1X2 und Totals hoechstens BEOBACHTEN", card)
         self.assertNotIn('<div class="b">BTTS</div>', script)
-        self.assertIn("1X2 | BTTS | TOTALS", card)
+        self.assertIn("FULL7_FINAL_RC_1.0.0", card)
+        self.assertIn("SPIELEN: HOME | AWAY | BTTS YES", card)
+        self.assertIn("O25/U25: HOLD", card)
         self.assertIn("contract.spielen_allowed_families", script)
         self.assertIn("allowedFamilies", script)
 
