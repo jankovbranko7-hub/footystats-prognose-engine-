@@ -1,4 +1,4 @@
-name: Verify Render legacy + FULL-7 Gated
+name: Verify Render legacy + FULL-7 Final
 
 on:
   push:
@@ -9,35 +9,34 @@ jobs:
   verify-render:
     runs-on: ubuntu-latest
     steps:
-      - name: Verify deployed legacy and FULL-7 Gated runtime
+      - name: Verify deployed legacy and FULL-7 Final runtime
         shell: bash
         run: |
           set -euo pipefail
           BASE="https://footystats-prognose-engine.onrender.com"
           HEALTH_URL="$BASE/api/health"
-          FULL7_HEALTH_URL="$BASE/api/full7/health"
           ENGINE_URL="$BASE/api/full7/engine-health"
-          SPEC_URL="$BASE/api/footystats-official-spec"
-          SHORTCUT_URL="$BASE/api/shortcut-api-schema"
           OPENAPI_URL="$BASE/openapi.json"
           PAGE_URL="$BASE/"
 
-          for i in $(seq 1 24); do
+          for i in $(seq 1 30); do
             HEALTH="$(curl -fsS --max-time 20 "$HEALTH_URL" 2>/dev/null || true)"
-            FULL7_HEALTH="$(curl -fsS --max-time 20 "$FULL7_HEALTH_URL" 2>/dev/null || true)"
             ENGINE="$(curl -fsS --max-time 20 "$ENGINE_URL" 2>/dev/null || true)"
-            SPEC="$(curl -fsS --max-time 20 "$SPEC_URL" 2>/dev/null || true)"
-            SHORTCUT="$(curl -fsS --max-time 20 "$SHORTCUT_URL" 2>/dev/null || true)"
             OPENAPI="$(curl -fsS --max-time 20 "$OPENAPI_URL" 2>/dev/null || true)"
             PAGE="$(curl -fsS --max-time 20 "$PAGE_URL" 2>/dev/null || true)"
 
             echo "attempt=$i"
-            if echo "$HEALTH" | python -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok") is True'               && echo "$FULL7_HEALTH" | python -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok") is True and d.get("version")=="1.0.0-full7-validation" and d.get("expected_files")==7 and d.get("production_wired") is True and d.get("market_model_readiness",{}).get("BTTS")=="OOS_VALIDATED_SELECTIVE" and d.get("recommendation_family")=="BTTS"'               && echo "$ENGINE" | python -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok") is True and d.get("engine")=="FOOTYSTATS_FULL7_GATED" and d.get("engine_version")=="FULL7_GATED_1.0.0" and d.get("model_contract_version")=="FULL7_MODEL_CONTRACT_1.0" and d.get("decision_gate_version")=="FULL7_BTTS_DECISION_GATE_0.1" and d.get("expected_files")==7 and d.get("production_wired") is True and d.get("family_readiness",{}).get("1X2")=="OOS_OBSERVE_ONLY" and d.get("family_readiness",{}).get("BTTS")=="OOS_VALIDATED_SELECTIVE" and d.get("family_readiness",{}).get("TOTALS")=="OOS_OBSERVE_ONLY" and d.get("recommendation_family")=="BTTS" and d.get("non_btts_recommendation") is False'               && echo "$SPEC" | python -c 'import json,sys; d=json.load(sys.stdin); assert d.get("schema_version")=="1.1"'               && echo "$SHORTCUT" | python -c 'import json,sys; d=json.load(sys.stdin); assert d.get("schema_version")=="1.1"'               && echo "$OPENAPI" | python -c 'import json,sys; p=json.load(sys.stdin).get("paths",{}); required={"/api/predict-bundle","/api/full7/health","/api/full7/validate","/api/full7/engine-health","/api/full7/predict"}; assert required.issubset(p)'               && grep -Fq 'SPEC v1.1' <<<"$PAGE"; then
-              echo "Render legacy compatibility + FULL7_GATED_1.0.0 verified"
+            if echo "$HEALTH" | python -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok") is True' \
+              && echo "$ENGINE" | python -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok") is True and d.get("runtime_ready") is True and d.get("engine")=="FOOTYSTATS_FULL7_FINAL" and d.get("engine_version")=="FULL7_FINAL_RC_1.0.0" and d.get("expected_files")==7 and d.get("probability_mode_no_odds") is True and d.get("spielen_allowed_families")==["HOME","AWAY","BTTS_YES"] and d.get("draw_status")=="AUSLASSEN_ONLY" and d.get("btts_no_status")=="BEOBACHTEN_ONLY" and d.get("o25_status")=="HOLD" and d.get("legacy_v3_1_override_active") is False' \
+              && echo "$OPENAPI" | python -c 'import json,sys; p=json.load(sys.stdin).get("paths",{}); required={"/api/predict-bundle","/api/full7/health","/api/full7/validate","/api/full7/engine-health","/api/full7/predict"}; assert required.issubset(p)' \
+              && grep -Fq 'FULL7_FINAL_RC_1.0.0' <<<"$PAGE" \
+              && grep -Fq 'SPIELEN: HOME | AWAY | BTTS YES' <<<"$PAGE" \
+              && grep -Fq 'O25/U25: HOLD' <<<"$PAGE"; then
+              echo "Render legacy compatibility + FULL7_FINAL_RC_1.0.0 verified"
               exit 0
             fi
             sleep 10
           done
 
-          echo "Render did not expose the expected legacy + FULL7_GATED_1.0.0 deployment"
+          echo "Render did not expose the expected FULL7_FINAL_RC_1.0.0 deployment"
           exit 1
