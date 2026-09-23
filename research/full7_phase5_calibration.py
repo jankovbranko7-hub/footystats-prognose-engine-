@@ -995,6 +995,64 @@ def run_phase5(phase4_dir: Path, output_dir: Path):
         report = json.loads(report_path.read_text(encoding="utf-8"))
         if report.get("PHASE5_CALIBRATION") == "PASS":
             if report.get("uncertainty_metric_definition") == "PHASE4_EXACT_CLIP_1E-7":
+                if report.get("final_compliance_qa_version") != "PHASE5_FINAL_COMPLIANCE_QA_1.0":
+                    # Final fail-closed policy audit uses PRE-OOS DEVELOPMENT
+                    # candidate evidence only. It may reject a locked calibration,
+                    # but can never select an alternative after OOS was observed.
+                    dev_path = output / "PHASE5_CALIBRATOR_DEVELOPMENT_COMPARISON.json"
+                    if not dev_path.is_file():
+                        raise Phase5Error("phase5_development_calibrator_comparison_missing")
+                    dev = json.loads(dev_path.read_text(encoding="utf-8"))
+                    compliance = {}
+                    for target in ("1X2", "BTTS", "O25"):
+                        t = report["targets"][target]
+                        selected = t["SELECTED_CALIBRATOR"]
+                        locked_acceptance = bool(t["CALIBRATION_ACCEPTED"])
+                        t["PREOOS_LOCK_CALIBRATION_ACCEPTED"] = locked_acceptance
+                        if selected == "IDENTITY":
+                            compliance[target] = {
+                                "status": "IDENTITY_NO_NONIDENTITY_CALIBRATION_ACCEPTED",
+                                "selected_calibrator": selected,
+                                "final_calibration_accepted": False,
+                                "source": "PREOOS_DEVELOPMENT_ONLY",
+                            }
+                            t["CALIBRATION_ACCEPTED"] = False
+                            continue
+                        cand = dev["targets"][target]["candidates"][selected]
+                        diag = cand.get("selection_diagnostic") or {}
+                        delta_mce = diag.get("delta_mce_vs_identity")
+                        strict_mce_stable = delta_mce is not None and float(delta_mce) <= 0.0
+                        compliance[target] = {
+                            "status": "PASS" if strict_mce_stable else "FAIL_CLOSED",
+                            "selected_calibrator": selected,
+                            "preoos_delta_mce_vs_identity": delta_mce,
+                            "strict_mce_stability_rule": "selected calibrator aggregate PRE-OOS MCE must not exceed IDENTITY MCE",
+                            "strict_mce_stability_pass": bool(strict_mce_stable),
+                            "source": "PREOOS_DEVELOPMENT_ONLY",
+                            "no_alternative_selected_after_oos": True,
+                        }
+                        if not strict_mce_stable:
+                            t["CALIBRATION_ACCEPTED"] = False
+                            t["PHASE6_READY"] = False
+                            t["FINAL_CALIBRATION_REJECTION_REASON"] = (
+                                "FAIL_CLOSED_PREOOS_MCE_INSTABILITY__NO_POST_OOS_ALTERNATIVE_SELECTION"
+                            )
+                    report["final_compliance_qa_version"] = "PHASE5_FINAL_COMPLIANCE_QA_1.0"
+                    report["final_compliance_qa"] = compliance
+                    _json_atomic(report_path, report)
+                    _json_atomic(output / "PHASE5_FINAL_COMPLIANCE_QA.json", {
+                        "version": "PHASE5_FINAL_COMPLIANCE_QA_1.0",
+                        "created_at_utc": _utcnow(),
+                        "decision_lock_sha256": report["PHASE5_CALIBRATION_DECISION_LOCK_SHA256"],
+                        "decision_lock_mutated": False,
+                        "oos_used_for_compliance_decision": False,
+                        "alternative_calibrator_selected_after_oos": False,
+                        "targets": compliance,
+                    })
+                    _manifest(output)
+                    print("PHASE5_FINAL_COMPLIANCE_QA_APPLIED", flush=True)
+                    print("PHASE5_DECISION_LOCK_UNCHANGED_SHA256=" + report["PHASE5_CALIBRATION_DECISION_LOCK_SHA256"], flush=True)
+                    print("PHASE5_MANIFEST_SHA256=" + _sha256(output / "PHASE5_MANIFEST.json"), flush=True)
                 print("PHASE5_REUSE_PASS", flush=True)
                 return report
 
