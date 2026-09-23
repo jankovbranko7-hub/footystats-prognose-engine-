@@ -655,6 +655,128 @@ def main() -> None:
                     ),
                     flush=True,
                 )
+
+                # Read-only Phase-5 final receipt. No fit, selection, prediction,
+                # thresholding or artifact mutation occurs here.
+                dev_cal = json.loads(
+                    (phase5_dir / "PHASE5_CALIBRATOR_DEVELOPMENT_COMPARISON.json").read_text(encoding="utf-8")
+                )
+                for target in ("1X2", "BTTS", "O25"):
+                    obj = phase5["targets"][target]
+                    candidate_receipt = {}
+                    for name, cand in dev_cal["targets"][target]["candidates"].items():
+                        if cand.get("status") != "COMPLETE":
+                            candidate_receipt[name] = {
+                                "status": cand.get("status"),
+                                "error": cand.get("error"),
+                                "eligible": False,
+                            }
+                            continue
+                        metrics = cand["aggregate_metrics"]
+                        candidate_receipt[name] = {
+                            "status": "COMPLETE",
+                            "n": metrics.get("n"),
+                            "logloss": metrics.get("logloss"),
+                            "brier": metrics.get("brier"),
+                            "accuracy": metrics.get("accuracy"),
+                            "ece_10": metrics.get("ece_10"),
+                            "mce_10": metrics.get("mce_10"),
+                            "toplabel_ece_10": metrics.get("toplabel_ece_10"),
+                            "toplabel_mce_10": metrics.get("toplabel_mce_10"),
+                            "selection_diagnostic": cand.get("selection_diagnostic"),
+                        }
+                    print(
+                        f"PHASE5_CANDIDATES_{target}="
+                        + json.dumps(candidate_receipt, ensure_ascii=False, sort_keys=True),
+                        flush=True,
+                    )
+
+                    def compact_metrics(metrics):
+                        return {
+                            "n": metrics.get("n"),
+                            "logloss": metrics.get("logloss"),
+                            "brier": metrics.get("brier"),
+                            "accuracy": metrics.get("accuracy"),
+                            "ece_10": metrics.get("ece_10"),
+                            "mce_10": metrics.get("mce_10"),
+                            "toplabel_ece_10": metrics.get("toplabel_ece_10"),
+                            "toplabel_mce_10": metrics.get("toplabel_mce_10"),
+                            "calibration_slope_intercept": metrics.get("calibration_slope_intercept"),
+                            "sum_to_one_coherence": metrics.get("sum_to_one_coherence"),
+                            "class_calibration": {
+                                k: {
+                                    "ece_10": v.get("ece_10"),
+                                    "mce_10": v.get("mce_10"),
+                                    "calibration_slope_intercept": v.get("calibration_slope_intercept"),
+                                }
+                                for k, v in (metrics.get("class_calibration") or {}).items()
+                            } or None,
+                            "probability_distribution": metrics.get("probability_distribution"),
+                        }
+
+                    split_receipt = {}
+                    for split_name in ("OOS1_METRICS", "OOS2_METRICS", "OOS3_METRICS"):
+                        split_obj = obj[split_name]
+                        split_receipt[split_name] = {
+                            "pre": compact_metrics(split_obj["PRE_CALIBRATION_METRICS"]),
+                            "post": compact_metrics(split_obj["POST_CALIBRATION_METRICS"]),
+                            "prior": compact_metrics(split_obj["ROLLING_PRIOR_METRICS"]),
+                            "paired": split_obj["ROLLING_PRIOR_PAIRED_COMPARISON"],
+                        }
+                    agg = obj["AGGREGATE_OOS_METRICS"]
+                    split_receipt["AGGREGATE"] = {
+                        "pre": compact_metrics(agg["PRE_CALIBRATION_METRICS"]),
+                        "post": compact_metrics(agg["POST_CALIBRATION_METRICS"]),
+                        "prior": compact_metrics(agg["ROLLING_PRIOR_METRICS"]),
+                        "paired": agg["ROLLING_PRIOR_PAIRED_COMPARISON"],
+                    }
+                    print(
+                        f"PHASE5_METRICS_{target}="
+                        + json.dumps(split_receipt, ensure_ascii=False, sort_keys=True),
+                        flush=True,
+                    )
+                    print(
+                        f"PHASE5_UNCERTAINTY_{target}="
+                        + json.dumps(
+                            {
+                                "fold_stability": obj["OOS_FOLD_STABILITY"],
+                                "uncertainty": obj["UNCERTAINTY_RESULT"],
+                                "coherence": obj["1X2_COHERENCE_CHECK"],
+                                "selected_calibrator": obj["SELECTED_CALIBRATOR"],
+                                "calibration_accepted": obj["CALIBRATION_ACCEPTED"],
+                                "phase6_ready": obj["PHASE6_READY"],
+                            },
+                            ensure_ascii=False,
+                            sort_keys=True,
+                        ),
+                        flush=True,
+                    )
+                    for split_name, split_obj in [
+                        ("OOS1", obj["OOS1_METRICS"]),
+                        ("OOS2", obj["OOS2_METRICS"]),
+                        ("OOS3", obj["OOS3_METRICS"]),
+                        ("AGGREGATE", obj["AGGREGATE_OOS_METRICS"]),
+                    ]:
+                        print(
+                            f"PHASE5_BINS_{target}_{split_name}="
+                            + json.dumps(
+                                {
+                                    "pre": {
+                                        "reliability_bins": split_obj["PRE_CALIBRATION_METRICS"].get("reliability_bins"),
+                                        "toplabel_reliability_bins": split_obj["PRE_CALIBRATION_METRICS"].get("toplabel_reliability_bins"),
+                                        "class_calibration": split_obj["PRE_CALIBRATION_METRICS"].get("class_calibration"),
+                                    },
+                                    "post": {
+                                        "reliability_bins": split_obj["POST_CALIBRATION_METRICS"].get("reliability_bins"),
+                                        "toplabel_reliability_bins": split_obj["POST_CALIBRATION_METRICS"].get("toplabel_reliability_bins"),
+                                        "class_calibration": split_obj["POST_CALIBRATION_METRICS"].get("class_calibration"),
+                                    },
+                                },
+                                ensure_ascii=False,
+                                sort_keys=True,
+                            ),
+                            flush=True,
+                        )
             return
 
     if output_root.exists():
