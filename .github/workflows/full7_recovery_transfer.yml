@@ -30,7 +30,7 @@ jobs:
         id: download
         run: |
           set -euo pipefail
-          REQ="$(tr -d '\r\n' < .github/FULL7_RECOVERY_REQUEST.txt)"
+          REQ="$(head -n1 .github/FULL7_RECOVERY_REQUEST.txt | tr -d '\r\n')"
           case "$REQ" in
             index.json|part-[0-9][0-9][0-9][0-9].tar.enc) ;;
             *) echo "Invalid request: $REQ" >&2; exit 2 ;;
@@ -44,7 +44,43 @@ jobs:
           echo "bytes=$BYTES" >> "$GITHUB_OUTPUT"
           echo "sha256=$SHA" >> "$GITHUB_OUTPUT"
 
-      - name: Upload transfer artifact
+      - name: Split large encrypted part for connector-safe transfer
+        if: startsWith(steps.download.outputs.req, 'part-')
+        run: |
+          set -euo pipefail
+          REQ="${{ steps.download.outputs.req }}"
+          split -b 450000000 -d -a 2 "$REQ" "$REQ.chunk-"
+          ls -lh "$REQ".chunk-*
+          sha256sum "$REQ".chunk-* > FULL7_CHUNK_SHA256.txt
+          stat -c '%n %s' "$REQ".chunk-* > FULL7_CHUNK_SIZES.txt
+
+      - name: Upload chunk 00
+        if: startsWith(steps.download.outputs.req, 'part-')
+        uses: actions/upload-artifact@v4
+        with:
+          name: full7-recovery-${{ steps.download.outputs.req }}-chunk-00
+          path: |
+            ${{ steps.download.outputs.req }}.chunk-00
+            FULL7_TRANSFER_RECEIPT.json
+            FULL7_CHUNK_SHA256.txt
+            FULL7_CHUNK_SIZES.txt
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
+
+      - name: Upload chunk 01
+        if: startsWith(steps.download.outputs.req, 'part-')
+        uses: actions/upload-artifact@v4
+        with:
+          name: full7-recovery-${{ steps.download.outputs.req }}-chunk-01
+          path: |
+            ${{ steps.download.outputs.req }}.chunk-01
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
+
+      - name: Upload small transfer artifact
+        if: "!startsWith(steps.download.outputs.req, 'part-')"
         uses: actions/upload-artifact@v4
         with:
           name: full7-recovery-${{ steps.download.outputs.req }}
