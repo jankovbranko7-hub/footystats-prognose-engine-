@@ -1,0 +1,33 @@
+{
+  "all_artifacts_verified": true,
+  "artifact_count": 6,
+  "artifacts": {
+    "FINAL_DECISION_DEPENDENCY_AUDIT.json": {
+      "bytes": 315,
+      "sha256": "cec6027956c40ee55a22efb2dabeaa6b631e9bf04f7f1e8fc68a4545150867be"
+    },
+    "FROZEN_ARTIFACT_HASH_AUDIT.json": {
+      "bytes": 8474,
+      "sha256": "602b7fdf032e691c07f2975204f1c5733d6ab37f263cc38aeaa4d5e28339b64a"
+    },
+    "FULL7_FINAL_AUDIT.json": {
+      "bytes": 3535,
+      "sha256": "1669454dfaa9caa52066bf8d5e02335c7ccc3d00fb3f1ef2164da2740cddfb24"
+    },
+    "FULL7_FINAL_AUDIT.txt": {
+      "bytes": 2039,
+      "sha256": "caaeddeae537bc0b0e7620fc3fcbfc83a090d62244a9423760a70ceffaddd72e"
+    },
+    "FULL7_FINAL_RC_BUNDLE.pkl.gz": {
+      "bytes": 530399,
+      "sha256": "4e30976c04bd0b1cdfaff4c1def1f88753bbee6f016d617ae00b5536a530ee2b"
+    },
+    "SHADOW_COMPARISON_V3_1_VS_FULL7_RC.json": {
+      "bytes": 134,
+      "sha256": "117490112835297483122c8cfaa564288e83c42971b5ff195b6e69acc3004265"
+    }
+  },
+  "manifest": "/var/data/full7/derived/full7_phase2_phase3_2026-09-22/phase7_rc/FULL7_FINAL_RC_1.0.0/FULL7_FINAL_RC_MANIFEST.json",
+  "manifest_sha256": "1a10d825b027eee793d3a91b70ace13ca6620f1907fc950f90e3c364a9c577b2"
+}
+
