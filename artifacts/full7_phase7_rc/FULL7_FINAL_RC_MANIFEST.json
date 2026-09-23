@@ -1,0 +1,32 @@
+{
+  "schema": "FULL7_PHASE7_RC_PACKAGE_MANIFEST_1.0",
+  "release_candidate_version": "FULL7_FINAL_RC_1.0.0",
+  "source_build_commit": "176c39e82b0d36db33241d7093ff178bde732932",
+  "artifacts": {
+    "FULL7_FINAL_RC_BUNDLE.pkl.gz": {
+      "bytes": 530399,
+      "sha256": "4e30976c04bd0b1cdfaff4c1def1f88753bbee6f016d617ae00b5536a530ee2b"
+    }
+  },
+  "frozen_locks": {
+    "phase5_calibration_decision_lock_sha256": "cb48662360cd66b4e7daaf84ff47294c04d8bb7983e3da9cceecc30207984a99",
+    "phase5_manifest_sha256": "189057b6bc81c0e86b1eb1eb7d131e9592c320dd01f7a4ccaaf9b46ae885ab1a",
+    "phase6_decision_lock_sha256": "627f581e0e3a11c099166abdc792566a7a8fb5e8d252e748fc8e43457813829e",
+    "phase6_manifest_sha256": "dff0689bfa2c81bb7c7c9f0b1ce9beeb4dd3bcbd6de4779ee205d86dbe15cca4"
+  },
+  "fit_provenance": {
+    "train_rows": 8082,
+    "development_rows": 2503,
+    "fit_rows": 10585,
+    "oos_rows_available_but_unopened_for_fit": 5552,
+    "oos_rows_used_for_fit": 0,
+    "fit_row_indices_sha256": "f95e4881cd8dff57afdfaf576b99dd5bf434271efaa7c8baf8a0b10b3dbd0b82"
+  },
+  "worker_artifact_audit": {
+    "artifact_count": 6,
+    "all_artifacts_verified": true,
+    "manifest_sha256": "1a10d825b027eee793d3a91b70ace13ca6620f1907fc950f90e3c364a9c577b2"
+  },
+  "production_changed": false,
+  "main_changed": false
+}
