@@ -578,6 +578,28 @@ def main() -> None:
                     flush=True,
                 )
                 print("PHASE4_PHASE5_FREEZE=" + json.dumps(freeze, ensure_ascii=False, sort_keys=True), flush=True)
+
+                oos_result = json.loads((phase4_dir / "PHASE4_LOCKED_OOS_RESULTS.json").read_text(encoding="utf-8"))
+                oos_compact = {}
+                for target, target_obj in oos_result.get("targets", {}).items():
+                    metrics = target_obj.get("oos_metrics") or {}
+                    prior = target_obj.get("rolling_prior_metrics") or {}
+                    oos_compact[target] = {
+                        "variant": target_obj.get("variant"),
+                        "feature_count": target_obj.get("feature_count"),
+                        "n": metrics.get("n"),
+                        "logloss": metrics.get("logloss"),
+                        "brier": metrics.get("brier"),
+                        "accuracy": metrics.get("accuracy"),
+                        "ece_10": metrics.get("ece_10"),
+                        "mce_10": metrics.get("mce_10"),
+                        "toplabel_ece_10": metrics.get("toplabel_ece_10"),
+                        "toplabel_mce_10": metrics.get("toplabel_mce_10"),
+                        "rolling_prior_logloss": prior.get("logloss"),
+                        "rolling_prior_brier": prior.get("brier"),
+                    }
+                print("PHASE4_OOS_METRICS=" + json.dumps(oos_compact, ensure_ascii=False, sort_keys=True), flush=True)
+
                 print(
                     "PHASE4_KEY_HASHES=" + json.dumps(
                         {
