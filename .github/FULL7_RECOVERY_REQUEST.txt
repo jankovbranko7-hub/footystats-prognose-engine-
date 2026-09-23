@@ -1,1 +1,2 @@
 part-0000.tar.enc
+retry=chunked
