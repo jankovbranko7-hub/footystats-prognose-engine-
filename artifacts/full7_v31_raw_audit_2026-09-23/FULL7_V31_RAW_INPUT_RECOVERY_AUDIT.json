@@ -1,0 +1,62 @@
+{
+  "audit": "FULL7_V31_RAW_INPUT_RECOVERY_AUDIT_1.0",
+  "status": "COMPLETE",
+  "completed_at_utc": "2026-09-23T16:52:35.538513+00:00",
+  "source_commit": "73a72e57704e13e2aed66887d426be852b1efdba",
+  "render_service_id": "srv-damiu0p42hec739a0rig",
+  "rows_scanned": 16137,
+  "oos_rows": 5552,
+  "unique_prematch_raw_hashes_scanned": 11893,
+  "source_manifest_sha256": "86c05accd2f1cb56e5afed13057b5dbb2e857e847b5dd75d927863e7879999d6",
+  "source_inventory_sha256": "ebe438fbacf2d35315bd2ed7d80dac2ed44468e0e3ada9d1d98ead066b91a304",
+  "strict_cutoff_contract": "requested_max_time == kickoff_unix - 1",
+  "fields": {
+    "fs_xg_prematch_heim": {
+      "provider_key": "team_a_xg_prematch",
+      "numeric_non_null_all": 0,
+      "numeric_non_null_oos": 0
+    },
+    "fs_xg_prematch_aus": {
+      "provider_key": "team_b_xg_prematch",
+      "numeric_non_null_all": 0,
+      "numeric_non_null_oos": 0
+    },
+    "fs_o25_potential": {
+      "provider_key": "o25_potential",
+      "numeric_non_null_all": 0,
+      "numeric_non_null_oos": 0
+    },
+    "fs_btts_potential": {
+      "provider_key": "btts_potential",
+      "numeric_non_null_all": 0,
+      "numeric_non_null_oos": 0
+    },
+    "fs_avg_potential": {
+      "provider_key": "avg_potential",
+      "numeric_non_null_all": 0,
+      "numeric_non_null_oos": 0
+    },
+    "fs_pre_ppg_heim": {
+      "provider_key": "pre_match_home_ppg",
+      "numeric_non_null_all": 0,
+      "numeric_non_null_oos": 0
+    },
+    "fs_pre_ppg_aus": {
+      "provider_key": "pre_match_away_ppg",
+      "numeric_non_null_all": 0,
+      "numeric_non_null_oos": 0
+    }
+  },
+  "complete_v31_base_rows_all": 0,
+  "complete_v31_base_rows_oos": 0,
+  "collector_projection_mismatch_total": 0,
+  "V3_1_RAW_RECOVERY": "NOT_POSSIBLE",
+  "V3_1_SAME_COHORT_OOS_RECOVERY": "NOT_POSSIBLE",
+  "collection_performed": false,
+  "api_calls_performed": false,
+  "training_performed": false,
+  "calibration_changed": false,
+  "rc_changed": false,
+  "main_changed": false,
+  "production_changed": false
+}
