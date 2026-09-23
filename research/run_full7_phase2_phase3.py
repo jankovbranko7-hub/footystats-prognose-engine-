@@ -458,6 +458,15 @@ def execute_phase2_phase3(
     return result
 
 
+def _phase7_worker_authorized(*, service_id: str | None, branch: str | None, enabled: str) -> bool:
+    return (
+        service_id == "srv-damiu0p42hec739a0rig"
+        and branch
+        in {"audit/full7-cp2-20260922", "release/full7-final-rc-1.0.0"}
+        and enabled.strip().lower() == "true"
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", default="/var/data/full7/output")
@@ -482,6 +491,17 @@ def main() -> None:
         os.environ.get("RENDER_SERVICE_ID") == "srv-damiu0p42hec739a0rig"
         and os.environ.get("RENDER_GIT_BRANCH") == "audit/full7-cp2-20260922"
     )
+    phase7_authorized = _phase7_worker_authorized(
+        service_id=os.environ.get("RENDER_SERVICE_ID"),
+        branch=os.environ.get("RENDER_GIT_BRANCH"),
+        enabled=os.environ.get("RUN_FULL7_PHASE7_ONESHOT", "false"),
+    )
+    if phase7_authorized:
+        from research.run_full7_phase7_only import run_phase7_only
+        phase7_receipt = run_phase7_only(output_root)
+        print("FULL7_PHASE7_ONLY_EXIT=0", flush=True)
+        print(json.dumps(phase7_receipt, ensure_ascii=False, sort_keys=True), flush=True)
+        return
     if phase6_worker:
         from research.run_full7_phase6_only import run_phase6_only
         phase6_receipt = run_phase6_only(output_root)
