@@ -297,7 +297,62 @@ def _partition_plan_diagnostic() -> dict[str, Any]:
         results[name] = result
         if result["all_parts_match"]:
             exact.append(name)
-    return {"exact_order_candidates": exact, "candidates": results}
+    threshold = 805306368  # 768 MiB
+    greedy_results: dict[str, Any] = {}
+    greedy_exact: list[str] = []
+    for name, ordered in candidates.items():
+        parts: list[list[tuple[str, int]]] = []
+        current: list[tuple[str, int]] = []
+        current_bytes = 0
+        for item in ordered:
+            item_size = item[1]
+            if current and current_bytes + item_size > threshold:
+                parts.append(current)
+                current = []
+                current_bytes = 0
+            current.append(item)
+            current_bytes += item_size
+        if current:
+            parts.append(current)
+        observed = []
+        all_match = len(parts) == len(EXPECTED_PART_PLAN)
+        for idx, group in enumerate(parts):
+            count = len(group)
+            raw_bytes = sum(size for _rel, size in group)
+            expected_name = EXPECTED_PART_PLAN[idx][0] if idx < len(EXPECTED_PART_PLAN) else None
+            expected_count = EXPECTED_PART_PLAN[idx][1] if idx < len(EXPECTED_PART_PLAN) else None
+            expected_bytes = EXPECTED_PART_PLAN[idx][2] if idx < len(EXPECTED_PART_PLAN) else None
+            match = count == expected_count and raw_bytes == expected_bytes
+            if not match:
+                all_match = False
+            observed.append(
+                {
+                    "name": expected_name,
+                    "count": count,
+                    "raw_bytes": raw_bytes,
+                    "expected_count": expected_count,
+                    "expected_raw_bytes": expected_bytes,
+                    "match": match,
+                    "first": group[0][0] if group else None,
+                    "last": group[-1][0] if group else None,
+                }
+            )
+        greedy_results[name] = {
+            "threshold_bytes": threshold,
+            "part_count": len(parts),
+            "all_parts_match": all_match,
+            "parts": observed,
+        }
+        if all_match:
+            greedy_exact.append(name)
+
+    return {
+        "exact_order_candidates": exact,
+        "candidates": results,
+        "greedy_threshold_bytes": threshold,
+        "greedy_exact_order_candidates": greedy_exact,
+        "greedy_candidates": greedy_results,
+    }
 
 
 def run_backup_recovery_probe() -> dict[str, Any]:
