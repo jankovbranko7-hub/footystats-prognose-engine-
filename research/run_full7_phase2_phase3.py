@@ -494,14 +494,13 @@ def main() -> None:
                 output_root / "cp3",
                 output_root / "phase4",
             )
-            manifest_path = output_root / "phase4" / "PHASE4_MANIFEST.json"
+            phase4_dir = output_root / "phase4"
+            manifest_path = phase4_dir / "PHASE4_MANIFEST.json"
             print(
                 json.dumps(
                     {
                         "PHASE4_MODEL_RESEARCH": phase4.get("PHASE4_MODEL_RESEARCH"),
                         "status": phase4.get("status"),
-                        "candidates": phase4.get("candidates"),
-                        "phase5_freeze_file": phase4.get("phase5_freeze_file"),
                         "manifest_sha256": _sha256(manifest_path) if manifest_path.is_file() else None,
                     },
                     ensure_ascii=False,
@@ -509,6 +508,100 @@ def main() -> None:
                 ),
                 flush=True,
             )
+
+            # Readout-only receipt for the already frozen Phase-4 artifacts.
+            # This performs no fitting, mutation, collection or CP2/CP3 work.
+            if phase4.get("PHASE4_MODEL_RESEARCH") == "PASS":
+                from collections import Counter
+                ablation = json.loads((phase4_dir / "PHASE4_GROUP_ABLATIONS_DEVELOPMENT.json").read_text(encoding="utf-8"))
+                dev_models = json.loads((phase4_dir / "PHASE4_DEVELOPMENT_MODEL_COMPARISON.json").read_text(encoding="utf-8"))
+                selection = json.loads((phase4_dir / "PHASE4_FEATURE_SELECTION.json").read_text(encoding="utf-8"))
+                freeze = json.loads((phase4_dir / "PHASE4_PHASE5_FREEZE.json").read_text(encoding="utf-8"))
+                coverage = json.loads((phase4_dir / "PHASE4_V3_COVERAGE_DIAGNOSTIC_V2.json").read_text(encoding="utf-8"))
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+                group_summary = {}
+                for target, target_obj in ablation.get("targets", {}).items():
+                    group_summary[target] = {
+                        "locked_feature_count": target_obj.get("locked_feature_count"),
+                        "supported_groups": target_obj.get("supported_groups"),
+                        "groups": {
+                            group: {
+                                "development_support": info.get("development_support"),
+                                "feature_count": info.get("feature_count"),
+                                "aggregate_logloss_deterioration_when_removed": info.get("aggregate_logloss_deterioration_when_removed"),
+                                "aggregate_brier_deterioration_when_removed": info.get("aggregate_brier_deterioration_when_removed"),
+                                "positive_logloss_segments": info.get("positive_logloss_segments"),
+                            }
+                            for group, info in target_obj.get("groups", {}).items()
+                        },
+                    }
+                print("PHASE4_GROUP_SUMMARY=" + json.dumps(group_summary, ensure_ascii=False, sort_keys=True), flush=True)
+
+                model_summary = {}
+                for target, target_obj in dev_models.get("targets", {}).items():
+                    model_summary[target] = {
+                        "selected_for_oos": target_obj.get("selected_for_oos"),
+                        "development_rank": target_obj.get("development_rank"),
+                        "locked_feature_count": target_obj.get("locked_feature_count"),
+                        "variants": {
+                            name: {
+                                "metrics": info.get("metrics"),
+                                "folds": info.get("folds"),
+                            }
+                            for name, info in target_obj.get("variants", {}).items()
+                        },
+                    }
+                print("PHASE4_DEV_MODEL_SUMMARY=" + json.dumps(model_summary, ensure_ascii=False, sort_keys=True), flush=True)
+
+                excluded_reason_counts = Counter()
+                excluded_group_counts = Counter()
+                for row in selection.get("excluded_features", []):
+                    excluded_group_counts[str(row.get("group"))] += 1
+                    for reason in row.get("reasons", []):
+                        excluded_reason_counts[str(reason)] += 1
+                print(
+                    "PHASE4_EXCLUSION_SUMMARY=" + json.dumps(
+                        {
+                            "selected_feature_count": selection.get("selected_feature_count"),
+                            "core_feature_count": selection.get("core_feature_count"),
+                            "full_research_feature_count": selection.get("full_research_feature_count"),
+                            "stable_base_feature_count": selection.get("stable_base_feature_count"),
+                            "group_counts": selection.get("group_counts"),
+                            "excluded_feature_count": len(selection.get("excluded_features", [])),
+                            "excluded_reason_counts": dict(sorted(excluded_reason_counts.items())),
+                            "excluded_group_counts": dict(sorted(excluded_group_counts.items())),
+                        },
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    ),
+                    flush=True,
+                )
+                print("PHASE4_PHASE5_FREEZE=" + json.dumps(freeze, ensure_ascii=False, sort_keys=True), flush=True)
+                print(
+                    "PHASE4_KEY_HASHES=" + json.dumps(
+                        {
+                            name: info
+                            for name, info in manifest.get("artifacts", {}).items()
+                            if name in {
+                                "PHASE4_MODEL_RESEARCH.json",
+                                "PHASE4_PHASE5_FREEZE.json",
+                                "PHASE4_CALIBRATION_INPUT.jsonl.gz",
+                                "PHASE4_OOS_LOCK.json",
+                                "PHASE4_LOCKED_OOS_RESULTS.json",
+                                "PHASE4_LOCKED_OOS_PREDICTIONS.npz",
+                                "PHASE4_GROUP_ABLATIONS_DEVELOPMENT.json",
+                                "PHASE4_DEVELOPMENT_MODEL_COMPARISON.json",
+                                "PHASE4_V3_COVERAGE_DIAGNOSTIC_V2.json",
+                                "PHASE4_FEATURE_SELECTION.json",
+                                "PHASE4_SPLITS.json",
+                            }
+                        },
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    ),
+                    flush=True,
+                )
             return
 
     if output_root.exists():
