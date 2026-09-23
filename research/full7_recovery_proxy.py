@@ -16,15 +16,24 @@ class Handler(http.server.BaseHTTPRequestHandler):
         return
 
     def do_GET(self):
-        prefix = f"/{PROXY_TOKEN}/"
-        if not self.path.startswith(prefix):
+        private_prefix = f"/{PROXY_TOKEN}/"
+        public_prefix = "/public/"
+        if self.path.startswith(private_prefix):
+            leaf = self.path[len(private_prefix):].split("?", 1)[0]
+            allowed = (
+                leaf in {"index.json", "recovery.key"}
+                or (leaf.startswith("part-") and leaf.endswith(".tar.enc"))
+            )
+        elif self.path.startswith(public_prefix):
+            leaf = self.path[len(public_prefix):].split("?", 1)[0]
+            allowed = (
+                leaf == "index.json"
+                or (leaf.startswith("part-") and leaf.endswith(".tar.enc"))
+            )
+        else:
             self.send_error(404)
             return
-        leaf = self.path[len(prefix):].split("?", 1)[0]
-        if not (
-            leaf in {"index.json", "recovery.key"}
-            or (leaf.startswith("part-") and leaf.endswith(".tar.enc"))
-        ):
+        if not allowed:
             self.send_error(404)
             return
         url = UPSTREAM_BASE + leaf
