@@ -624,6 +624,37 @@ def main() -> None:
                     ),
                     flush=True,
                 )
+
+                # Phase 5 only: reuse immutable Phase-4 artifacts. No Phase-4 rebuild.
+                from research.full7_phase5_calibration import run_phase5_offline
+                phase5 = run_phase5_offline(
+                    phase4_dir,
+                    output_root / "phase5",
+                )
+                phase5_dir = output_root / "phase5"
+                print(
+                    "PHASE5_RECEIPT=" + json.dumps(
+                        {
+                            "PHASE5_CALIBRATION": phase5.get("PHASE5_CALIBRATION"),
+                            "status": phase5.get("status"),
+                            "decision_lock_sha256": phase5.get("PHASE5_CALIBRATION_DECISION_LOCK_SHA256"),
+                            "targets": {
+                                target: {
+                                    "selected_calibrator": obj.get("SELECTED_CALIBRATOR"),
+                                    "calibration_accepted": obj.get("CALIBRATION_ACCEPTED"),
+                                    "phase6_ready": obj.get("PHASE6_READY"),
+                                }
+                                for target, obj in phase5.get("targets", {}).items()
+                            },
+                            "manifest_sha256": _sha256(phase5_dir / "PHASE5_MANIFEST.json")
+                            if (phase5_dir / "PHASE5_MANIFEST.json").is_file()
+                            else None,
+                        },
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    ),
+                    flush=True,
+                )
             return
 
     if output_root.exists():
