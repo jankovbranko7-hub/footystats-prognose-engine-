@@ -1,4 +1,4 @@
-name: Production smoke legacy + FULL-7 Gated
+name: Production smoke legacy + FULL-7 Final
 
 on:
   push:
@@ -8,6 +8,8 @@ on:
 jobs:
   smoke:
     runs-on: ubuntu-latest
+    env:
+      FULL7_PHASE7_MANIFEST_SHA256: d003e9b9ae0f93667ed3d7a459f38a704eaa49dcb7f0e7d5612784bd357cbce7
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -17,28 +19,24 @@ jobs:
 
       - name: Compile current production stack
         run: |
-          python -m py_compile             app.py app_v040.py spec11_joint_core_patch.py             full7_foundation.py full7_feature_registry.py full7_gold_features.py             full7_signal_groups.py full7_feature_sets.py full7_market_feature_sets.py             full7_goal_probability.py full7_probability_contract.py             full7_final_engine.py full7_final_api.py full7_dev_api.py
+          python -m py_compile \
+            app.py app_v040.py spec11_joint_core_patch.py \
+            full7_foundation.py full7_phase7_upload_api.py \
+            full7_phase7_features.py full7_phase7_runtime.py full7_phase7_decision.py
 
       - name: Run FULL-7 regression suite
         run: python -m unittest discover -s tests -p "test_full7_*.py" -v
 
-      - name: Assert legacy compatibility and FULL-7 gated production wiring
+      - name: Assert legacy compatibility and FULL-7 final production wiring
         run: |
           python - <<'PY'
           import app
-          from full7_final_engine import (
-              ENGINE_VERSION,
-              MODEL_CONTRACT_VERSION,
-              BTTS_GATE_VERSION,
-              READINESS,
-          )
 
           paths = {
               getattr(route, "path", None): route
               for route in app.app.router.routes
               if getattr(route, "path", None)
           }
-
           required = {
               "/api/health",
               "/api/predict-bundle",
@@ -52,32 +50,21 @@ jobs:
           legacy_health = paths["/api/health"].endpoint()
           assert legacy_health.get("ok") is True
 
-          full7_health = paths["/api/full7/health"].endpoint()
-          assert full7_health["ok"] is True
-          assert full7_health["version"] == "1.0.0-full7-validation"
-          assert full7_health["expected_files"] == 7
-          assert full7_health["production_wired"] is True
-          assert full7_health["market_model_readiness"]["BTTS"] == "OOS_VALIDATED_SELECTIVE"
-          assert full7_health["recommendation_family"] == "BTTS"
-
           engine_health = paths["/api/full7/engine-health"].endpoint()
-          assert engine_health["ok"] is True
-          assert engine_health["engine"] == "FOOTYSTATS_FULL7_GATED"
-          assert engine_health["engine_version"] == "FULL7_GATED_1.0.0"
-          assert engine_health["model_contract_version"] == "FULL7_MODEL_CONTRACT_1.0"
-          assert engine_health["decision_gate_version"] == "FULL7_BTTS_DECISION_GATE_0.1"
+          assert engine_health["ok"] is True, engine_health
+          assert engine_health["runtime_ready"] is True
+          assert engine_health["engine"] == "FOOTYSTATS_FULL7_FINAL"
+          assert engine_health["engine_version"] == "FULL7_FINAL_RC_1.0.0"
           assert engine_health["expected_files"] == 7
-          assert engine_health["production_wired"] is True
-          assert engine_health["family_readiness"]["1X2"] == "OOS_OBSERVE_ONLY"
-          assert engine_health["family_readiness"]["BTTS"] == "OOS_VALIDATED_SELECTIVE"
-          assert engine_health["family_readiness"]["TOTALS"] == "OOS_OBSERVE_ONLY"
-          assert engine_health["recommendation_family"] == "BTTS"
-          assert engine_health["non_btts_recommendation"] is False
+          assert engine_health["probability_mode_no_odds"] is True
+          assert engine_health["spielen_allowed_families"] == ["HOME", "AWAY", "BTTS_YES"]
+          assert engine_health["draw_status"] == "AUSLASSEN_ONLY"
+          assert engine_health["btts_no_status"] == "BEOBACHTEN_ONLY"
+          assert engine_health["o25_status"] == "HOLD"
+          assert engine_health["legacy_v3_1_override_active"] is False
 
-          assert ENGINE_VERSION == "FULL7_GATED_1.0.0"
-          assert MODEL_CONTRACT_VERSION == "FULL7_MODEL_CONTRACT_1.0"
-          assert BTTS_GATE_VERSION == "FULL7_BTTS_DECISION_GATE_0.1"
-          assert READINESS["BTTS"] == "OOS_VALIDATED_SELECTIVE"
+          predict_route = paths["/api/full7/predict"]
+          assert predict_route.endpoint.__module__ == "full7_phase7_upload_api"
 
-          print("Legacy compatibility + FULL7_GATED_1.0.0 production smoke OK")
+          print("Legacy compatibility + FULL7_FINAL_RC_1.0.0 production smoke OK")
           PY
