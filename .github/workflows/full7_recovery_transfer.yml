@@ -1,0 +1,56 @@
+name: FULL7 recovery transfer
+
+on:
+  push:
+    branches:
+      - audit/full7-cp2-20260922
+    paths:
+      - .github/FULL7_RECOVERY_REQUEST.txt
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  transfer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Remove previous recovery artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --paginate "/repos/${GITHUB_REPOSITORY}/actions/artifacts?per_page=100"             --jq '.artifacts[] | select(.name | startswith("full7-recovery-")) | .id'             | while read -r id; do
+                [ -n "$id" ] && gh api --method DELETE "/repos/${GITHUB_REPOSITORY}/actions/artifacts/$id" || true
+              done
+
+      - name: Download requested encrypted recovery object
+        id: download
+        run: |
+          set -euo pipefail
+          REQ="$(tr -d '\r\n' < .github/FULL7_RECOVERY_REQUEST.txt)"
+          case "$REQ" in
+            index.json|part-[0-9][0-9][0-9][0-9].tar.enc) ;;
+            *) echo "Invalid request: $REQ" >&2; exit 2 ;;
+          esac
+          URL="https://full7-recovery-proxy-20260923.onrender.com/public/$REQ"
+          curl --fail --location --retry 5 --retry-all-errors --connect-timeout 30             --output "$REQ" "$URL"
+          SHA="$(sha256sum "$REQ" | awk '{print $1}')"
+          BYTES="$(stat -c %s "$REQ")"
+          printf '{"file":"%s","bytes":%s,"sha256":"%s"}\n' "$REQ" "$BYTES" "$SHA" > FULL7_TRANSFER_RECEIPT.json
+          echo "req=$REQ" >> "$GITHUB_OUTPUT"
+          echo "bytes=$BYTES" >> "$GITHUB_OUTPUT"
+          echo "sha256=$SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Upload transfer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: full7-recovery-${{ steps.download.outputs.req }}
+          path: |
+            ${{ steps.download.outputs.req }}
+            FULL7_TRANSFER_RECEIPT.json
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
