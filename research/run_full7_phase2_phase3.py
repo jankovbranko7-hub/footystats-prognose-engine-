@@ -485,6 +485,21 @@ def main() -> None:
     args = parser.parse_args()
     output_root = Path(args.output_root)
 
+    # Authorized one-shot FULL-7 raw-backup recovery probe. This path is read-only,
+    # hard-bound to the existing audit worker/branch, and runs before every legacy
+    # CP/model path so no collection or research phase can be entered accidentally.
+    backup_recovery_authorized = (
+        os.environ.get("RENDER_SERVICE_ID") == "srv-damiu0p42hec739a0rig"
+        and os.environ.get("RENDER_GIT_BRANCH") == "audit/full7-cp2-20260922"
+        and os.environ.get("RUN_FULL7_BACKUP_RECOVERY_ONESHOT", "false").strip().lower() == "true"
+    )
+    if backup_recovery_authorized:
+        from research.run_full7_backup_recovery import run_backup_recovery_probe
+        recovery_receipt = run_backup_recovery_probe()
+        print("FULL7_BACKUP_RECOVERY_EXIT=0", flush=True)
+        print(json.dumps(recovery_receipt, ensure_ascii=False, sort_keys=True), flush=True)
+        return
+
     # Authorized one-shot Phase-6 audit dispatcher. It is hard-bound to the
     # existing audit worker + audit branch and executes BEFORE every legacy path.
     phase6_worker = (
