@@ -792,7 +792,11 @@ def _load_post_lock_oos(
     # When running in stage the caller verifies its own stage lock; this path check
     # is only a defense-in-depth hint and is not relied on for correctness.
 
-    p4_manifest = json.loads((phase4 / "PHASE4_MANIFEST.json").read_text(encoding="utf-8"))
+    p4_manifest = _manifest_hash(
+        phase4 / "PHASE4_MANIFEST.json",
+        EXPECTED_PHASE4_MANIFEST_SHA256,
+        "phase4_manifest_post_lock",
+    )
     labels_path = _require_manifest_artifact(phase4, p4_manifest, "PHASE4_LABELS.npz")
     pred_path = _require_manifest_artifact(phase4, p4_manifest, "PHASE4_LOCKED_OOS_PREDICTIONS.npz")
     splits_path = _require_manifest_artifact(phase4, p4_manifest, "PHASE4_SPLITS.json")
@@ -813,30 +817,28 @@ def _load_post_lock_oos(
 
 
 def _oos_indices(labels: Mapping[str, np.ndarray], splits: Mapping[str, Any]) -> dict[str, np.ndarray]:
-    # Split file is the frozen source of OOS date boundaries.
+    # Exact frozen Phase-4 split schema:
+    # splits["oos_folds"] = [{"fold": 1, "test_start_date": ..., "test_end_date": ...}, ...]
     dates = np.asarray(labels["dates"]).astype(str)
+    rows = splits.get("oos_folds")
+    if not isinstance(rows, list) or len(rows) != 3:
+        raise Phase6Error("oos_fold_schema_changed")
     out = {}
-    # Prefer explicit fold definitions if present.
-    for name in ("OOS1", "OOS2", "OOS3"):
-        obj = None
-        if isinstance(splits.get("oos_folds"), list):
-            for x in splits["oos_folds"]:
-                if x.get("name") == name or x.get("fold") == name:
-                    obj = x
-                    break
-        if obj is None:
-            obj = splits.get(name) or splits.get(name.lower())
-        if not isinstance(obj, Mapping):
-            raise Phase6Error(f"oos_split_definition_missing:{name}")
-        start = str(obj.get("start") or obj.get("test_start") or obj.get("start_date"))
-        end = str(obj.get("end") or obj.get("test_end") or obj.get("end_date"))
-        if start == "None" or end == "None":
-            raise Phase6Error(f"oos_split_dates_missing:{name}")
+    for meta in rows:
+        try:
+            fold_num = int(meta["fold"])
+            start = str(meta["test_start_date"])
+            end = str(meta["test_end_date"])
+        except Exception as exc:
+            raise Phase6Error(f"oos_fold_schema_invalid:{exc}") from exc
+        name = f"OOS{fold_num}"
         mask = (dates >= start) & (dates <= end)
         idx = np.where(mask)[0]
         if len(idx) == 0:
             raise Phase6Error(f"oos_split_empty:{name}")
         out[name] = idx
+    if set(out) != {"OOS1", "OOS2", "OOS3"}:
+        raise Phase6Error(f"oos_fold_labels_changed:{sorted(out)}")
     return out
 
 
