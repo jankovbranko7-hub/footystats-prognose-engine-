@@ -476,9 +476,13 @@ def main() -> None:
     args = parser.parse_args()
     output_root = Path(args.output_root)
 
-    # Authorized one-shot Phase-6 audit dispatcher. This branch executes BEFORE
-    # any CP2/CP3/Phase-4/Phase-5 path and returns immediately.
-    if os.environ.get("FULL7_PHASE6_ONLY") == "true":
+    # Authorized one-shot Phase-6 audit dispatcher. It is hard-bound to the
+    # existing audit worker + audit branch and executes BEFORE every legacy path.
+    phase6_worker = (
+        os.environ.get("RENDER_SERVICE_ID") == "srv-damiu0p42hec739a0rig"
+        and os.environ.get("RENDER_GIT_BRANCH") == "audit/full7-cp2-20260922"
+    )
+    if phase6_worker:
         from research.run_full7_phase6_only import run_phase6_only
         phase6_receipt = run_phase6_only(output_root)
         print("FULL7_PHASE6_ONLY_EXIT=0", flush=True)

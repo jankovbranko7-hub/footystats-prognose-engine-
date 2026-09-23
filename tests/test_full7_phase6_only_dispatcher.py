@@ -2,7 +2,7 @@ from pathlib import Path
 
 def test_phase6_dispatcher_precedes_cp3_paths():
     source = Path("research/run_full7_phase2_phase3.py").read_text(encoding="utf-8")
-    dispatcher = source.index('if os.environ.get("FULL7_PHASE6_ONLY") == "true":')
+    dispatcher = source.index("phase6_worker = (")
     cp3 = source.index("# Post-CP3 rule:")
     assert dispatcher < cp3
     block = source[dispatcher:cp3]
@@ -33,3 +33,13 @@ def test_phase6_has_lock_before_oos_call():
     assert "O25_HOLD = True" in source
     research = source[source.index("def _research_rules"):source.index("def _compact_selected")]
     assert '"O25"' not in research
+
+def test_phase6_dispatcher_is_bound_to_exact_audit_worker_and_branch():
+    source = Path("research/run_full7_phase2_phase3.py").read_text(encoding="utf-8")
+    assert 'RENDER_SERVICE_ID") == "srv-damiu0p42hec739a0rig"' in source
+    assert 'RENDER_GIT_BRANCH") == "audit/full7-cp2-20260922"' in source
+
+def test_phase6_guards_default_forbidden_flags_to_false_and_reject_true():
+    source = Path("research/run_full7_phase6_only.py").read_text(encoding="utf-8")
+    assert 'os.environ.get(key, "false").strip().lower()' in source
+    assert 'if value != "false"' in source

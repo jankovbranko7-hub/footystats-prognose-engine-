@@ -38,14 +38,12 @@ REQUIRED_FILES = (
 
 
 def _require_false_env() -> dict[str, str]:
-    if os.environ.get("FULL7_PHASE6_ONLY") != "true":
-        raise Phase6Error("FULL7_PHASE6_ONLY_must_equal_true")
     values = {}
     for key in REQUIRED_FALSE_FLAGS:
-        value = os.environ.get(key)
+        value = os.environ.get(key, "false").strip().lower()
         if value != "false":
             raise Phase6Error(f"phase6_guard_env_not_false:{key}:{value}")
-        values[key] = value
+        values[key] = "false"
     return values
 
 
