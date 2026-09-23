@@ -9,8 +9,10 @@ from typing import Any
 
 FULL7_CARD = r'''
   <div class="c" id="full7-card">
-    <h2>FULL-7 Contract</h2>
-    <p class="s">V3.1 | 7 Maerkte sichtbar | keine Odds | SPIELEN-Gates: 1X2 | BTTS | TOTALS</p>
+    <h2>FULL-7 Final</h2>
+    <p class="s" id="full7Build">FULL7_FINAL_RC_1.0.0 | Build 20260923 | Safari-Cache aus</p>
+    <p class="s">7-Dateien-Workflow | keine Odds | SPIELEN: HOME | AWAY | BTTS YES</p>
+    <p class="s">DRAW: AUSLASSEN | BTTS NO: nur BEOBACHTEN | O25/U25: HOLD</p>
     <p class="s">Match | League | Form | Table | Player | Referee | Manager</p>
     <input id="full7Files" type="file" multiple accept=".json,application/json">
     <p id="full7Pick" class="s">Noch keine Dateien ausgewaehlt.</p>
@@ -210,7 +212,7 @@ if(go7){
       const awayDisplay=ident.away_name||localDisplay.away_name||ident.away_id||"?";
       const matchId=ident.match_id||"";
       out.innerHTML=
-        '<div class="c"><div class="ok"><b>FULL-7 | 7 Maerkte</b></div>'+
+        '<div class="c"><div class="ok"><b>FULL-7 FINAL | 7 Maerkte</b></div>'+
         '<div class="full7-matchup"><span>'+escapeHtml(String(homeDisplay))+'</span><span class="full7-vs">VS</span><span>'+escapeHtml(String(awayDisplay))+'</span></div>'+
         '<p class="s">'+(matchId?('Match-ID '+escapeHtml(String(matchId))+' | '):'')+escapeHtml(String((data.contract||{}).release_status||""))+'</p>'+
         '<div class="g">'+
