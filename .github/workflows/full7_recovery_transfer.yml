@@ -49,7 +49,7 @@ jobs:
         run: |
           set -euo pipefail
           REQ="${{ steps.download.outputs.req }}"
-          split -b 450000000 -d -a 2 "$REQ" "$REQ.chunk-"
+          split -b 200000000 -d -a 2 "$REQ" "$REQ.chunk-"
           ls -lh "$REQ".chunk-*
           sha256sum "$REQ".chunk-* > FULL7_CHUNK_SHA256.txt
           stat -c '%n %s' "$REQ".chunk-* > FULL7_CHUNK_SIZES.txt
@@ -75,6 +75,28 @@ jobs:
           name: full7-recovery-${{ steps.download.outputs.req }}-chunk-01
           path: |
             ${{ steps.download.outputs.req }}.chunk-01
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
+
+      - name: Upload chunk 02
+        if: startsWith(steps.download.outputs.req, 'part-')
+        uses: actions/upload-artifact@v4
+        with:
+          name: full7-recovery-${{ steps.download.outputs.req }}-chunk-02
+          path: |
+            ${{ steps.download.outputs.req }}.chunk-02
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
+
+      - name: Upload chunk 03
+        if: startsWith(steps.download.outputs.req, 'part-')
+        uses: actions/upload-artifact@v4
+        with:
+          name: full7-recovery-${{ steps.download.outputs.req }}-chunk-03
+          path: |
+            ${{ steps.download.outputs.req }}.chunk-03
           compression-level: 0
           retention-days: 1
           if-no-files-found: error
