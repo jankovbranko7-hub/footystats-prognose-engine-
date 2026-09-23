@@ -355,6 +355,91 @@ def _partition_plan_diagnostic() -> dict[str, Any]:
     }
 
 
+def _greedy_summary(ordered: list[tuple[str, int]], threshold: int = 805306368) -> dict[str, Any]:
+    parts: list[list[tuple[str, int]]] = []
+    current: list[tuple[str, int]] = []
+    current_bytes = 0
+    for item in ordered:
+        if current and current_bytes + item[1] > threshold:
+            parts.append(current)
+            current = []
+            current_bytes = 0
+        current.append(item)
+        current_bytes += item[1]
+    if current:
+        parts.append(current)
+    summary = []
+    all_match = len(parts) == len(EXPECTED_PART_PLAN)
+    for idx, group in enumerate(parts):
+        expected = EXPECTED_PART_PLAN[idx] if idx < len(EXPECTED_PART_PLAN) else (None, None, None)
+        actual_count = len(group)
+        actual_bytes = sum(size for _rel, size in group)
+        match = actual_count == expected[1] and actual_bytes == expected[2]
+        all_match = all_match and match
+        summary.append({
+            "idx": idx,
+            "expected_name": expected[0],
+            "count": actual_count,
+            "expected_count": expected[1],
+            "raw_bytes": actual_bytes,
+            "expected_raw_bytes": expected[2],
+            "count_delta": None if expected[1] is None else actual_count - expected[1],
+            "bytes_delta": None if expected[2] is None else actual_bytes - expected[2],
+            "match": match,
+            "first": group[0][0] if group else None,
+            "last": group[-1][0] if group else None,
+        })
+    return {"threshold": threshold, "part_count": len(parts), "all_parts_match": all_match, "parts": summary}
+
+
+def _natural_order_diagnostic() -> dict[str, Any]:
+    sizes: dict[str, int] = {}
+    with SOURCE_MANIFEST.open("r", encoding="utf-8") as fh:
+        fh.readline()
+        for line in fh:
+            line = line.rstrip("\n")
+            if not line:
+                continue
+            _sha, size_text, rel = line.split("\t", 2)
+            sizes[rel] = int(size_text)
+    sizes["FULL7_BACKUP_INVENTORY.json"] = SOURCE_INVENTORY.stat().st_size
+    sizes["FULL7_BACKUP_SHA256_MANIFEST.tsv"] = SOURCE_MANIFEST.stat().st_size
+    allowed = set(sizes)
+
+    walk_order: list[tuple[str, int]] = []
+    for root, dirs, files in os.walk(DATA_ROOT):
+        root_path = Path(root)
+        for filename in files:
+            path = root_path / filename
+            rel = path.relative_to(DATA_ROOT).as_posix()
+            if rel in allowed:
+                walk_order.append((rel, sizes[rel]))
+
+    preorder: list[tuple[str, int]] = []
+    def visit(directory: Path) -> None:
+        try:
+            entries = list(os.scandir(directory))
+        except OSError:
+            return
+        for entry in entries:
+            path = Path(entry.path)
+            rel = path.relative_to(DATA_ROOT).as_posix()
+            if entry.is_file(follow_symlinks=False):
+                if rel in allowed:
+                    preorder.append((rel, sizes[rel]))
+            elif entry.is_dir(follow_symlinks=False):
+                visit(path)
+    visit(DATA_ROOT)
+
+    return {
+        "expected_records": len(allowed),
+        "os_walk_records": len(walk_order),
+        "scandir_preorder_records": len(preorder),
+        "OS_WALK_NATURAL": _greedy_summary(walk_order),
+        "SCANDIR_PREORDER_FINDLIKE": _greedy_summary(preorder),
+    }
+
+
 def run_backup_recovery_probe() -> dict[str, Any]:
     _require_authorized_runtime()
     print("FULL7_BACKUP_RECOVERY_MODE=READ_ONLY_PROBE", flush=True)
@@ -364,6 +449,8 @@ def run_backup_recovery_probe() -> dict[str, Any]:
     print("FULL7_BACKUP_RECOVERY_ARTIFACTS=" + json.dumps(artifacts, sort_keys=True), flush=True)
     partition_plan = _partition_plan_diagnostic()
     print("FULL7_BACKUP_RECOVERY_PARTITION_PLAN=" + json.dumps(partition_plan, sort_keys=True), flush=True)
+    natural_order = _natural_order_diagnostic()
+    print("FULL7_BACKUP_RECOVERY_NATURAL_ORDER=" + json.dumps(natural_order, sort_keys=True), flush=True)
     status = (
         "ORIGINAL_PARTS_FOUND_ALL"
         if artifacts["exact_original_part_count"] == 14
@@ -374,6 +461,7 @@ def run_backup_recovery_probe() -> dict[str, Any]:
         "source": source,
         "artifacts": artifacts,
         "partition_plan": partition_plan,
+        "natural_order": natural_order,
         "collection_performed": False,
         "api_calls_performed": False,
         "cp1_cp7_reexecuted": False,
