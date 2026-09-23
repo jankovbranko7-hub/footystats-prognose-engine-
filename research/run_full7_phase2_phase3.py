@@ -485,6 +485,20 @@ def main() -> None:
     args = parser.parse_args()
     output_root = Path(args.output_root)
 
+    # Authorized read-only V3.1 raw-input recovery audit. This dispatcher runs
+    # before backup/research paths and is hard-bound to the existing audit worker.
+    v31_raw_audit_authorized = (
+        os.environ.get("RENDER_SERVICE_ID") == "srv-damiu0p42hec739a0rig"
+        and os.environ.get("RENDER_GIT_BRANCH") == "audit/full7-cp2-20260922"
+        and os.environ.get("RUN_FULL7_V31_RAW_INPUT_AUDIT", "false").strip().lower() == "true"
+    )
+    if v31_raw_audit_authorized:
+        from research.run_full7_v31_raw_input_audit import run_v31_raw_input_audit
+        receipt = run_v31_raw_input_audit()
+        print("FULL7_V31_RAW_INPUT_AUDIT_EXIT=0", flush=True)
+        print(json.dumps(receipt, ensure_ascii=False, sort_keys=True), flush=True)
+        return
+
     # Authorized streaming recovery export. Read-only on the frozen FULL-7 source;
     # it serves independently encrypted tar parts without entering collection or CP1-CP7.
     backup_stream_authorized = (
