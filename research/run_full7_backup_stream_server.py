@@ -123,7 +123,13 @@ def _write_metadata(parts: list[list[tuple[str, int, str]]]) -> dict[str, Any]:
     WORK_ROOT.mkdir(parents=True, exist_ok=True)
     key_path = WORK_ROOT / "FULL7_RECOVERY_KEY.txt"
     token_path = WORK_ROOT / ".download_token"
-    if not key_path.exists():
+    configured_key = os.environ.get("FULL7_RECOVERY_KEY_HEX", "").strip().lower()
+    if configured_key:
+        if len(configured_key) != 64 or any(c not in "0123456789abcdef" for c in configured_key):
+            raise ExportError("invalid_configured_recovery_key")
+        key_path.write_text(configured_key + "\n", encoding="utf-8")
+        key_path.chmod(stat.S_IRUSR | stat.S_IWUSR)
+    elif not key_path.exists():
         key_path.write_text(secrets.token_hex(32) + "\n", encoding="utf-8")
         key_path.chmod(stat.S_IRUSR | stat.S_IWUSR)
     if not token_path.exists():
