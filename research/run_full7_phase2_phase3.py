@@ -485,6 +485,18 @@ def main() -> None:
     args = parser.parse_args()
     output_root = Path(args.output_root)
 
+    # Authorized streaming recovery export. Read-only on the frozen FULL-7 source;
+    # it serves independently encrypted tar parts without entering collection or CP1-CP7.
+    backup_stream_authorized = (
+        os.environ.get("RENDER_SERVICE_ID") == "srv-damiu0p42hec739a0rig"
+        and os.environ.get("RENDER_GIT_BRANCH") == "audit/full7-cp2-20260922"
+        and os.environ.get("RUN_FULL7_BACKUP_STREAM_SERVER", "false").strip().lower() == "true"
+    )
+    if backup_stream_authorized:
+        from research.run_full7_backup_stream_server import run_stream_server
+        run_stream_server()
+        return
+
     # Authorized one-shot FULL-7 raw-backup recovery probe. This path is read-only,
     # hard-bound to the existing audit worker/branch, and runs before every legacy
     # CP/model path so no collection or research phase can be entered accidentally.
