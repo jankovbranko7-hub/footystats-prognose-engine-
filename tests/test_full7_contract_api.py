@@ -2,6 +2,8 @@ import unittest
 
 import app as production_entry
 import full7_contract_api
+import full7_phase7_upload_api
+from unittest.mock import patch
 from full7_contract_decision import build_decision_engine
 from full7_v3_live import predict_v3_live
 
@@ -50,23 +52,37 @@ class Full7ContractPreviewApiTests(unittest.TestCase):
         self.assertNotIn("/api/full7/contract-preview", paths)
         self.assertNotIn("/api/full7/contract-preview/health", paths)
 
-    def test_production_full7_predict_is_backed_by_contract_engine(self):
+    def test_production_full7_predict_is_backed_by_final_rc_bridge(self):
         matching = [
             route for route in production_entry.app.routes
             if getattr(route, "path", None) == "/api/full7/predict"
         ]
         self.assertEqual(len(matching), 1)
-        self.assertEqual(matching[0].endpoint.__module__, "full7_contract_api")
+        self.assertEqual(matching[0].endpoint.__module__, "full7_phase7_upload_api")
         self.assertEqual(matching[0].endpoint.__name__, "production_predict")
 
-    def test_production_full7_health_is_backed_by_contract_engine(self):
+    def test_production_full7_health_is_backed_by_final_rc_bridge(self):
         matching = [
             route for route in production_entry.app.routes
             if getattr(route, "path", None) == "/api/full7/engine-health"
         ]
         self.assertEqual(len(matching), 1)
-        self.assertEqual(matching[0].endpoint.__module__, "full7_contract_api")
+        self.assertEqual(matching[0].endpoint.__module__, "full7_phase7_upload_api")
         self.assertEqual(matching[0].endpoint.__name__, "production_health")
+
+    def test_final_rc_health_declares_frozen_release_semantics(self):
+        with patch("full7_phase7_upload_api._load_configured_runtime", return_value=object()):
+            out = full7_phase7_upload_api.production_health()
+        self.assertTrue(out["ok"])
+        self.assertTrue(out["production_mounted"])
+        self.assertEqual(out["engine"], "FOOTYSTATS_FULL7_FINAL")
+        self.assertEqual(out["engine_version"], "FULL7_FINAL_RC_1.0.0")
+        self.assertEqual(out["expected_files"], 7)
+        self.assertEqual(out["spielen_allowed_families"], ["HOME", "AWAY", "BTTS_YES"])
+        self.assertEqual(out["draw_status"], "AUSLASSEN_ONLY")
+        self.assertEqual(out["btts_no_status"], "BEOBACHTEN_ONLY")
+        self.assertEqual(out["o25_status"], "HOLD")
+        self.assertFalse(out["legacy_v3_1_override_active"])
 
     def test_v3_health_exposes_live_authorized_decision_source_and_provenance(self):
         out = full7_contract_api.production_health()
