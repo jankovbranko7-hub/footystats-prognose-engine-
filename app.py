@@ -1,5 +1,4 @@
 """FootyStats-only read-only MCP bridge for ChatGPT."""
-from __future__ import annotations
 
 import json
 import os
@@ -151,9 +150,9 @@ def todays_matches(
 @mcp.tool()
 def analyze_match_data(
     match_id: int,
-    season_id: int | None = None,
-    home_team_id: int | None = None,
-    away_team_id: int | None = None,
+    season_id: int = 0,
+    home_team_id: int = 0,
+    away_team_id: int = 0,
 ) -> dict[str, Any]:
     """Fetch match, both teams' Overall/Home/Away stats, and last-X stats; re-read all inputs and verify stability."""
     # First pass: match, home team, away team, then last-X home and away.
@@ -164,11 +163,11 @@ def analyze_match_data(
     if not match_first:
         return {"success": False, "phase": "MATCH_LOOKUP", "error": "No match record returned."}
 
-    home_id = _id_value(match_first, "homeID", "home_id") or home_team_id
+    home_id = _id_value(match_first, "homeID", "home_id") or (home_team_id or None)
     away_id = _id_value(match_first, "awayID", "away_id") or away_team_id
     league_season_id = (
         _id_value(match_first, "competition_id", "season_id", "league_id", "leagueID")
-        or season_id
+        or (season_id or None)
     )
     if home_id is None or away_id is None:
         return {
