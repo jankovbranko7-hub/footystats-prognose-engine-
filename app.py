@@ -109,6 +109,18 @@ def _match_summary(record: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+def _match_detail(record: dict[str, Any]) -> dict[str, Any]:
+    keep_terms = (
+        "id", "name", "home", "away", "team_a", "team_b", "status", "date",
+        "competition", "league", "season", "goal", "minute", "elapsed", "shot",
+        "possession", "corner", "card", "xg", "pre_match", "potential",
+    )
+    return {
+        k: v for k, v in record.items()
+        if any(term in k.lower() for term in keep_terms)
+    }
+
+
 def _team_record(payload: dict[str, Any], team_id: int | None) -> dict[str, Any]:
     if team_id is None:
         return {}
@@ -176,7 +188,7 @@ def analyze_match_data(
             "success": False,
             "phase": "TEAM_IDENTIFICATION",
             "error": "Home/away team IDs are missing; provide the IDs from the exact todays_matches result.",
-            "match": _match_summary(match_first),
+            "match": _match_detail(match_first),
         }
     if league_season_id is None:
         return {
@@ -219,14 +231,11 @@ def analyze_match_data(
         "away_lastx_identical": bool(last_away_first) and _canonical(last_away_first) == _canonical(last_away_second),
     }
     all_identical = all(checks.values())
-    context_keys = (
-        "pre_match_home_xg", "pre_match_away_xg", "btts_potential",
-        "o25_potential", "u25_potential", "over25", "under25", "btts",
-        "homeGoalCount", "awayGoalCount", "totalGoalCount", "status",
-        "team_a_shotsOnTarget", "team_b_shotsOnTarget", "team_a_shots",
-        "team_b_shots", "team_a_possession", "team_b_possession",
-    )
-    context = {k: match_first[k] for k in context_keys if k in match_first}
+    context_terms = ("pre_match", "potential", "btts", "over25", "under25", "o25", "u25")
+    context = {
+        k: v for k, v in match_first.items()
+        if any(term in k.lower() for term in context_terms)
+    }
 
     result: dict[str, Any] = {
         "success": True,
@@ -253,7 +262,7 @@ def analyze_match_data(
     if not all_identical:
         result["verification"]["note"] = "At least one second read differs or required team data is missing; do not place a bet."
         result["changed_second_read"] = {
-            "match": _match_summary(match_second),
+            "match": _match_detail(match_second),
             "home_team": home_second or None,
             "away_team": away_second or None,
             "home_lastx": last_home_second or None,
