@@ -11,7 +11,6 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
-from mcp.server.transport_security import TransportSecuritySettings
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 from starlette.routing import Mount, Route
@@ -30,6 +29,9 @@ mcp = FastMCP(
         "must be all_identical=true before any bet can be considered. Shared pre-match "
         "fields are context only, never the basis for the bet."
     ),
+    host="0.0.0.0",
+    json_response=True,
+    stateless_http=True,
 )
 
 
@@ -300,15 +302,7 @@ async def lifespan(app):
 if not ROUTE_TOKEN:
     raise RuntimeError("MCP_ROUTE_TOKEN must be configured in Render.")
 
-security = TransportSecuritySettings(
-    allowed_hosts=[HOSTNAME, HOSTNAME + ":*"],
-    allowed_origins=["https://chatgpt.com", "https://chat.openai.com"],
-)
-mcp_app = mcp.streamable_http_app(
-    json_response=True,
-    stateless_http=True,
-    transport_security=security,
-)
+mcp_app = mcp.streamable_http_app()
 app = Starlette(
     routes=[
         Route("/health", health, methods=["GET"]),
